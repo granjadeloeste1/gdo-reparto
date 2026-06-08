@@ -11,6 +11,30 @@ window.GDO = window.GDO || {};
   // y mucha mejor cobertura que OSM en Hurlingham/Villa Tesei.
   const GEOREF = 'https://apis.datos.gob.ar/georef/api';
   const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  // ---- Zona de reparto de GDO ---------------------------------------------
+  // Una misma calle (p. ej. "Jauretche 410") existe en decenas de pueblos de
+  // la provincia; sin acotar, Georef devuelve cualquiera (¡Olavarría, a 350 km!).
+  // Por eso restringimos TODO a los partidos donde realmente reparte GDO.
+  // Hurlingham es la base (Villa Tesei). Editá esta lista si cambia la zona.
+  const ZONA = {
+    provincia: 'Buenos Aires',
+    // Orden = prioridad de cercanía (Hurlingham primero).
+    partidos: ['Hurlingham', 'Morón', 'Ituzaingó', 'Tres de Febrero',
+      'General San Martín', 'San Miguel', 'Malvinas Argentinas', 'José C. Paz',
+      'Merlo', 'Moreno'],
+    // Caja geográfica (oeste del GBA) para validar resultados de OSM/Nominatim.
+    // El borde este (-58.48) deja afuera CABA (General Paz) pero conserva los
+    // partidos del oeste (San Martín, Tres de Febrero) donde sí reparte GDO.
+    box: { minLng: -59.05, minLat: -34.86, maxLng: -58.48, maxLat: -34.40 },
+  };
+  const _sinAcento = (s) => String(s || '').toLowerCase()
+    .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i')
+    .replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').trim();
+  const _zonaSet = ZONA.partidos.map(_sinAcento);
+  // Posición del partido en la zona (0 = más cercano). -1 = fuera de zona.
+  const zonaRank = (partido) => _zonaSet.indexOf(_sinAcento(partido));
+  const inZona = (partido) => zonaRank(partido) >= 0;
   function loadCache() { try { return JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (e) { return {}; } }
   function saveCache(c) { try { localStorage.setItem(CACHE, JSON.stringify(c)); } catch (e) {} }
 
@@ -42,10 +66,10 @@ window.GDO = window.GDO || {};
 
   // Sugerencias de direcciones mientras se escribe (autocompletado). Consulta
   // Georef /direcciones y devuelve [{label, direccion, lat, lng, localidad, partido}].
-  // opts.departamento se usa como SESGO (no filtro duro): primero trae resultados
-  // de ese partido (zona de reparto de GDO) y luego completa con resultados de
-  // toda la provincia, así no se ocultan los partidos vecinos (Morón, Tres de
-  // Febrero, etc.). opts: { provincia, departamento, max }
+  // SIEMPRE acota a la zona de reparto (ZONA.partidos): primero Hurlingham y
+  // luego el resto de la provincia filtrado a esos partidos, así nunca se ofrece
+  // una calle homónima de un pueblo lejano. opts: { max } (provincia/departamento
+  // se mantienen por compatibilidad pero ya no cambian el resultado).
   async function suggest(text, opts) {
     const q = String(text || '').trim();
     if (q.length < 4) return [];
@@ -61,24 +85,42 @@ window.GDO = window.GDO || {};
           if (out.length >= max) break;
         }
       };
-      if (opts.departamento) push(await _georefQuery(q, opts.provincia, opts.departamento, max));
-      if (out.length < max) push(await _georefQuery(q, opts.provincia, null, max));
-      return out;
+      // 1) Base: Hurlingham (zona principal de GDO) — match exacto y rápido.
+      push(await _georefQuery(q, ZONA.provincia, 'Hurlingham', max));
+      // 2) Completar con el resto de la PROVINCIA pero filtrando SOLO a los
+      //    partidos de la zona de reparto (Morón, Ituzaingó, etc.). Así nunca
+      //    aparece una calle homónima de un pueblo lejano.
+      if (out.length < max) {
+        const prov = await _georefQuery(q, ZONA.provincia, null, 30);
+        push(prov.filter((it) => inZona(it.partido)));
+      }
+      // Ordenar por cercanía de zona (Hurlingham primero).
+      out.sort((a, b) => {
+        const ra = zonaRank(a.partido), rb = zonaRank(b.partido);
+        return (ra < 0 ? 99 : ra) - (rb < 0 ? 99 : rb);
+      });
+      return out.slice(0, max);
     } catch (e) { return []; }
   }
 
-  // Una consulta a Nominatim. Devuelve {lat,lng,display,aprox} o null.
-  async function _query(q, aprox) {
+  // Una consulta a Nominatim ACOTADA a la caja de la zona de reparto (bounded=1)
+  // y validada contra esa caja: si el único resultado cae fuera del GBA oeste lo
+  // descartamos (mejor "sin ubicar" que mandar al chofer a otra ciudad).
+  async function _queryBounded(direccion, aprox) {
     try {
+      const q = /argentina/i.test(direccion) ? direccion : direccion + ', Buenos Aires, Argentina';
+      const b = ZONA.box;
       const url = 'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
         q, format: 'jsonv2', limit: '1', countrycodes: 'ar',
+        viewbox: [b.minLng, b.minLat, b.maxLng, b.maxLat].join(','), bounded: '1',
       });
       const r = await fetch(url, { headers: { Accept: 'application/json' } });
       if (!r.ok) return null;
       const arr = await r.json();
-      return (arr && arr.length)
-        ? { lat: parseFloat(arr[0].lat), lng: parseFloat(arr[0].lon), display: arr[0].display_name, aprox: !!aprox }
-        : null;
+      if (!arr || !arr.length) return null;
+      const lat = parseFloat(arr[0].lat), lng = parseFloat(arr[0].lon);
+      if (lat < b.minLat || lat > b.maxLat || lng < b.minLng || lng > b.maxLng) return null;
+      return { lat, lng, display: arr[0].display_name, aprox: !!aprox };
     } catch (e) { return null; }
   }
 
@@ -97,23 +139,32 @@ window.GDO = window.GDO || {};
   async function geocode(direccion) {
     const base = String(direccion || '').trim();
     if (!base) return null;
-    const q = /argentina/i.test(base) ? base : base + ', Buenos Aires, Argentina';
-    const key = norm(q);
+    // Clave de caché versionada ('z2'): invalida coordenadas viejas mal ubicadas
+    // (de antes de acotar a la zona) que pudieran estar guardadas en el navegador.
+    const key = 'z2|' + norm(base);
     const cache = loadCache();
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
-    // 1) Georef (oficial AR, mejor cobertura) — busca la altura exacta.
     let res = null;
     try {
-      const sug = await suggest(base, { max: 1 });
-      if (sug.length && sug[0].lat != null) {
-        res = { lat: sug[0].lat, lng: sug[0].lng, display: sug[0].label, localidad: sug[0].localidad || '', partido: sug[0].partido || '', aprox: false };
+      // 1) Georef en Hurlingham (base) — altura exacta.
+      let list = await _georefQuery(base, ZONA.provincia, 'Hurlingham', 1);
+      list = list.filter((it) => it.lat != null);
+      // 2) Si no está en Hurlingham, buscar en el resto de la zona de reparto.
+      if (!list.length) {
+        const prov = await _georefQuery(base, ZONA.provincia, null, 30);
+        list = prov.filter((it) => inZona(it.partido) && it.lat != null)
+          .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
+      }
+      if (list.length) {
+        const s = list[0];
+        res = { lat: s.lat, lng: s.lng, display: s.label, localidad: s.localidad || '', partido: s.partido || '', aprox: false };
       }
     } catch (e) {}
-    // 2) Fallback a Nominatim/OSM con reintento sin altura (nivel de calle).
-    if (!res) res = await _query(q, false);
+    // 3) Fallback a OSM/Nominatim, SIEMPRE acotado a la zona; reintento sin altura.
+    if (!res) res = await _queryBounded(base, false);
     if (!res) {
-      const q2 = /argentina/i.test(base) ? sinAltura(base) : sinAltura(base) + ', Buenos Aires, Argentina';
-      if (norm(q2) !== key) res = await _query(q2, true);
+      const b2 = sinAltura(base);
+      if (norm(b2) !== norm(base)) res = await _queryBounded(b2, true);
     }
     cache[key] = res; saveCache(cache);
     return res;
