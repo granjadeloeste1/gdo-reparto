@@ -106,7 +106,7 @@ window.GDO = window.GDO || {};
     try {
       const sug = await suggest(base, { max: 1 });
       if (sug.length && sug[0].lat != null) {
-        res = { lat: sug[0].lat, lng: sug[0].lng, display: sug[0].label, aprox: false };
+        res = { lat: sug[0].lat, lng: sug[0].lng, display: sug[0].label, localidad: sug[0].localidad || '', partido: sug[0].partido || '', aprox: false };
       }
     } catch (e) {}
     // 2) Fallback a Nominatim/OSM con reintento sin altura (nivel de calle).
@@ -129,7 +129,7 @@ window.GDO = window.GDO || {};
       const pend = GDO.Store.pedidos().filter((p) => p.estado === 'pendiente' && p.lat == null && p.direccion);
       for (const p of pend) {
         const g = await geocode(p.direccion);
-        if (g) { p.lat = g.lat; p.lng = g.lng; GDO.Store.save(); if (onUpdate) try { onUpdate(p); } catch (e) {} }
+        if (g) { p.lat = g.lat; p.lng = g.lng; if (g.localidad && !p.localidad) p.localidad = g.localidad; GDO.Store.save(); if (onUpdate) try { onUpdate(p); } catch (e) {} }
         await new Promise((res) => setTimeout(res, 1100));
       }
     } finally { _running = false; }

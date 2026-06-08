@@ -534,7 +534,7 @@ render();
     var inp=document.getElementById('cAddr');
     if(inp && window.GDO && GDO.Geo && GDO.Geo.attachAutocomplete){
       GDO.Geo.attachAutocomplete(inp, function(it){
-        if(it && it.lat!=null) picked={ direccion: it.direccion||it.label, lat: it.lat, lng: it.lng };
+        if(it && it.lat!=null) picked={ direccion: it.direccion||it.label, lat: it.lat, lng: it.lng, localidad: it.localidad||'' };
       }, { provincia:'Buenos Aires', departamento:'Hurlingham' });
       inp.addEventListener('input', function(){ picked=null; });
     }
@@ -545,8 +545,8 @@ render();
     var name=val2('cName').trim(), tel=val2('cTel').trim();
     if(!name || !tel) return;
     var addr=val2('cAddr').trim(), pay=val2('cPay'), notes=val2('cNotes').trim();
-    var lat=null, lng=null;
-    if(picked && picked.direccion && addr && picked.direccion.toLowerCase()===addr.toLowerCase()){ lat=picked.lat; lng=picked.lng; }
+    var lat=null, lng=null, localidad='';
+    if(picked && picked.direccion && addr && picked.direccion.toLowerCase()===addr.toLowerCase()){ lat=picked.lat; lng=picked.lng; localidad=picked.localidad||''; }
     var items=cart.map(function(l){
       return { producto: l.name+(l.brand?' ('+l.brand+')':''), cantidad: l.qty,
                unidad: (typeof unitLabel==='function'? unitLabel(l.unit,l.qty): l.unit),
@@ -558,7 +558,7 @@ render();
     cart.forEach(function(l){ if(l.note&&l.note.trim()) esp.push(l.name+': '+l.note.trim()); });
     var pedido={
       id: nid(), origen:'tienda', cliente:name, telefono:tel,
-      direccion:addr, entrecalles:'', lat:lat, lng:lng,
+      direccion:addr, localidad:localidad, entrecalles:'', lat:lat, lng:lng,
       items:items, fechaEntrega:'', especificaciones:esp.join(' · '),
       prioridad:'normal', estado:'pendiente', creadoPor:null, rutaId:null,
       ventana:'', historia:[], ts:Date.now()

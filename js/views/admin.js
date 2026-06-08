@@ -31,7 +31,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.innerHTML = `
       <div class="section-title"><h2>${soyVend ? 'Carga de pedidos' : 'Pedidos'}</h2></div>
       <div class="toolbar">
-        <input type="search" id="p-q" placeholder="Buscar cliente o dirección…"/>
+        <input type="search" id="p-q" placeholder="Buscar cliente, dirección o localidad…"/>
         <select id="p-est">
           <option value="">Todos los estados</option>
           <option value="pendiente">Pendiente</option><option value="asignado">Asignado</option>
@@ -49,7 +49,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const est = c.querySelector('#p-est').value;
       let list = Store.pedidos().slice().reverse();
       if (soyVend) list = list.filter((p) => p.creadoPor === Store.current().id);
-      if (q) list = list.filter((p) => (p.cliente + ' ' + p.direccion).toLowerCase().includes(q));
+      if (q) list = list.filter((p) => (p.cliente + ' ' + p.direccion + ' ' + (p.localidad || '')).toLowerCase().includes(q));
       if (est) list = list.filter((p) => p.estado === est);
       renderPedidosTabla(c.querySelector('#p-tabla'), list);
     };
@@ -63,11 +63,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   function renderPedidosTabla(box, list) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }
     box.innerHTML = `<table><thead><tr>
-        <th>Cliente</th><th>Dirección</th><th>Pedido</th><th>Entrega</th><th>Estado</th><th></th>
+        <th>Cliente</th><th>Dirección</th><th>Localidad</th><th>Pedido</th><th>Entrega</th><th>Estado</th><th></th>
       </tr></thead><tbody>${list.map((p) => `
         <tr>
           <td><b>${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
           <td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : ''}</td>
+          <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${esc(resumenItems(p.items))}</td>
           <td class="small">${p.fechaEntrega ? fmtFecha(p.fechaEntrega) : '<span class="chip chip-pend" style="font-size:10px">A asignar</span>'}</td>
           <td>${ESTADO_CHIP[p.estado] || p.estado}</td>
@@ -94,6 +95,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="form-grid">
           <div class="field col-2"><label>Cliente *</label><input id="f-cli" value="${esc(p ? p.cliente : '')}" placeholder="Nombre del cliente / comercio"/></div>
           <div class="field col-2"><label>Dirección de entrega *</label><input id="f-dir" value="${esc(p ? p.direccion : '')}" placeholder="Calle 1234, Localidad"/></div>
+          <div class="field"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : '')}" placeholder="Se completa al elegir la dirección"/></div>
           <div class="field"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : '')}" placeholder="Calle A y Calle B"/></div>
           <div class="field"><label>Teléfono</label><input id="f-tel" value="${esc(p ? p.telefono : '')}" placeholder="11 5555-5555"/></div>
           <div class="field"><label>Fecha de entrega</label><input id="f-fec" type="date" value="${esc(p ? p.fechaEntrega : '')}"/>
@@ -150,6 +152,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           btn.disabled = false; btn.textContent = prev;
           if (g) {
             node.querySelector('#f-coord').value = g.lat.toFixed(6) + ', ' + g.lng.toFixed(6);
+            if (g.localidad && !node.querySelector('#f-loc').value.trim()) node.querySelector('#f-loc').value = g.localidad;
             toast('Dirección ubicada ✓', 'ok');
           } else {
             toast('No se pudo ubicar la dirección. Revisala o cargá las coordenadas a mano.', 'err');
@@ -159,6 +162,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         if (GDO.Geo && GDO.Geo.attachAutocomplete) {
           GDO.Geo.attachAutocomplete(node.querySelector('#f-dir'), (it) => {
             if (it.lat != null) node.querySelector('#f-coord').value = it.lat.toFixed(6) + ', ' + it.lng.toFixed(6);
+            if (it.localidad) node.querySelector('#f-loc').value = it.localidad;
           }, { provincia: 'Buenos Aires', departamento: 'Hurlingham' });
         }
 
@@ -173,12 +177,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             btn.disabled = true; btn.textContent = 'Ubicando…';
             const g = await GDO.Geo.geocode(dir);
             btn.disabled = false; btn.textContent = prev;
-            if (g) coord = { lat: g.lat, lng: g.lng };
+            if (g) { coord = { lat: g.lat, lng: g.lng }; if (g.localidad && !node.querySelector('#f-loc').value.trim()) node.querySelector('#f-loc').value = g.localidad; }
             else toast('No se pudo ubicar la dirección. El pedido se guarda, ubicalo luego con 📍.', 'err');
           }
           const clean = items.filter((i) => i.producto.trim());
           const data = {
             id: p ? p.id : undefined, cliente: cli, direccion: dir,
+            localidad: node.querySelector('#f-loc').value.trim(),
             entrecalles: node.querySelector('#f-ec').value.trim(),
             telefono: node.querySelector('#f-tel').value.trim(),
             fechaEntrega: node.querySelector('#f-fec').value,
