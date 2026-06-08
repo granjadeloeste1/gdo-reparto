@@ -154,6 +154,80 @@ window.GDO = window.GDO || {};
     render();
   };
 
+  /* ---------- Botón "Instalar app" (solo celular, se va al instalar) ---------- */
+  function setupInstall() {
+    // Si ya está instalada (se abrió desde el ícono), corre en modo standalone:
+    // ahí NUNCA mostramos el botón.
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (standalone) return;
+    const ua = navigator.userAgent || '';
+    const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isAndroid = /android/i.test(ua);
+    if (!isIOS && !isAndroid) return;                 // solo en celular
+    if (sessionStorage.getItem('gdo_install_off')) return; // ya lo cerró/instaló en esta sesión
+
+    let deferred = null, btn = null;
+
+    function hide() { if (btn) { btn.remove(); btn = null; } }
+    function makeBtn(onTap) {
+      if (btn) return btn;
+      btn = document.createElement('button');
+      btn.id = 'gdo-install';
+      btn.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9999;background:#F58220;color:#fff;border:none;border-radius:999px;padding:13px 20px;font:600 15px/1 Inter,system-ui,sans-serif;box-shadow:0 6px 22px rgba(0,0,0,.28);cursor:pointer;display:flex;align-items:center;gap:10px';
+      const label = document.createElement('span');
+      label.textContent = '📲 Instalar app';
+      const x = document.createElement('span');
+      x.textContent = '✕';
+      x.style.cssText = 'opacity:.85;font-size:14px;padding:0 2px';
+      x.onclick = (e) => { e.stopPropagation(); sessionStorage.setItem('gdo_install_off', '1'); hide(); };
+      btn.appendChild(label); btn.appendChild(x);
+      btn.onclick = onTap;
+      document.body.appendChild(btn);
+      return btn;
+    }
+
+    function iosHelp() {
+      const o = document.createElement('div');
+      o.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center';
+      o.innerHTML = '<div style="background:#fff;border-radius:18px 18px 0 0;max-width:430px;width:100%;padding:22px 22px 32px;font:400 15px/1.5 Inter,system-ui,sans-serif;color:#1a1a1a">'
+        + '<div style="font-weight:700;font-size:17px;margin-bottom:12px">Instalar en tu iPhone</div>'
+        + '<ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px">'
+        + '<li>Abrí esta página en <b>Safari</b>.</li>'
+        + '<li>Tocá <b>Compartir</b> ⬆️ (abajo, el cuadrado con la flecha).</li>'
+        + '<li>Deslizá y tocá <b>«Agregar a inicio»</b>.</li>'
+        + '<li>Tocá <b>Agregar</b>. ¡Listo!</li>'
+        + '</ol>'
+        + '<button id="ios-ok" style="margin-top:18px;width:100%;background:#F58220;color:#fff;border:none;border-radius:12px;padding:13px;font:600 15px Inter,system-ui,sans-serif;cursor:pointer">Entendido</button>'
+        + '</div>';
+      document.body.appendChild(o);
+      const close = () => o.remove();
+      o.querySelector('#ios-ok').onclick = close;
+      o.onclick = (e) => { if (e.target === o) close(); };
+    }
+
+    if (isAndroid) {
+      // Chrome avisa cuándo se puede instalar; recién ahí mostramos el botón.
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferred = e;
+        makeBtn(async () => {
+          if (!deferred) return;
+          deferred.prompt();
+          await deferred.userChoice.catch(() => {});
+          deferred = null;
+          hide();
+        });
+      });
+    } else if (isIOS) {
+      // iOS no permite instalación automática: mostramos el botón con el paso a paso.
+      makeBtn(iosHelp);
+    }
+
+    // Al instalarse, se va y no vuelve.
+    window.addEventListener('appinstalled', () => { sessionStorage.setItem('gdo_install_off', '1'); hide(); });
+  }
+  setupInstall();
+
   window.addEventListener('hashchange', render);
   // Pedidos entrantes desde la tienda online (otra pestaña/mismo navegador).
   window.addEventListener('storage', (e) => {
