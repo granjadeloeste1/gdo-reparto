@@ -108,11 +108,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <option value="alta"${p&&p.prioridad==='alta'?' selected':''}>Alta</option>
             </select></div>
           <div class="field"><label>Ubicación en el mapa (lat, lng)</label>
-            <div style="display:flex;gap:8px">
-              <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa al ubicar la dirección" style="flex:1"/>
-              <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="white-space:nowrap">📍 Ubicar</button>
-            </div>
-            <span class="help">Se ubica sola desde la dirección al guardar. También podés tocar “Ubicar” para verlo antes.</span></div>
+            <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
+            <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>
+            <span class="help">Se ubica sola desde la dirección al guardar. Si estás parado en el lugar de entrega, tocá “Usar mi ubicación actual” para fijar el punto exacto.</span></div>
           <div class="field col-2"><label>Pedido (productos)</label><div id="f-items"></div>
             <button class="btn btn-ghost btn-sm" id="f-additem" style="align-self:flex-start;margin-top:6px">+ Agregar producto</button></div>
           <div class="field col-2"><label>Comentarios / especificaciones de entrega</label>
@@ -142,21 +140,27 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           return null;
         };
 
-        node.querySelector('#f-geo').onclick = async () => {
-          const dir = node.querySelector('#f-dir').value.trim();
-          if (!dir) { toast('Escribí la dirección primero', 'err'); return; }
+        // Tomar la ubicación GPS del dispositivo (ideal cuando el vendedor está
+        // parado en la puerta del cliente: fija el punto exacto de entrega).
+        node.querySelector('#f-geo').onclick = () => {
           const btn = node.querySelector('#f-geo');
+          if (!navigator.geolocation) { toast('Este dispositivo no permite ubicación', 'err'); return; }
           const prev = btn.textContent;
           btn.disabled = true; btn.textContent = 'Ubicando…';
-          const g = GDO.Geo ? await GDO.Geo.geocode(dir) : null;
-          btn.disabled = false; btn.textContent = prev;
-          if (g) {
-            node.querySelector('#f-coord').value = g.lat.toFixed(6) + ', ' + g.lng.toFixed(6);
-            if (g.localidad && !node.querySelector('#f-loc').value.trim()) node.querySelector('#f-loc').value = g.localidad;
-            toast('Dirección ubicada ✓', 'ok');
-          } else {
-            toast('No se pudo ubicar la dirección. Revisala o cargá las coordenadas a mano.', 'err');
-          }
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              btn.disabled = false; btn.textContent = prev;
+              node.querySelector('#f-coord').value = pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6);
+              toast('Ubicación actual fijada ✓', 'ok');
+            },
+            (err) => {
+              btn.disabled = false; btn.textContent = prev;
+              toast(err && err.code === 1
+                ? 'Permiso de ubicación denegado. Activalo para usar tu ubicación.'
+                : 'No se pudo obtener tu ubicación. Probá de nuevo o cargá la dirección.', 'err');
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
         };
 
         if (GDO.Geo && GDO.Geo.attachAutocomplete) {
