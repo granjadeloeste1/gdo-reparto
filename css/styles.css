@@ -175,11 +175,15 @@ textarea{resize:vertical;min-height:74px}
 .notif-pop{position:absolute;top:56px;right:22px;width:360px;max-width:90vw;background:#fff;border:1px solid var(--gris-bd);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.2);z-index:60;overflow:hidden}
 .notif-pop .nh{padding:12px 16px;border-bottom:1px solid var(--gris-bd);display:flex;justify-content:space-between;align-items:center}
 .notif-list{max-height:380px;overflow:auto}
-.notif-item{padding:12px 16px;border-bottom:1px solid var(--gris-cl);display:flex;gap:10px}
+.notif-item{padding:12px 16px;border-bottom:1px solid var(--gris-cl);display:flex;gap:10px;align-items:flex-start}
 .notif-item.unread{background:#fff8f0}
 .notif-item .dot{width:9px;height:9px;border-radius:50%;background:var(--naranja);margin-top:5px;flex-shrink:0}
+.notif-item .notif-tx{flex:1;min-width:0}
 .notif-item .tx{font-size:13px}
 .notif-item .ts{font-size:11px;color:var(--gris);margin-top:3px}
+.notif-item .notif-del{flex-shrink:0;width:26px;height:26px;border:none;background:transparent;color:var(--gris);font-size:14px;line-height:1;border-radius:7px;cursor:pointer}
+.notif-item .notif-del:hover{background:#fde8e8;color:#d33}
+.notif-pop .nh-acc{display:flex;gap:4px}
 .empty{padding:30px;text-align:center;color:var(--gris);font-size:14px}
 
 /* ---------- Mapa / ruteo ---------- */

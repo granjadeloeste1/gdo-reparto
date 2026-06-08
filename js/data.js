@@ -295,6 +295,19 @@ window.GDO = window.GDO || {};
       db.notificaciones.forEach((n) => { if (n.paraUserId === userId && !n.leida) { n.leida = true; fsSet('notificaciones', n); } });
       persist(db);
     },
+    borrarNotif(id) {
+      const i = db.notificaciones.findIndex((n) => n.id === id);
+      if (i < 0) return;
+      db.notificaciones.splice(i, 1); persist(db); fsDel('notificaciones', id);
+    },
+    borrarNotifsDe(userId) {
+      const quedan = [];
+      db.notificaciones.forEach((n) => {
+        if (n.paraUserId === userId) fsDel('notificaciones', n.id);
+        else quedan.push(n);
+      });
+      db.notificaciones = quedan; persist(db);
+    },
 
     // ----- depósito -----
     depot: () => db.depot,

@@ -123,16 +123,26 @@ window.GDO = window.GDO || {};
     if (ex) { ex.remove(); return; }
     const list = Store.notifDe(u.id);
     const pop = h(`<div class="notif-pop">
-      <div class="nh"><b>Notificaciones</b>${list.length ? '<button class="btn btn-ghost btn-sm" id="n-read">Marcar leídas</button>' : ''}</div>
+      <div class="nh"><b>Notificaciones</b>${list.length ? '<span class="nh-acc"><button class="btn btn-ghost btn-sm" id="n-read">Marcar leídas</button><button class="btn btn-ghost btn-sm" id="n-clear">Borrar todas</button></span>' : ''}</div>
       <div class="notif-list">${list.length ? list.map((n) => `
         <div class="notif-item ${n.leida ? '' : 'unread'}">
           ${n.leida ? '' : '<div class="dot"></div>'}
-          <div><div class="tx">${esc(n.mensaje)}</div><div class="ts">${hace(n.ts)}</div></div>
+          <div class="notif-tx"><div class="tx">${esc(n.mensaje)}</div><div class="ts">${hace(n.ts)}</div></div>
+          <button class="notif-del" data-id="${n.id}" title="Borrar" aria-label="Borrar">✕</button>
         </div>`).join('') : '<div class="empty">Sin notificaciones.</div>'}</div>
     </div>`);
     document.body.appendChild(pop);
     const rb = pop.querySelector('#n-read');
     if (rb) rb.onclick = () => { Store.marcarLeidas(u.id); pop.remove(); render(); };
+    const cb = pop.querySelector('#n-clear');
+    if (cb) cb.onclick = () => { Store.borrarNotifsDe(u.id); pop.remove(); render(); };
+    pop.querySelectorAll('.notif-del').forEach((b) => {
+      b.onclick = (ev) => {
+        ev.stopPropagation();
+        Store.borrarNotif(b.getAttribute('data-id'));
+        pop.remove(); toggleNotif(u); render();
+      };
+    });
     setTimeout(() => document.addEventListener('click', function cls(e) {
       if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('click', cls); }
     }), 0);
