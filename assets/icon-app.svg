@@ -10,29 +10,31 @@
   <!-- Fondo naranja de marca (full-bleed para icono maskable) -->
   <rect width="512" height="512" fill="#F58220"/>
 
-  <!-- Isotipo (pollo) de Granja del Oeste + sus 3 puntos, tal cual el isologo -->
-  <g transform="translate(140,40) scale(1.05)">
+  <!-- Caminito de puntos: curva (valle) por abajo que une el pin con el pollo -->
+  <g class="dot">
+    <circle cx="138" cy="298" r="9"/>
+    <circle cx="132" cy="335" r="9"/>
+    <circle cx="146" cy="369" r="9"/>
+    <circle cx="176" cy="396" r="9"/>
+    <circle cx="214" cy="414" r="9"/>
+    <circle cx="256" cy="422" r="9"/>
+    <circle cx="300" cy="420" r="9"/>
+    <circle cx="340" cy="406" r="9"/>
+    <circle cx="372" cy="381" r="9"/>
+    <circle cx="392" cy="347" r="9"/>
+    <circle cx="398" cy="310" r="9"/>
+  </g>
+
+  <!-- Pin de ubicación (izquierda): blanco con punto rojo de marca -->
+  <path d="M140,280 C 92,214 84,198 84,158 a 56 56 0 1 1 112 0 C 196,198 188,214 140,280 Z" fill="#ffffff"/>
+  <circle cx="140" cy="158" r="23" fill="#e30613"/>
+
+  <!-- Isotipo (pollo) original de Granja del Oeste, a la derecha mirando a la izquierda -->
+  <g transform="translate(222,68) scale(1.0)">
     <path class="c3" d="M37.08,24.61s6.21-12.41,16.14-10.92c0,0-3.48,2.36-3.48,5.4,0,0,7.45-2.67,17.38-1.43,9.93,1.24,13.91-2.98,13.91-2.98,0,0-2.73,31.04-43.96,9.93"/>
     <path class="c0" d="M173.13,88.64s-69.18-58.12-114.01,0c0,0-24.25,36.16,8.08,85.51,0,0,14.46-60.83,105.92-49.77,0,0-28.93-31.88-76.57-9.56,0,0,17.87-23.62,76.57-10.43,0,0-44.24-29.18-80.83-10.97,0,0,20.42-23.91,80.83-4.77"/>
     <path class="c0" d="M36.58,29.51s11.49,13.23,2.98,64.47c-8.51,51.24,21.27,80.16,21.27,80.16,0,0-42.97-74.85,14.89-105.27,0,0-5.95-31.28-39.14-39.36"/>
     <path class="c1" d="M32.57,29.79s-10.1-2.77-17.1,1.95c0,0,18.89,9.61,23.45,18.56,0,0-1.47-11.07-6.35-20.51"/>
     <path class="c3" d="M38.92,54.91s3.3,29.21-8.16,29.21-3.64-23.66,8.16-29.21"/>
-    <!-- Los 3 puntos propios del isologo -->
-    <circle class="dot" cx="59.31"  cy="185.93" r="7.54"/>
-    <circle class="dot" cx="79.95"  cy="185.93" r="7.54"/>
-    <circle class="dot" cx="102.22" cy="185.93" r="7.54"/>
   </g>
-
-  <!-- El caminito sigue de corrido con una curva hasta abajo -->
-  <circle class="dot" cx="255" cy="262" r="8"/>
-  <circle class="dot" cx="258" cy="288" r="8"/>
-  <circle class="dot" cx="262" cy="314" r="8"/>
-  <circle class="dot" cx="268" cy="340" r="8"/>
-  <circle class="dot" cx="277" cy="365" r="8"/>
-  <circle class="dot" cx="292" cy="386" r="8"/>
-  <circle class="dot" cx="312" cy="400" r="8"/>
-
-  <!-- Punto de destino: pin blanco con punto rojo de marca -->
-  <path d="M330,408 C 294,358 288,346 288,330 a 42 42 0 1 1 84 0 C 372,346 366,358 330,408 Z" fill="#ffffff"/>
-  <circle cx="330" cy="330" r="18" fill="#e30613"/>
 </svg>
