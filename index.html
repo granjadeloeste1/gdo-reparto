@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
   <title>GDO Reparto — Granja del Oeste</title>
   <meta name="theme-color" content="#F58220"/>
   <link rel="icon" type="image/svg+xml" href="assets/isotipo-color.svg"/>
@@ -40,6 +40,12 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('sw.js').catch(function () {});
+      });
+      // Cuando se activa una versión nueva, recargar UNA vez para que el celular
+      // nunca quede pegado a una versión vieja en caché.
+      var _gdoReloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (_gdoReloaded) return; _gdoReloaded = true; window.location.reload();
       });
     }
   </script>

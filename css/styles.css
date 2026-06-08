@@ -20,7 +20,7 @@
   --sans:'Inter','Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
 }
 *{box-sizing:border-box}
-html,body{margin:0;padding:0}
+html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden}
 body{
   font-family:var(--sans);
   color:var(--negro);
@@ -200,11 +200,13 @@ textarea{resize:vertical;min-height:74px}
 .route-summary .it .l{font-size:12px;color:var(--gris);font-weight:600}
 
 /* ---------- Vista chofer (mobile) ---------- */
-.driver{max-width:520px;margin:0 auto;min-height:100vh;background:#fff;display:flex;flex-direction:column}
-.driver-top{background:var(--negro);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:30}
+.driver{max-width:520px;margin:0 auto;min-height:100vh;background:#fff;display:flex;flex-direction:column;width:100%}
+/* En el celular los textos largos de botón deben CORTAR línea, no desbordar la pantalla */
+.driver .btn{white-space:normal;line-height:1.25;min-width:0;word-break:break-word}
+.driver-top{background:var(--negro);color:#fff;padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top));display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:30}
 .driver-top img{height:30px}
 .driver-top .logout{background:#2a2a2d;color:#fff;border:0;border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer}
-.driver-body{flex:1;padding:14px 14px 90px}
+.driver-body{flex:1;padding:14px 14px;padding-bottom:calc(100px + env(safe-area-inset-bottom))}
 .route-pill{background:linear-gradient(135deg,var(--naranja),var(--naranja-osc));color:#fff;border-radius:16px;padding:16px;margin-bottom:14px}
 .route-pill h3{font-size:18px}
 .route-pill .meta{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap}
@@ -221,7 +223,8 @@ textarea{resize:vertical;min-height:74px}
 .dstop .eta{font-size:13px;color:var(--naranja-osc);font-weight:700;margin-top:8px}
 .dstop .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 .dstop .acts .full{grid-column:1/-1}
-.driver-foot{position:fixed;bottom:0;left:0;right:0;max-width:520px;margin:0 auto;background:#fff;border-top:1px solid var(--gris-bd);padding:12px 14px;display:flex;gap:10px}
+.driver-foot{position:fixed;bottom:0;left:0;right:0;max-width:520px;margin:0 auto;background:#fff;border-top:1px solid var(--gris-bd);padding:12px 14px;padding-bottom:calc(12px + env(safe-area-inset-bottom));display:flex;gap:10px}
+.driver-foot .btn{flex:1;min-width:0;font-size:14px;padding:13px 8px;text-align:center}
 .gps-line{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--gris);margin-bottom:12px}
 .gps-dot{width:9px;height:9px;border-radius:50%;background:var(--verde);box-shadow:0 0 0 4px #2e9e5b22;animation:pulse 1.6s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 #2e9e5b55}70%{box-shadow:0 0 0 8px #2e9e5b00}100%{box-shadow:0 0 0 0 #2e9e5b00}}

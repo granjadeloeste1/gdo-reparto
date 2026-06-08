@@ -119,8 +119,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <div id="d-stops"></div>
           </div>
           ${aceptada && ruta.estado !== 'finalizada' ? `<div class="driver-foot">
-            <a class="btn btn-dark btn-lg" style="flex:1" id="d-nav" target="_blank">🧭 Navegar a la próxima parada</a>
-            <button class="btn btn-verde btn-lg" id="d-fin" style="flex:1">Finalizar ruta</button>
+            <a class="btn btn-dark" id="d-nav" target="_blank">🧭 Navegar</a>
+            <button class="btn btn-verde" id="d-fin">Finalizar ruta</button>
           </div>` : ''}
         </div>`;
 
@@ -145,9 +145,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const cur = curId ? Store.pedido(curId) : null;
       const nav = mount.querySelector('#d-nav');
       if (nav) {
-        if (cur && (cur.direccion || cur.lat != null)) { nav.href = Route.navStop(cur); nav.textContent = `🧭 Navegar a la próxima parada (${esc(cur.cliente)})`; nav.style.opacity = ''; nav.style.pointerEvents = ''; }
-        else if (allResolved && retNav !== '#') { nav.href = retNav; nav.textContent = '🧭 Volver al punto final (depósito)'; nav.style.opacity = ''; nav.style.pointerEvents = ''; }
-        else { nav.href = '#'; nav.textContent = '🧭 No hay próxima parada'; nav.style.opacity = '.5'; nav.style.pointerEvents = 'none'; }
+        if (cur && (cur.direccion || cur.lat != null)) { nav.href = Route.navStop(cur); nav.textContent = `🧭 Navegar a ${esc((cur.cliente || '').split(' ')[0])}`; nav.style.opacity = ''; nav.style.pointerEvents = ''; }
+        else if (allResolved && retNav !== '#') { nav.href = retNav; nav.textContent = '🧭 Volver al depósito'; nav.style.opacity = ''; nav.style.pointerEvents = ''; }
+        else { nav.href = '#'; nav.textContent = '🧭 Sin parada'; nav.style.opacity = '.5'; nav.style.pointerEvents = 'none'; }
       }
 
       // paradas
