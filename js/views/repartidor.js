@@ -31,7 +31,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   function driverTop(me, back) {
     return `<div class="driver-top">
-      ${back ? '<button class="logout" id="d-back">←</button>' : '<img src="assets/logo-horizontal-blanco.svg" alt="GDO"/>'}
+      ${back ? '<button class="logout" id="d-back">← Atrás</button>' : '<img src="assets/logo-horizontal-blanco.svg" alt="GDO"/>'}
       <span style="font-weight:700;font-size:14px">${back ? '' : esc(me.nombre.split(' ')[0])}</span>
       <button class="logout" id="d-logout">Salir</button>
     </div>`;
@@ -138,7 +138,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       // ¿ya están resueltas todas las paradas? entonces la próxima "parada" es
       // el regreso al punto final (depósito).
       const allResolved = ord.length > 0 && ord.every((p) => ruta.progreso[p.id] === 'entregado' || ruta.progreso[p.id] === 'no_entregado');
-      const retNav = (ruta.destino && ruta.destino.lat != null) ? `https://www.google.com/maps/dir/?api=1&destination=${ruta.destino.lat},${ruta.destino.lng}&travelmode=driving` : '#';
+      // Punto de regreso robusto: destino → si no tiene coords, el origen → si
+      // tampoco, el depósito. Así el regreso SIEMPRE es un destino navegable y la
+      // app no se queda "pegada" en el último pedido.
+      const retPoint = (ruta.destino && ruta.destino.lat != null) ? ruta.destino
+        : (ruta.origen && ruta.origen.lat != null) ? ruta.origen
+        : (Store.depot && Store.depot().lat != null ? Store.depot() : null);
+      const retNav = retPoint ? `https://www.google.com/maps/dir/?api=1&destination=${retPoint.lat},${retPoint.lng}&travelmode=driving` : '#';
 
       // navegación del pie: SOLO la parada actual (no todo el recorrido). Al
       // volver de Maps, el chofer confirma y la próxima pasa a ser la actual.
@@ -179,10 +185,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       }).join('') + `
         <div class="dstop final ${allResolved && aceptada && ruta.estado !== 'finalizada' ? 'cur' : ''}">
           <div class="hd"><div style="display:flex;gap:10px"><div class="seq">🏁</div>
-            <div><div class="cli">Volver al punto final</div><div class="dir">${esc(ruta.destino.nombre || 'Depósito')}</div></div></div>
+            <div><div class="cli">Volver al punto final</div><div class="dir">${esc((retPoint && retPoint.nombre) || ruta.destino.nombre || 'Depósito')}</div></div></div>
             ${ruta.estado === 'finalizada' ? '<span class="chip chip-entreg">✓ Ruta finalizada</span>' : ''}</div>
           <div class="eta">⏱ Regreso estimado ${fmtHora(calc.regresoMin)}</div>
-          ${allResolved && aceptada && ruta.estado !== 'finalizada' ? `<div class="acts">
+          ${aceptada && ruta.estado !== 'finalizada' ? `<div class="acts">
               <a class="btn btn-dark full" href="${retNav}" target="_blank"${retNav === '#' ? ' style="opacity:.5;pointer-events:none"' : ''}>🧭 Navegar al depósito</a>
               <button class="btn btn-verde full" data-volvi>✓ Llegué al depósito · finalizar ruta</button>
             </div>` : ''}
