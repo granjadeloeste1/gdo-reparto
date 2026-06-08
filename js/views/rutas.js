@@ -31,7 +31,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td><b>${esc(r.nombre)}</b></td><td class="small">${fmtFecha(r.fecha)}</td>
           <td class="small">${rep ? esc(rep.nombre) : '<span class="muted">—</span>'}</td>
           <td class="small">${veh ? esc(veh.nombre) : '<span class="muted">—</span>'}</td>
-          <td>${r.pedidoIds.length}</td><td>${ESTADO_RUTA[r.estado] || r.estado}</td>
+          <td>${r.pedidoIds.length}</td>
+          <td>${ESTADO_RUTA[r.estado] || r.estado}${(() => {
+            const pr = r.progreso || {};
+            const e = r.pedidoIds.filter((id) => pr[id] === 'entregado').length;
+            const n = r.pedidoIds.filter((id) => pr[id] === 'no_entregado').length;
+            return (e || n) ? `<div class="small muted" style="margin-top:4px">✓ ${e} entregados${n ? ` · ✕ ${n} no` : ''} de ${r.pedidoIds.length}</div>` : '';
+          })()}</td>
           <td class="t-actions">
             <button class="btn btn-ghost btn-sm" data-open="${r.id}">Abrir</button>
             <button class="btn btn-ghost btn-sm" data-del="${r.id}">🗑</button>
@@ -176,15 +182,23 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </div>`;
       $('#r-stops').innerHTML = `
         <div class="stop depot"><div class="seq">A</div><div class="body"><div class="cli">${esc(ruta.origen.nombre)}</div><div class="dir">Salida ${fmtHora(calc.salidaMin)}</div></div></div>
-        ${orden.map((p, i) => `
+        ${orden.map((p, i) => {
+          const st = ruta.progreso && ruta.progreso[p.id];
+          const stChip = st === 'entregado' ? ' <span class="chip chip-entreg">✓ Entregado</span>'
+            : st === 'no_entregado' ? ' <span class="chip chip-no">✕ No entregado</span>'
+            : st === 'salteado' ? ' <span class="chip chip-salt">↷ Salteado</span>' : '';
+          const noEnt = st === 'no_entregado' ? (p.historia || []).slice().reverse().find((e) => e.est === 'no_entregado' && e.detalle) : null;
+          return `
           <div class="stop"><div class="seq">${i+1}</div>
-            <div class="body"><div class="cli">${esc(p.cliente)}</div><div class="dir">${esc(p.direccion)}</div>
+            <div class="body"><div class="cli">${esc(p.cliente)}${stChip}</div><div class="dir">${esc(p.direccion)}</div>
+              ${noEnt ? `<div class="small" style="color:#c62828;margin-top:4px">Motivo: ${esc(noEnt.detalle)}</div>` : ''}
               <div style="margin-top:6px;display:flex;align-items:center;gap:6px">
                 <span class="small muted">Demora:</span>
                 <input type="number" min="0" data-dem="${p.id}" value="${ruta.demoraPorId[p.id]!=null?ruta.demoraPorId[p.id]:ruta.demoraDefaultMin}" style="width:70px;padding:5px 8px"/>
                 <span class="small muted">min</span>
               </div></div>
-            <div class="eta">${fmtHora(calc.llegada[i])}</div></div>`).join('')}
+            <div class="eta">${fmtHora(calc.llegada[i])}</div></div>`;
+        }).join('')}
         <div class="stop depot"><div class="seq">B</div><div class="body"><div class="cli">${esc(ruta.destino.nombre)}</div><div class="dir">Regreso ${fmtHora(calc.regresoMin)}</div></div></div>`;
       $('#r-stops').querySelectorAll('[data-dem]').forEach((el) => el.onchange = () => {
         ruta.demoraPorId[el.dataset.dem] = Math.max(0, +el.value || 0); recompute();
