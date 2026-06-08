@@ -7,8 +7,8 @@
     .dot { fill: #fff; }
   </style>
 
-  <!-- Fondo naranja de marca (full-bleed para icono maskable) -->
-  <rect width="512" height="512" fill="#F58220"/>
+  <!-- Fondo negro de marca (full-bleed para icono maskable) -->
+  <rect width="512" height="512" fill="#0f0f0f"/>
 
   <!-- Caminito: curva cerrada que sale de los puntos del isologo y sube
        hasta el destino, adelante de la mirada del pollo -->
