@@ -33,6 +33,11 @@ window.GDO = window.GDO || {};
     FB.app = firebase.initializeApp(cfg);
     FB.db = firebase.firestore();
     FB.auth = firebase.auth();
+    // Persistencia local (IndexedDB): los pedidos se guardan al instante en el
+    // dispositivo y se sincronizan solos. Clave para la tienda: aunque el
+    // cliente salte a WhatsApp ni bien toca "Enviar", la escritura queda en
+    // cola durable y llega igual (no se pierde por navegar de página).
+    try { FB.db.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
   } catch (e) {
     console.warn('[GDO] No se pudo iniciar Firebase — modo local.', e);
     finish(false);

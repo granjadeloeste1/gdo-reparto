@@ -594,12 +594,16 @@ render();
       try{ localStorage.setItem(INBOX, JSON.stringify(inbox)); }catch(e){}
     }
     // Con Firebase: escribe directo a Firestore para que el admin lo vea desde
-    // cualquier dispositivo. Sin Firebase (offline): cae a la cola local.
-    if(window.GDO && GDO.FB && GDO.FB.ready){
-      GDO.FB.ready.then(function(en){
-        if(en && GDO.FB.db){ try{ GDO.FB.db.collection('pedidos').doc(pedido.id).set(pedido); return; }catch(e){} }
-        pushInbox(pedido);
-      });
+    // cualquier dispositivo. Si ya está listo (caso normal tras cargar), escribe
+    // YA MISMO dentro del clic — antes de que se abra WhatsApp y la página se
+    // vaya — y la persistencia local garantiza que la escritura no se pierda.
+    // Si todavía no está listo, deja copia local y reintenta al estar listo.
+    function fsWrite(p){ try{ GDO.FB.db.collection('pedidos').doc(p.id).set(p); return true; }catch(e){ return false; } }
+    if(window.GDO && GDO.FB && GDO.FB.enabled && GDO.FB.db){
+      if(!fsWrite(pedido)) pushInbox(pedido);
+    } else if(window.GDO && GDO.FB && GDO.FB.ready){
+      pushInbox(pedido); // respaldo local mientras conecta
+      GDO.FB.ready.then(function(en){ if(en && GDO.FB.db) fsWrite(pedido); });
     } else { pushInbox(pedido); }
   }
   var _send=window.sendWhatsApp;
