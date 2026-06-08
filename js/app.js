@@ -226,8 +226,6 @@ window.GDO = window.GDO || {};
     // Al instalarse, se va y no vuelve.
     window.addEventListener('appinstalled', () => { sessionStorage.setItem('gdo_install_off', '1'); hide(); });
   }
-  setupInstall();
-
   window.addEventListener('hashchange', render);
   // Pedidos entrantes desde la tienda online (otra pestaña/mismo navegador).
   window.addEventListener('storage', (e) => {
@@ -237,5 +235,8 @@ window.GDO = window.GDO || {};
   window.addEventListener('DOMContentLoaded', () => {
     if (!location.hash || location.hash === '#/inicio') location.hash = landingHash();
     render();
+    // El botón "Instalar" va al final y blindado: si algo falla en un celular,
+    // JAMÁS puede impedir que la app se dibuje ni que los botones respondan.
+    try { setupInstall(); } catch (_) {}
   });
 })();
