@@ -482,6 +482,8 @@ render();
         <div class="fg">
           <label>DirecciÃ³n / Localidad</label>
           <input id="cAddr" type="text" placeholder="Calle, nÃºmero, localidad" oninput="saveForm()">
+          <button type="button" id="cGeo" style="margin-top:8px;width:100%;background:#F58220;color:#fff;border:none;border-radius:10px;padding:12px;font:600 14px/1.2 inherit;cursor:pointer">&#128205; Usar mi ubicaci&oacute;n actual</button>
+          <div id="cGeoMsg" style="margin-top:6px;font-size:12.5px;line-height:1.4"></div>
         </div>
         <div class="fg">
           <label>Forma de pago</label>
@@ -529,7 +531,7 @@ render();
 
   // Autocompletado de dirección (Georef AR): al elegir una sugerencia guarda
   // las coordenadas para que el pedido llegue ya ubicado a la app de reparto.
-  var picked=null;
+  var picked=null, gpsCoord=null;
   (function initAuto(){
     var inp=document.getElementById('cAddr');
     if(inp && window.GDO && GDO.Geo && GDO.Geo.attachAutocomplete){
@@ -537,6 +539,25 @@ render();
         if(it && it.lat!=null) picked={ direccion: it.direccion||it.label, lat: it.lat, lng: it.lng, localidad: it.localidad||'' };
       }, { provincia:'Buenos Aires', departamento:'Hurlingham' });
       inp.addEventListener('input', function(){ picked=null; });
+    }
+    // Boton "Usar mi ubicacion actual": fija el punto EXACTO de entrega con el
+    // GPS del cliente. Asi el reparto llega a la puerta aunque la direccion
+    // escrita sea imprecisa.
+    var gb=document.getElementById('cGeo'), gm=document.getElementById('cGeoMsg');
+    if(gb){
+      gb.addEventListener('click', function(){
+        if(!navigator.geolocation){ if(gm){ gm.style.color='#f87171'; gm.textContent='Tu dispositivo no permite ubicacion.'; } return; }
+        var prev=gb.innerHTML; gb.disabled=true; gb.innerHTML='Ubicando…';
+        if(gm){ gm.style.color='#999'; gm.textContent='Obteniendo tu ubicacion…'; }
+        navigator.geolocation.getCurrentPosition(function(pos){
+          gb.disabled=false; gb.innerHTML=prev;
+          gpsCoord={ lat: pos.coords.latitude, lng: pos.coords.longitude };
+          if(gm){ gm.style.color='#25D366'; gm.textContent='✓ Ubicacion fijada. El reparto llegara al punto exacto.'; }
+        }, function(err){
+          gb.disabled=false; gb.innerHTML=prev;
+          if(gm){ gm.style.color='#f87171'; gm.textContent=(err&&err.code===1)?'Permiso de ubicacion denegado. Activalo para usar tu ubicacion.':'No se pudo obtener tu ubicacion. Proba de nuevo.'; }
+        }, { enableHighAccuracy:true, timeout:10000, maximumAge:0 });
+      });
     }
   })();
 
@@ -547,6 +568,8 @@ render();
     var addr=val2('cAddr').trim(), pay=val2('cPay'), notes=val2('cNotes').trim();
     var lat=null, lng=null, localidad='';
     if(picked && picked.direccion && addr && picked.direccion.toLowerCase()===addr.toLowerCase()){ lat=picked.lat; lng=picked.lng; localidad=picked.localidad||''; }
+    // El GPS del cliente tiene prioridad: es el punto exacto de entrega.
+    if(gpsCoord){ lat=gpsCoord.lat; lng=gpsCoord.lng; }
     var items=cart.map(function(l){
       return { producto: l.name+(l.brand?' ('+l.brand+')':''), cantidad: l.qty,
                unidad: (typeof unitLabel==='function'? unitLabel(l.unit,l.qty): l.unit),
