@@ -86,8 +86,9 @@ button{font-family:inherit}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .topbar{
   background:#fff;border-bottom:1px solid var(--gris-bd);
-  padding:14px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;
-  position:sticky;top:0;z-index:20;
+  padding:14px 22px;padding-top:calc(14px + env(safe-area-inset-top));
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  position:sticky;top:0;z-index:50;
 }
 .topbar h1{font-size:22px}
 .topbar .actions{display:flex;align-items:center;gap:10px}
@@ -172,7 +173,7 @@ textarea{resize:vertical;min-height:74px}
 .demo-users .du button:hover{border-color:var(--naranja);color:var(--naranja-osc)}
 
 /* ---------- Notif dropdown ---------- */
-.notif-pop{position:absolute;top:56px;right:22px;width:360px;max-width:90vw;background:#fff;border:1px solid var(--gris-bd);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.2);z-index:60;overflow:hidden}
+.notif-pop{position:fixed;top:calc(64px + env(safe-area-inset-top));right:16px;width:360px;max-width:92vw;background:#fff;border:1px solid var(--gris-bd);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.2);z-index:80;overflow:hidden}
 .notif-pop .nh{padding:12px 16px;border-bottom:1px solid var(--gris-bd);display:flex;justify-content:space-between;align-items:center}
 .notif-list{max-height:380px;overflow:auto}
 .notif-item{padding:12px 16px;border-bottom:1px solid var(--gris-cl);display:flex;gap:10px;align-items:flex-start}
@@ -245,14 +246,18 @@ textarea{resize:vertical;min-height:74px}
   .route-layout{grid-template-columns:1fr}
   .form-grid{grid-template-columns:1fr}
   .content{padding:16px}
-  .topbar{padding:12px 16px}
+  .topbar{padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top))}
+  .topbar h1{font-size:19px}
+  .panel-b.flush{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{font-size:13px}
+  th,td{padding:10px 12px;white-space:nowrap}
 }
 .mobile-tabbar{display:none}
 @media (max-width:860px){
-  .mobile-tabbar{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--gris-bd);z-index:40}
+  .mobile-tabbar{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--gris-bd);z-index:40;padding-bottom:env(safe-area-inset-bottom)}
   .mobile-tabbar a{flex:1;text-align:center;padding:9px 4px;font-size:11px;color:var(--gris);font-weight:600}
   .mobile-tabbar a .ic{display:block;font-size:19px}
   .mobile-tabbar a.active{color:var(--naranja)}
-  .main{padding-bottom:60px}
+  .main{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 }
 .note{background:#fff7ea;border:1px solid #f3d9a8;color:#8a5a00;border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
