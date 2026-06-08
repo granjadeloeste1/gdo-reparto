@@ -1,0 +1,227 @@
+/* ====== Vistas: Rutas (listado + armador) ====== */
+window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
+(function () {
+  const { Store, Route } = GDO;
+  const { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur } = GDO.UI;
+  const go = (hash) => { location.hash = hash; };
+
+  const ESTADO_RUTA = {
+    borrador: '<span class="chip chip-pend">Borrador</span>',
+    asignada: '<span class="chip chip-asig">Asignada</span>',
+    aceptada: '<span class="chip chip-ruta">Aceptada</span>',
+    en_curso: '<span class="chip chip-ruta">En curso</span>',
+    finalizada: '<span class="chip chip-entreg">Finalizada</span>',
+  };
+  GDO.Views.ESTADO_RUTA = ESTADO_RUTA;
+
+  /* ---------------- Listado de rutas ---------------- */
+  GDO.Views.rutas = function (c) {
+    c.innerHTML = `
+      <div class="section-title"><h2>Rutas de reparto</h2></div>
+      <div class="toolbar"><div class="spacer"></div><button class="btn btn-primary" id="r-new">+ Armar nueva ruta</button></div>
+      <div class="panel"><div class="panel-b flush"><div id="r-tabla"></div></div></div>`;
+    const list = Store.rutas().slice().reverse();
+    const box = c.querySelector('#r-tabla');
+    box.innerHTML = list.length ? `<table><thead><tr>
+        <th>Ruta</th><th>Fecha</th><th>Repartidor</th><th>Vehículo</th><th>Paradas</th><th>Estado</th><th></th>
+      </tr></thead><tbody>${list.map((r) => {
+        const rep = Store.user(r.repartidorId);
+        const veh = Store.vehiculos().find((v) => v.id === r.vehiculoId);
+        return `<tr>
+          <td><b>${esc(r.nombre)}</b></td><td class="small">${fmtFecha(r.fecha)}</td>
+          <td class="small">${rep ? esc(rep.nombre) : '<span class="muted">—</span>'}</td>
+          <td class="small">${veh ? esc(veh.nombre) : '<span class="muted">—</span>'}</td>
+          <td>${r.pedidoIds.length}</td><td>${ESTADO_RUTA[r.estado] || r.estado}</td>
+          <td class="t-actions">
+            <button class="btn btn-ghost btn-sm" data-open="${r.id}">Abrir</button>
+            <button class="btn btn-ghost btn-sm" data-del="${r.id}">🗑</button>
+          </td></tr>`;
+      }).join('')}</tbody></table>` : `<div class="empty">Todavía no hay rutas. Tocá “Armar nueva ruta”.</div>`;
+    box.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => go('#/rutas/' + b.dataset.open));
+    box.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+      confirmDlg('¿Eliminar la ruta? Los pedidos vuelven a “pendiente”.', () => { Store.deleteRuta(b.dataset.del); toast('Ruta eliminada', 'ok'); GDO.App.render(); });
+    });
+    c.querySelector('#r-new').onclick = () => go('#/rutas/nueva');
+  };
+
+  /* ---------------- Armador / editor de ruta ---------------- */
+  GDO.Views.rutaEditor = function (c, rutaId) {
+    const esNueva = rutaId === 'nueva';
+    let ruta = esNueva ? {
+      nombre: 'Ruta ' + new Date().toLocaleDateString('es-AR'),
+      fecha: new Date().toISOString().slice(0, 10),
+      repartidorId: '', vehiculoId: '',
+      origen: { ...Store.depot() }, destino: { ...Store.depot() }, sameAsOrigin: true,
+      pedidoIds: [], orden: [], estado: 'borrador',
+      demoraDefaultMin: 10, salidaMin: Route.SALIDA_DEFAULT, demoraPorId: {},
+      creadaPor: Store.current().id,
+    } : JSON.parse(JSON.stringify(Store.ruta(rutaId)));
+    if (!ruta) { c.innerHTML = '<div class="empty">Ruta no encontrada.</div>'; return; }
+    ruta.demoraPorId = ruta.demoraPorId || {};
+
+    const repartidores = Store.users().filter((u) => u.roles.includes('repartidor') && u.activo);
+    // pedidos elegibles: pendientes + los que ya están en esta ruta
+    const elegibles = Store.pedidos().filter((p) => (p.estado === 'pendiente' || ruta.pedidoIds.includes(p.id)) && p.lat != null);
+
+    c.innerHTML = `
+      <div class="section-title">
+        <h2>${esNueva ? 'Armar ruta' : 'Editar ruta'}</h2>
+        <button class="btn btn-ghost btn-sm" id="r-volver">← Volver</button>
+      </div>
+      <div class="note">Punto A y B fijados al depósito <b>Acuña 1334, Villa Tesei</b>. Podés modificarlos por cualquier inconveniente.</div>
+      <div class="panel"><div class="panel-b">
+        <div class="form-grid">
+          <div class="field"><label>Nombre de la ruta</label><input id="r-nom" value="${esc(ruta.nombre)}"/></div>
+          <div class="field"><label>Fecha</label><input id="r-fec" type="date" value="${esc(ruta.fecha)}"/></div>
+          <div class="field"><label>Repartidor (chofer)</label>
+            <select id="r-rep"><option value="">— Seleccionar —</option>${repartidores.map((u) => `<option value="${u.id}"${u.id===ruta.repartidorId?' selected':''}>${esc(u.nombre)}</option>`).join('')}</select></div>
+          <div class="field"><label>Vehículo</label>
+            <select id="r-veh"><option value="">— Seleccionar —</option>${Store.vehiculos().map((v) => `<option value="${v.id}"${v.id===ruta.vehiculoId?' selected':''}>${esc(v.nombre)} (${esc(v.patente)})</option>`).join('')}</select></div>
+          <div class="field"><label>Salida (hora)</label><input id="r-sal" type="time" value="${fmtHora(ruta.salidaMin)}"/></div>
+          <div class="field"><label>Demora por parada (min)</label><input id="r-dem" type="number" min="0" value="${ruta.demoraDefaultMin}"/>
+            <span class="help">Tiempo estimado de descarga/entrega por cliente.</span></div>
+          <div class="field col-2"><label><input type="checkbox" id="r-same" ${ruta.sameAsOrigin?'checked':''} style="width:auto"/> Finalizar en el mismo punto de salida (depósito)</label></div>
+          <div class="field"><label>Punto A — Salida</label><input id="r-orig" value="${esc(ruta.origen.nombre)}"/>
+            <input id="r-orig-c" value="${ruta.origen.lat}, ${ruta.origen.lng}" class="small" style="margin-top:6px"/></div>
+          <div class="field" id="r-dest-wrap"><label>Punto B — Regreso</label><input id="r-dest" value="${esc(ruta.destino.nombre)}"/>
+            <input id="r-dest-c" value="${ruta.destino.lat}, ${ruta.destino.lng}" class="small" style="margin-top:6px"/></div>
+        </div>
+      </div></div>
+
+      <div class="panel"><div class="panel-h"><h3>Pedidos a incluir</h3><span class="muted small" id="r-count"></span></div>
+        <div class="panel-b flush"><div id="r-peds"></div></div></div>
+
+      <div class="route-layout">
+        <div class="panel"><div class="panel-h"><h3>Mapa de la ruta optimizada</h3><a class="btn btn-ghost btn-sm" id="r-navlink" target="_blank">Abrir en Google Maps ↗</a></div>
+          <div class="panel-b flush"><div id="map" class="mapbox"></div></div></div>
+        <div class="panel"><div class="panel-h"><h3>Orden y tiempos</h3><button class="btn btn-dark btn-sm" id="r-opt">↻ Optimizar</button></div>
+          <div class="panel-b"><div id="r-sumario"></div><div class="stop-list" id="r-stops"></div></div></div>
+      </div>
+
+      <div class="toolbar" style="margin-top:18px">
+        <div class="spacer"></div>
+        <button class="btn btn-ghost" id="r-save">Guardar borrador</button>
+        <button class="btn btn-primary" id="r-asignar">Optimizar y asignar al chofer</button>
+      </div>`;
+
+    const $ = (s) => c.querySelector(s);
+    const toggleDest = () => { $('#r-dest-wrap').style.display = $('#r-same').checked ? 'none' : ''; };
+    toggleDest();
+    $('#r-same').onchange = toggleDest;
+    $('#r-volver').onclick = () => go('#/rutas');
+
+    // lista de pedidos elegibles con checkbox
+    const pedsBox = $('#r-peds');
+    const drawPeds = () => {
+      if (!elegibles.length) { pedsBox.innerHTML = `<div class="empty">No hay pedidos pendientes con ubicación cargada.</div>`; return; }
+      pedsBox.innerHTML = `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Pedido</th><th>Prioridad</th></tr></thead><tbody>
+        ${elegibles.map((p) => `<tr>
+          <td><input type="checkbox" data-pid="${p.id}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
+          <td><b>${esc(p.cliente)}</b></td><td class="small">${esc(p.direccion)}</td>
+          <td class="small">${(p.items||[]).map((i)=>i.cantidad+'× '+i.producto).join(', ')}</td>
+          <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
+        </tr>`).join('')}</tbody></table>`;
+      pedsBox.querySelectorAll('[data-pid]').forEach((cb) => cb.onchange = () => {
+        const id = cb.dataset.pid;
+        if (cb.checked) { if (!ruta.pedidoIds.includes(id)) ruta.pedidoIds.push(id); }
+        else { ruta.pedidoIds = ruta.pedidoIds.filter((x) => x !== id); delete ruta.demoraPorId[id]; }
+        recompute();
+      });
+      $('#r-count').textContent = `${ruta.pedidoIds.length} seleccionados`;
+    };
+
+    const parseCoord = (s, fb) => { const a = s.split(',').map((x) => parseFloat(x.trim())); return (a.length===2 && !isNaN(a[0]) && !isNaN(a[1])) ? { lat: a[0], lng: a[1] } : fb; };
+    const readForm = () => {
+      ruta.nombre = $('#r-nom').value.trim() || ruta.nombre;
+      ruta.fecha = $('#r-fec').value;
+      ruta.repartidorId = $('#r-rep').value;
+      ruta.vehiculoId = $('#r-veh').value;
+      const [hh, mm] = $('#r-sal').value.split(':').map(Number);
+      if (!isNaN(hh)) ruta.salidaMin = hh * 60 + (mm || 0);
+      ruta.demoraDefaultMin = Math.max(0, +$('#r-dem').value || 0);
+      ruta.sameAsOrigin = $('#r-same').checked;
+      ruta.origen = { nombre: $('#r-orig').value.trim(), ...parseCoord($('#r-orig-c').value, ruta.origen) };
+      ruta.destino = ruta.sameAsOrigin ? { ...ruta.origen } : { nombre: $('#r-dest').value.trim(), ...parseCoord($('#r-dest-c').value, ruta.destino) };
+    };
+
+    let calc = null, _roadToken = 0;
+    const recompute = () => {
+      readForm();
+      const paradas = ruta.pedidoIds.map((id) => Store.pedido(id)).filter(Boolean);
+      const ordenIds = (ruta.orden && ruta.orden.length) ? ruta.orden.filter((id) => ruta.pedidoIds.includes(id)) : null;
+      let orden;
+      if (ordenIds && ordenIds.length === paradas.length) orden = ordenIds.map((id) => Store.pedido(id));
+      else { orden = Route.optimizar(ruta.origen, paradas, ruta.destino); ruta.orden = orden.map((p) => p.id); }
+      calc = Route.calcular(ruta.origen, orden, ruta.destino, ruta.demoraDefaultMin, ruta.demoraPorId, ruta.salidaMin);
+      drawSumario(orden);
+      Route.render('map', ruta.origen, orden, ruta.destino, { sameAsOrigin: ruta.sameAsOrigin });
+      $('#r-navlink').href = Route.navLink(ruta.origen, orden, ruta.destino);
+      $('#r-count').textContent = `${ruta.pedidoIds.length} seleccionados`;
+      // Mejora asíncrona: trazado y tiempos reales por calle (OSRM).
+      const tok = ++_roadToken;
+      if (orden.length) Route.fetchRoad(ruta.origen, orden, ruta.destino).then((road) => {
+        if (!road || tok !== _roadToken || !c.isConnected) return;
+        calc = Route.calcular(ruta.origen, orden, ruta.destino, ruta.demoraDefaultMin, ruta.demoraPorId, ruta.salidaMin, road);
+        drawSumario(orden);
+        Route.render('map', ruta.origen, orden, ruta.destino, { sameAsOrigin: ruta.sameAsOrigin, geometry: road.geometry });
+      });
+    };
+
+    const drawSumario = (orden) => {
+      $('#r-sumario').innerHTML = `<div class="route-summary">
+        <div class="it"><span class="v">${orden.length}</span><span class="l">Paradas</span></div>
+        <div class="it"><span class="v">${calc.totalKm} km</span><span class="l">Distancia</span></div>
+        <div class="it"><span class="v">${fmtDur(calc.totalMin)}</span><span class="l">Duración total</span></div>
+        <div class="it"><span class="v">${fmtHora(calc.regresoMin)}</span><span class="l">Regreso estimado</span></div>
+      </div>`;
+      $('#r-stops').innerHTML = `
+        <div class="stop depot"><div class="seq">A</div><div class="body"><div class="cli">${esc(ruta.origen.nombre)}</div><div class="dir">Salida ${fmtHora(calc.salidaMin)}</div></div></div>
+        ${orden.map((p, i) => `
+          <div class="stop"><div class="seq">${i+1}</div>
+            <div class="body"><div class="cli">${esc(p.cliente)}</div><div class="dir">${esc(p.direccion)}</div>
+              <div style="margin-top:6px;display:flex;align-items:center;gap:6px">
+                <span class="small muted">Demora:</span>
+                <input type="number" min="0" data-dem="${p.id}" value="${ruta.demoraPorId[p.id]!=null?ruta.demoraPorId[p.id]:ruta.demoraDefaultMin}" style="width:70px;padding:5px 8px"/>
+                <span class="small muted">min</span>
+              </div></div>
+            <div class="eta">${fmtHora(calc.llegada[i])}</div></div>`).join('')}
+        <div class="stop depot"><div class="seq">B</div><div class="body"><div class="cli">${esc(ruta.destino.nombre)}</div><div class="dir">Regreso ${fmtHora(calc.regresoMin)}</div></div></div>`;
+      $('#r-stops').querySelectorAll('[data-dem]').forEach((el) => el.onchange = () => {
+        ruta.demoraPorId[el.dataset.dem] = Math.max(0, +el.value || 0); recompute();
+      });
+    };
+
+    drawPeds();
+    recompute();
+
+    ['#r-nom','#r-fec','#r-rep','#r-veh','#r-sal','#r-dem','#r-orig','#r-orig-c','#r-dest','#r-dest-c'].forEach((s) => {
+      const el = $(s); if (el) el.addEventListener('change', recompute);
+    });
+    $('#r-opt').onclick = () => { ruta.orden = []; recompute(); toast('Ruta optimizada', 'ok'); };
+
+    const persist = (estado) => {
+      readForm();
+      if (estado) ruta.estado = estado;
+      // marcar pedidos
+      ruta.pedidoIds.forEach((id) => { const p = Store.pedido(id); if (p) { p.rutaId = ruta.id || '__tmp'; p.fechaEntrega = ruta.fecha; p.estado = estado === 'asignada' ? 'asignado' : (p.estado === 'pendiente' ? 'pendiente' : p.estado); } });
+      const saved = Store.upsertRuta(ruta);
+      ruta.id = saved.id;
+      ruta.pedidoIds.forEach((id) => { const p = Store.pedido(id); if (p) p.rutaId = saved.id; });
+      Store.save();
+      return saved;
+    };
+
+    $('#r-save').onclick = () => { persist('borrador'); toast('Borrador guardado', 'ok'); go('#/rutas'); };
+    $('#r-asignar').onclick = () => {
+      readForm();
+      if (!ruta.repartidorId) { toast('Asigná un repartidor', 'err'); return; }
+      if (!ruta.pedidoIds.length) { toast('Seleccioná al menos un pedido', 'err'); return; }
+      const saved = persist('asignada');
+      saved.pedidoIds.forEach((id) => { const p = Store.pedido(id); if (p) p.estado = 'asignado'; });
+      Store.save();
+      Store.pushNotif(ruta.repartidorId, `Te asignaron la ruta "${ruta.nombre}" con ${ruta.pedidoIds.length} paradas.`, { tipo: 'ruta', rutaId: saved.id });
+      toast('Ruta asignada al chofer', 'ok');
+      go('#/rutas');
+    };
+  };
+})();

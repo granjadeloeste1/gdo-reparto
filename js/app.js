@@ -1,0 +1,167 @@
+/* ====== GDO Reparto — app shell + router ====== */
+window.GDO = window.GDO || {};
+(function () {
+  const { Store } = GDO;
+  const { esc, h, hace } = GDO.UI;
+  const V = GDO.Views;
+  const root = () => document.getElementById('app');
+
+  const NAV = {
+    admin: [
+      { hash: '#/panel', ic: '📊', t: 'Tablero' },
+      { hash: '#/pedidos', ic: '📦', t: 'Pedidos' },
+      { hash: '#/rutas', ic: '🗺️', t: 'Rutas' },
+      { hash: '#/usuarios', ic: '👥', t: 'Usuarios y roles' },
+      { hash: '#/vehiculos', ic: '🚚', t: 'Vehículos' },
+    ],
+    vendedor: [
+      { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
+    ],
+  };
+
+  function rolesDisponibles(u) { return u.roles; }
+
+  function go(hash) { location.hash = hash; }
+
+  const App = {
+    logout() { Store.logout(); go('#/login'); render(); },
+    render,
+    go,
+  };
+  GDO.App = App;
+
+  function render() {
+    const u = Store.current();
+    const hash = location.hash || (u ? '#/inicio' : '#/login');
+
+    if (!u) { V.login(root(), () => { afterLogin(); }); return; }
+
+    const rol = Store.rolActivo();
+
+    // ---- experiencia repartidor (mobile, sin sidebar) ----
+    if (rol === 'repartidor') {
+      if (hash.startsWith('#/ruta/')) return V.rutaChofer(root(), hash.split('/')[2]);
+      return V.misRutas(root());
+    }
+
+    // ---- experiencia admin / vendedor (sidebar) ----
+    renderShell(u, rol);
+    const content = document.getElementById('app-content');
+    routeContent(content, hash, rol);
+  }
+
+  function afterLogin() {
+    const u = Store.current();
+    const rol = Store.rolActivo();
+    if (GDO.Notify) { GDO.Notify.rebaseline(); GDO.Notify.request(); }
+    go(rol === 'repartidor' ? '#/mis-rutas' : (rol === 'vendedor' ? '#/pedidos' : '#/panel'));
+    render();
+  }
+
+  function routeContent(c, hash, rol) {
+    const parts = hash.split('/');
+    if (hash.startsWith('#/rutas/')) return V.rutaEditor(c, parts[2]);
+    switch (hash) {
+      case '#/panel': return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);
+      case '#/pedidos': return V.pedidos(c);
+      case '#/rutas': return V.rutas(c);
+      case '#/usuarios': return rol === 'admin' ? V.usuarios(c) : V.pedidos(c);
+      case '#/vehiculos': return rol === 'admin' ? V.vehiculos(c) : V.pedidos(c);
+      default: return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);
+    }
+  }
+
+  function renderShell(u, rol) {
+    const nav = NAV[rol] || NAV.vendedor;
+    const hash = location.hash;
+    const noLeidas = Store.noLeidas(u.id);
+    root().className = '';
+    root().innerHTML = `
+      <div class="app">
+        <aside class="sidebar">
+          <div class="brand"><img src="assets/logo-horizontal-blanco.svg" alt="Granja del Oeste"/></div>
+          <nav class="nav">
+            ${nav.map((n) => `<a data-hash="${n.hash}" class="${hash.startsWith(n.hash) ? 'active' : ''}"><span class="ic">${n.ic}</span>${n.t}</a>`).join('')}
+          </nav>
+          <div class="user-box">
+            <div class="name">${esc(u.nombre)}</div>
+            <div style="margin:6px 0">${u.roles.map((r) => GDO.UI.ROL_CHIP[r]).join(' ')}</div>
+            ${u.roles.length > 1 ? `<select id="rol-sw" style="margin-top:6px">${u.roles.map((r) => `<option value="${r}"${r===rol?' selected':''}>Ver como: ${r}</option>`).join('')}</select>` : ''}
+            <button class="btn btn-ghost btn-sm btn-block" id="sb-logout" style="margin-top:10px;color:#fff;border-color:#3a3a3d">Cerrar sesión</button>
+          </div>
+        </aside>
+        <div class="main">
+          <header class="topbar">
+            <h1 id="tb-title">${titleFor(hash, rol)}</h1>
+            <div class="actions">
+              <button class="bell" id="bell">🔔${noLeidas ? `<span class="badge">${noLeidas}</span>` : ''}</button>
+            </div>
+          </header>
+          <div class="content" id="app-content"></div>
+        </div>
+      </div>
+      <nav class="mobile-tabbar">
+        ${nav.slice(0, 5).map((n) => `<a data-hash="${n.hash}" class="${hash.startsWith(n.hash) ? 'active' : ''}"><span class="ic">${n.ic}</span>${n.t.split(' ')[0]}</a>`).join('')}
+      </nav>`;
+
+    root().querySelectorAll('[data-hash]').forEach((a) => a.onclick = () => go(a.dataset.hash));
+    root().querySelector('#sb-logout').onclick = () => App.logout();
+    const sw = root().querySelector('#rol-sw');
+    if (sw) sw.onchange = () => { Store.setRolActivo(sw.value); afterLogin(); };
+    root().querySelector('#bell').onclick = (e) => { e.stopPropagation(); toggleNotif(u); };
+  }
+
+  function titleFor(hash, rol) {
+    if (hash.startsWith('#/rutas/')) return 'Armador de ruta';
+    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
+    return map[hash] || 'Granja del Oeste';
+  }
+
+  /* ---------- Notificaciones ---------- */
+  function toggleNotif(u) {
+    const ex = document.querySelector('.notif-pop');
+    if (ex) { ex.remove(); return; }
+    const list = Store.notifDe(u.id);
+    const pop = h(`<div class="notif-pop">
+      <div class="nh"><b>Notificaciones</b>${list.length ? '<button class="btn btn-ghost btn-sm" id="n-read">Marcar leídas</button>' : ''}</div>
+      <div class="notif-list">${list.length ? list.map((n) => `
+        <div class="notif-item ${n.leida ? '' : 'unread'}">
+          ${n.leida ? '' : '<div class="dot"></div>'}
+          <div><div class="tx">${esc(n.mensaje)}</div><div class="ts">${hace(n.ts)}</div></div>
+        </div>`).join('') : '<div class="empty">Sin notificaciones.</div>'}</div>
+    </div>`);
+    document.body.appendChild(pop);
+    const rb = pop.querySelector('#n-read');
+    if (rb) rb.onclick = () => { Store.marcarLeidas(u.id); pop.remove(); render(); };
+    setTimeout(() => document.addEventListener('click', function cls(e) {
+      if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('click', cls); }
+    }), 0);
+  }
+
+  function landingHash() {
+    const u = Store.current();
+    if (!u) return '#/login';
+    const rol = Store.rolActivo();
+    return rol === 'repartidor' ? '#/mis-rutas' : (rol === 'vendedor' ? '#/pedidos' : '#/panel');
+  }
+
+  // Cambios llegados desde Firestore (otro dispositivo): re-render del contenido
+  // actual. No interrumpe formularios: data.js ya evita disparar si hay un modal
+  // abierto. El re-pintado respeta la sesión local de cada dispositivo.
+  GDO._dataChanged = function () {
+    if (GDO.Notify) GDO.Notify.check(); // avisos al celular (corre siempre)
+    if (document.querySelector('.modal-bg, .notif-pop')) return; // no interrumpir formularios
+    render();
+  };
+
+  window.addEventListener('hashchange', render);
+  // Pedidos entrantes desde la tienda online (otra pestaña/mismo navegador).
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'gdo_reparto_inbox' && Store.sync()) render();
+  });
+  window.addEventListener('focus', () => { if (Store.sync()) render(); });
+  window.addEventListener('DOMContentLoaded', () => {
+    if (!location.hash || location.hash === '#/inicio') location.hash = landingHash();
+    render();
+  });
+})();

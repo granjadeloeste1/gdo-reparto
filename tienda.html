@@ -1,0 +1,592 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="theme-color" content="#0a0a0a"/>
+<title>Granja del Oeste - Lista de Precios</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a0a;color:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,sans-serif;-webkit-font-smoothing:antialiased}
+.hdr{background:#111;border-bottom:3px solid #F58220;padding:12px 16px;position:sticky;top:0;z-index:10}
+.hn{max-width:680px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.logo-b{background:#fff;border-radius:8px;padding:5px 10px;flex-shrink:0}
+.logo-b img{height:42px;display:block}
+.hi{flex:1}.hi-t{font-size:12px;color:#888}
+.hi-d{display:flex;flex-wrap:wrap;gap:8px;margin-top:3px}
+.hi-i{font-size:11px;color:#666}.hi-i span{color:#F58220}
+.hi-f{font-size:10px;color:#555;margin-top:3px}
+.wrap{max-width:680px;margin:0 auto;padding:14px 14px 80px}
+.search{width:100%;background:#111;border:1px solid #1e1e1e;border-radius:8px;color:#f5f5f5;padding:11px 14px;font-size:14px;outline:none;margin-bottom:12px;-webkit-appearance:none}
+.search:focus{border-color:#F58220}
+details{background:#111;border:1px solid #1e1e1e;border-radius:12px;margin-bottom:10px;overflow:hidden}
+summary{padding:13px 16px;font-size:13px;font-weight:700;color:#F58220;letter-spacing:.06em;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;border-left:4px solid #F58220;-webkit-tap-highlight-color:transparent}
+summary::after{content:"^";color:#444;font-size:16px}
+details:not([open]) summary::after{content:"v"}
+.sb{padding:0 12px 12px}
+.br{font-size:12px;color:#F58220;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:12px 0 6px;border-top:1px solid #2a2a2a;display:flex;align-items:center;gap:8px}
+.br::before{content:"";display:inline-block;width:3px;height:16px;background:#F58220;border-radius:2px;flex-shrink:0}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{padding:6px 8px;color:#F58220;font-size:10px;border-bottom:1px solid #2a2a2a;font-weight:600;white-space:nowrap}
+.l{text-align:left}.r{text-align:right}
+tbody tr{border-bottom:1px solid #161616}
+tbody tr:last-child{border-bottom:none}
+tbody td{padding:7px 8px;color:#fff;font-family:monospace;font-size:13px;font-weight:600;white-space:nowrap}
+td.l{color:#e0e0e0;font-family:inherit;font-size:12px;font-weight:400;white-space:normal}
+.err{background:#1a0000;border:1px solid #3a0000;border-radius:12px;padding:20px;text-align:center;color:#f87171;font-size:13px}
+.wa{position:fixed;bottom:20px;right:20px;width:56px;height:56px;background:#25D366;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(37,211,102,.4);text-decoration:none;z-index:100}
+.wa svg{width:30px;height:30px;fill:#fff}
+@media(max-width:480px){.hi-d{flex-direction:column;gap:3px}tbody td{font-size:11px;padding:6px 5px}thead th{font-size:9px;padding:5px}}
+/* ---- Pedido / carrito ---- */
+.ordcell{vertical-align:top;padding-left:6px}
+.qg{display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-bottom:8px}
+.qg:last-child{margin-bottom:0}
+.qg + .qg{border-top:1px dashed #2e2e2e;padding-top:8px}
+.qg-u{display:inline-block;padding:2px 9px;border-radius:20px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid transparent;white-space:nowrap}
+.qg-u.main{background:#F58220;color:#1a0f02;border-color:#F58220}
+.qg-u.sub{background:rgba(56,132,255,.16);color:#8fbcff;border-color:rgba(56,132,255,.65)}
+.stp{display:inline-flex;align-items:center;border:1px solid #2a2a2a;border-radius:8px;overflow:hidden}
+.stp button{background:#1a1a1a;border:none;color:#F58220;width:30px;height:30px;font-size:17px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.stp button:active{background:#F58220;color:#111}
+.stp input{width:50px;height:30px;background:#0f0f0f;border:none;border-left:1px solid #2a2a2a;border-right:1px solid #2a2a2a;color:#fff;text-align:center;font-size:13px;font-family:monospace;-webkit-appearance:none;-moz-appearance:textfield}
+.stp input::-webkit-outer-spin-button,.stp input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.stp-sm button{width:26px;height:26px;font-size:15px}
+.stp-sm input{width:42px;height:26px;font-size:12px}
+.qg-sub{font-size:9px;color:#999;text-align:right;line-height:1.3;font-family:monospace;min-height:1px}
+.qg-sub b{display:block;color:#25D366;font-size:11px}
+.qg-sub span{color:#777}
+.cartbar{position:fixed;left:0;right:0;bottom:0;z-index:120;background:#111;border-top:2px solid #F58220;padding:10px 14px;display:none}
+.cartbar.show{display:block}
+.cartbar-in{max-width:680px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.cartbar button{flex:1;background:#F58220;color:#111;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.cartbar .cb-count{background:#111;color:#F58220;border-radius:20px;padding:2px 9px;font-size:13px;font-weight:800}
+.cartbar .cb-total{font-size:16px}
+.ovl{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.ovl.show{display:flex}
+.sheet{background:#0f0f0f;border:1px solid #222;border-bottom:none;border-radius:18px 18px 0 0;width:100%;max-width:680px;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sheet-h{position:sticky;top:0;background:#0f0f0f;padding:16px 16px 10px;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;justify-content:space-between;z-index:2}
+.sheet-h h2{font-size:16px;color:#F58220;letter-spacing:.04em}
+.x{background:#1a1a1a;border:none;color:#aaa;width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer}
+.sheet-b{padding:14px 16px 20px}
+.empty{color:#666;text-align:center;padding:30px 10px;font-size:14px}
+.ci{display:block;padding:12px 0;border-bottom:1px solid #191919}
+.ci-top{display:flex;gap:10px}
+.ci-notebox{margin-top:11px;background:rgba(245,130,32,.08);border:1px solid rgba(245,130,32,.5);border-left:3px solid #F58220;border-radius:9px;padding:9px 11px}
+.ci-notelbl{display:flex;align-items:center;gap:5px;font-size:10px;color:#F58220;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.ci-note{width:100%;background:#0d0d0d;border:1px solid #4a3414;border-radius:7px;color:#fff;padding:10px 11px;font-size:13px;outline:none;-webkit-appearance:none;font-family:inherit}
+.ci-note:focus{border-color:#F58220;background:#141414}
+.ci-note::placeholder{color:#7a6a52}
+.ci-note.has{border-color:#F58220;background:#171107}
+.ci-main{flex:1;min-width:0}
+.ci-name{font-size:13px;color:#fff;font-weight:600;line-height:1.3}
+.ci-brand{font-size:10px;color:#F58220;text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
+.ci-price{font-size:11px;color:#999;margin-top:3px;font-family:monospace}
+.ci-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.ci-total{font-size:14px;color:#fff;font-weight:700;font-family:monospace;white-space:nowrap}
+.ci-unit{font-size:10px;color:#777;text-align:center}
+.rm{background:none;border:none;color:#f87171;font-size:11px;cursor:pointer;padding:2px 4px;text-decoration:underline}
+.sumrow{display:flex;justify-content:space-between;align-items:center;padding:14px 0 4px;border-top:1px solid #2a2a2a;margin-top:6px}
+.sumrow .sl{font-size:14px;color:#aaa}
+.sumrow .sv{font-size:20px;color:#F58220;font-weight:800;font-family:monospace}
+.form{margin-top:18px;border-top:1px solid #1e1e1e;padding-top:16px}
+.form h3{font-size:13px;color:#F58220;letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px}
+.fg{margin-bottom:11px}
+.fg label{display:block;font-size:11px;color:#999;margin-bottom:4px}
+.fg label .req{color:#F58220}
+.fg input,.fg select,.fg textarea{width:100%;background:#141414;border:1px solid #262626;border-radius:9px;color:#f5f5f5;padding:11px 12px;font-size:14px;outline:none;-webkit-appearance:none;font-family:inherit}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:#F58220}
+.fg textarea{resize:vertical;min-height:54px}
+.fg.err input{border-color:#f87171}
+.ferr{color:#f87171;font-size:11px;margin-top:4px;display:none}
+.fg.err .ferr{display:block}
+.note{background:#15110a;border:1px solid #3a2a12;border-radius:10px;padding:11px 12px;font-size:11.5px;color:#c9a063;line-height:1.5;margin:14px 0}
+.send{width:100%;background:#25D366;color:#062b14;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;margin-top:4px}
+.send:disabled{background:#1c2a20;color:#456;cursor:not-allowed}
+.send svg{width:22px;height:22px;fill:currentColor}
+.acts{display:flex;gap:10px;margin-top:10px}
+.acts button{flex:1;background:#161616;border:1px solid #262626;color:#aaa;border-radius:10px;padding:11px;font-size:13px;cursor:pointer}
+.acts .clear{color:#f87171}
+.wa{bottom:84px}
+.iabnr{display:none;background:#F58220;color:#1a0f02;font-size:12.5px;font-weight:600;padding:11px 38px 11px 14px;text-align:center;line-height:1.45;position:relative}
+.iabnr.show{display:block}
+.iabnr b{font-weight:800}
+.iabnr .xclose{position:absolute;top:7px;right:11px;font-size:19px;font-weight:800;cursor:pointer;line-height:1;color:#1a0f02;opacity:.75}
+/* ---- Ajustes mÃ³vil iOS / Android ---- */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{overscroll-behavior-y:none}
+button,summary,.stp button,.x,.send,.cartbar button,.rm,.acts button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.hdr{padding-top:calc(12px + env(safe-area-inset-top))}
+.wrap{padding-bottom:calc(100px + env(safe-area-inset-bottom))}
+.cartbar{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+.wa{bottom:calc(92px + env(safe-area-inset-bottom))}
+.tw{-webkit-overflow-scrolling:touch}
+.sheet{max-height:92dvh}
+.sheet-b{padding-bottom:calc(26px + env(safe-area-inset-bottom))}
+/* inputs a 16px: evita el zoom automÃ¡tico de iOS al enfocar */
+.search,.fg input,.fg select,.fg textarea,.ci-note,.stp input{font-size:16px}
+/* zonas de toque mÃ¡s cÃ³modas */
+.stp button{min-width:34px;height:34px}
+.stp-sm button{min-width:30px;height:30px}
+.stp-sm input{width:42px;height:30px}
+.cartbar button{padding:15px}
+/* columna PEDIR fija a la derecha: nunca se corta al deslizar los precios */
+.ordhd,.ordcell{position:sticky;right:0;z-index:2;background:#111;box-shadow:-10px 0 10px -6px rgba(0,0,0,.75)}
+.ordcell{padding-left:8px;padding-right:8px}
+@media(max-width:480px){
+  .qg-sub{font-size:9px}
+  .ci-top{gap:8px}
+  .stp-sm button{min-width:28px;height:28px;font-size:14px}
+  .stp-sm input{width:36px;height:28px;font-size:13px}
+  .qg-u{font-size:8px;padding:2px 7px}
+  .qg{gap:2px;margin-bottom:6px}
+  tbody td{padding:6px 6px}
+  thead th{padding:5px 6px}
+}
+
+</style>
+</head>
+<body>
+<div class="iabnr" id="iabnr">
+  <span class="xclose" onclick="document.getElementById('iabnr').classList.remove('show')">&times;</span>
+  EstÃ¡s viendo esto dentro de <b>TikTok / Instagram</b>. Para ver la <b>lista completa y actualizada</b>, tocÃ¡ el menÃº <b>&#8943;</b> (arriba a la derecha) y elegÃ­ <b>&laquo;Abrir en el navegador&raquo;</b>.
+</div>
+<div class="hdr">
+  <div class="hn">
+    <div class="logo-b"><img src="assets/logo-horizontal-color.svg" alt="Granja del Oeste" alt="Granja del Oeste"/></div>
+    <div class="hi">
+      <div class="hi-t">Lista de Precios Mayorista</div>
+      <div class="hi-d">
+        <div class="hi-i">&#x1F4CD; <span>Acu&#xF1;a 1334, Villa Tesei</span></div>
+        <div class="hi-i">&#x1F4DE; <span>11 3580-0164</span></div>
+        <div class="hi-i">&#x23F0; <span>Lun-S&#xE1;b 6:00 a 13:30 hs</span></div>
+      </div>
+      <div class="hi-f" id="fecha">Precios sujetos a modificaciones</div>
+    </div>
+  </div>
+</div>
+<div class="wrap">
+  <input class="search" id="s" type="text" placeholder="Buscar producto..." oninput="filt()">
+  <div id="root"></div>
+</div>
+<a class="wa" href="https://wa.me/5491135800164?text=Hola%2C%20quiero%20consultar%20la%20lista%20de%20precios" target="_blank">
+  <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+</a>
+<script>
+var API = "https://script.google.com/macros/s/AKfycbwH6JW35BRYcBk958OEr4sEvfVIfzgqzQeGwvz63xZYgukwxik8EsIego4d9O456bHURg/exec";
+var FALLBACK = [{"title":"CAJONES DE POLLO","tables":[{"brand":null,"headers":["Producto","25 CAJONES","10 CAJONES","1                CAJON","","",""],"rows":[{"p":"POLLO FRESCO SAN FRANCISCO","v":[64000,65000,66000,null,null,null]},{"p":"POLLO FRESCO DON EDGARDO","v":[56000,57000,58000,null,null,null]},{"p":"POLLO FRESCO CYL","v":[59000,60000,61000,null,null,null]},{"p":"POLLO FRESCO LOS ATILIOS","v":[60000,61000,62000,null,null,null]}]}]},{"title":"TROZADO DE POLLO FRESCO","tables":[{"brand":null,"headers":["Producto","100 KG","60 KG","5 KG - MINIMO","","",""],"rows":[{"p":"CUARTO TRASERO","v":[3300,3400,3600,null,null,null]},{"p":"SUPREMAS","v":[7800,8300,8500,null,null,null]},{"p":"ALAS","v":[2500,2500,2500,null,null,null]},{"p":"CARCASA","v":[500,600,700,null,null,null]},{"p":"MENUDO","v":[700,700,700,null,null,null]}]}]},{"title":"DESTACADOS","tables":[{"brand":null,"headers":["PRECIOS X KILO","10 CAJAS X KG","5 CAJAS X KG","1 CAJA X KG","","",""],"rows":[{"p":"SUPREMA CONGELADA - IQF 15 KG","v":[92000,97500,103500,null,null,null]},{"p":"BONDIOLa CONGELADA X KG (X CAJA 20 KG APROX)","v":[6200,6500,6900,null,null,null]}]}]},{"title":"ELABORADOS","tables":[{"brand":null,"headers":["PRECIOS X KILO","50 KG","5 KG","2 KG","","",""],"rows":[{"p":"MILANESAS DE POLLO","v":[5000,6000,7000,null,null,null]},{"p":"MILANESAS DE POLLO CRUCH X KG","v":[7000,8000,9500,null,null,null]},{"p":"MILANESAS DE NALGA REBOZADA X KG","v":[10000,11500,13500,null,null,null]},{"p":"MILANESAS DE NALGA REBOZADA CRUNCH X KG","v":[7000,7500,9000,null,null,null]},{"p":"ALBONDIGAS DE POLLO","v":[5000,6000,7000,null,null,null]},{"p":"ALBONDIGAS DE POLLO CRUNCH","v":[6000,6500,7500,null,null,null]},{"p":"HAMBURGUESAS DE POLLO FIT (100% SUPREMA)","v":[8500,9500,11000,null,null,null]},{"p":"HAMBURGUESAS DE POLLO CLASICA","v":[5000,6000,7000,null,null,null]}]}]},{"title":"HUEVO","tables":[{"brand":null,"headers":["Producto","10 CAJONES","5 CAJONES","1 CAJON","","",""],"rows":[{"p":"CAJON DE HUEVOS B1 (12 MAPLES)","v":[56000,57000,58000,null,null,null]},{"p":"MAPLE X UNIDAD","v":[null,null,5500,null,null,null]}]}]},{"title":"PANIFICADOS","tables":[{"brand":null,"headers":["Producto","10 BOLSAS","5 BOLSAS","1 BOLSA","","",""],"rows":[{"p":"PAN RAYADO PREMIUM MC X 20KG","v":[22000,23500,24500,null,null,null]},{"p":"REBOZADOR COLOR MC X 25 KG","v":[28500,30000,32000,null,null,null]},{"p":"REBOZADOR CRUNCH *BAS* X 5 KG","v":[19500,21000,22000,null,null,null]},{"p":"PAN RALLADO SOL DE CAMPO X 20 KG","v":[20000,21000,22000,null,null,null]},{"p":"REBOZADOR SOL DE CAMPO X 20 KG","v":[20000,21000,22000,null,null,null]}]},{"brand":"BAS FROST","headers":["Producto","10 CAJAS","5 CAJAS","1 CAJA","","",""],"rows":[{"p":"FORMITAS DE POLLO X 6 KG","v":[35000,37000,39000,null,null,null]},{"p":"MEDALLON DE POLLO X 6 KG","v":[35000,37000,39000,null,null,null]},{"p":"MEDALLON DE POLLO CON JAMON Y QUESO  X 6 KG","v":[65000,69000,73000,null,null,null]},{"p":"MEDALLON DE POLLO CON ESPINACA X 6 KG","v":[40500,43000,45500,null,null,null]}]},{"brand":"TRES ARROYOS","headers":["Producto","10 CAJAS ","5 CAJAS","1 CAJA","X KG","",""],"rows":[{"p":"NUGGETS A LA TEMPURA X 5 KG (5X1KG)","v":[48000,51000,54000,12500,null,null]},{"p":"SUPREMITAS CRISPY X 5 KG (5X1KG)","v":[50500,53500,57000,13000,null,null]},{"p":"POCHOCLOS DE POLLO REBOZADO X 5 KG (5X1KG)","v":[43500,46000,49000,11500,null,null]},{"p":"BOCADITOS DE POLLO CON CHEDDAR X 5 KG","v":[49500,52500,56000,13000,null,null]},{"p":"MEDALLON DE POLLO X 5 KG (5X1KG)","v":[38000,40000,42500,10000,null,null]},{"p":"RICOSAURIOS DE POLLO X 5 KG (5X1KG)","v":[42000,44000,47000,11000,null,null]},{"p":"NUGGETS DE POLLO X 6 KG (GRANGYS)","v":[45500,48500,51500,12000,null,null]}]},{"brand":"ARTICO","headers":["Producto","X 10 CAJAS","X 5 CAJAS","X CAJA","X PAQUETE","",""],"rows":[{"p":"FILET DE MERLUZA A LA ROMANA X 5KG (5X1KG)","v":[55000,58500,62000,14500,null,null]},{"p":"BASTONES DE MUZZARELLA ARTICO X 6 KG (3X2KG)","v":[60500,64000,68000,26000,null,null]}]},{"brand":"MC CAIN FOOD SERVICE","headers":["Producto","10 CAJAS","5 CAJAS","1 CAJA","X PAQUETE","",""],"rows":[{"p":"PAPA BASTON CORTE TRADICIONAL X 15 KG (6 X 2,5 KG)","v":[65000,69000,73500,14000,null,null]},{"p":"PAPA SMILES (CARITA) X 9 KG (6 X 1,5 KG)","v":[64000,68000,72000,14000,null,null]},{"p":"PAPA NOISETTES 10 KG (4 X 2,5 KG)","v":[71000,75500,80000,23000,null,null]}]},{"brand":"PAPAS BEM -  BRASIL","headers":["Producto","X 10 CAJAS","X 5 CAJAS","X CAJA","X PAQUETE","",""],"rows":[{"p":"PAPAS BASTON TRADICIONAL X 15 KG (6X2,5KG)","v":[48500,51500,55000,11500,null,null]},{"p":"PAPAS CRINKLE X 12 KG (12X1,05KG)","v":[44000,46500,50000,5500,null,null]},{"p":"AROS DE CEBOLLA X 6,3 KG (6X1,05KG)","v":[46000,49000,52500,11000,null,null]},{"p":"PAPAS CARITAS X 10.5 KG (10X1,05KG)","v":[44500,47500,50500,6500,null,null]},{"p":"PAPAS NOISSETTE X 10.5 KG (10X1,05KG)","v":[44500,47500,50500,6500,null,null]}]}]},{"title":"MILANESA DE SOJA","tables":[{"brand":null,"headers":["Producto","X 10 CAJAS             15 PAQUETES","X 5 CAJAS            15 PAQUETES","X CAJA DE 15 PAQUETES","X PAQUETE DE 4 UNIDADES","",""],"rows":[{"p":"RELLENA BROCOLI X 4 UNIDADES","v":[50000,60000,56000,5000,null,null]},{"p":"RELLENA CAPRESSE X 4 UNIDADES","v":[55500,66500,62000,6000,null,null]},{"p":"RELLENA CALABAZA Y CURCUMA X 4 UNIDADES","v":[50000,60000,56000,5000,null,null]},{"p":"RELLENA ESPINACA Y MORRONES ASADOS X 4 UNIDADES","v":[50000,60000,56000,5000,null,null]},{"p":"RELLENA QUESO AZUL Y MUZARELLA X 4 UNIDADES","v":[61500,73500,69000,6500,null,null]},{"p":"RELLENA ACEITUNA Y MUZARELLA X 4 UNIDADES","v":[55500,66500,62000,6000,null,null]},{"p":"ORIGINAL SIMPLE CON SAL X 4 UNIDADES (27 PAQUETES)","v":[46000,55500,52000,3000,null,null]}]}]},{"title":"HAMBURGUESAS VEGANAS","tables":[{"brand":null,"headers":["Producto","X 10 PAQUETES","X 5 PAQUETES","X PAQUETE DE 5 UNIDADES","","",""],"rows":[{"p":"ZAPALLO AL CURRY X 5 UNIDADES","v":[5000,5500,6000,null,null,null]},{"p":"VEGANA LENTEJAS              X 5 UNIDADES","v":[5000,5500,6000,null,null,null]},{"p":"QUINOA Y YAMANI X 5 UNIDADES","v":[5000,5500,6000,null,null,null]},{"p":"REMOLACHA         X 5 UNIDADES","v":[5000,5500,6000,null,null,null]},{"p":"GARBANZO Y ZANAHORIA X 5 UNIDADES","v":[5000,5500,6000,null,null,null]},{"p":"ESPINACA              X 5 UNIDADES","v":[5000,5500,6000,null,null,null]}]}]},{"title":"CANELONES CASEROS","tables":[{"brand":null,"headers":["Producto","X 20 BANDEJAS","X 10 BANDEJAS","X BANDEJA","","",""],"rows":[{"p":"RICOTA Y VERDURA (BANDEJA X 6 UNIDADES)","v":[4500,5000,5500,null,null,null]},{"p":"RICOTA Y JAMON (BANDEJA X 6 UNIDADES)","v":[4500,5000,5500,null,null,null]},{"p":"POLLO CON SALSA BLANCA (BANDEJA X 6 UNIDADES)","v":[4500,5000,5500,null,null,null]},{"p":"JAMON Y QUESO (BANDEJA X 6 UNIDADES)","v":[4500,5000,5500,null,null,null]}]}]},{"title":"CONDIMENTOS","tables":[{"brand":null,"headers":["Producto","X 10 KG","X 5 KG","X 1 KG","","",""],"rows":[{"p":"ADOBO PARA PIZZA X 1 KG","v":[7500,8000,8500,null,null,null]},{"p":"AJO EN POLVO PREMIUM X 1 KG","v":[10500,11000,12000,null,null,null]},{"p":"AJI MOLIDO PREMIUM X 1 KG","v":[10500,11500,12000,null,null,null]},{"p":"AJI MOLIDO PREMIUM AHUMADO X 1 KG","v":[11000,12000,12500,null,null,null]},{"p":"CHIMICHURRI AHUMADO X 1 KG","v":[8000,8500,9000,null,null,null]},{"p":"CHIMICHURRI PREMIUM X 1 KG","v":[9500,10000,10500,null,null,null]},{"p":"OREGANO PREMIUM X 1 KG","v":[8500,9500,10000,null,null,null]},{"p":"PROVENZAL PREMIUM X 1 KG","v":[10500,11000,12000,null,null,null]},{"p":"PIMENTON PREMIUM X1 KG","v":[9000,9500,10500,null,null,null]},{"p":"PIMENTON AHUMADO SELECCI\u00d3N X 1KG","v":[7000,7500,8000,null,null,null]},{"p":"PAPRIKA MOLIDA (PIMENTON PICANTE) X 1 KG","v":[7500,8000,8500,null,null,null]},{"p":"PIMIENTA BLANCA MOLIDA PREMIUM X 1 KG","v":[24500,26000,28000,null,null,null]},{"p":"PIMIENTA NEGRA MOLIDA PREMIUM X 1 KG","v":[15500,16500,18000,null,null,null]}]}]},{"title":"INTEGRALES","tables":[{"brand":null,"headers":["Producto","X 10 KG","X 5 KG","X KG","","",""],"rows":[{"p":"INTEGRAL HUEVO EN POLVO PARA MILANESA X 5 KG","v":[10000,11000,11500,null,null,null]},{"p":"INTEGRAL BATTER PARA MILANESA X 1 KG","v":[8500,9000,9500,null,null,null]},{"p":"INTEGRAL PARA HAMBURGUESAS X 1 KG","v":[6000,6500,7000,null,null,null]},{"p":"INTEGRAL PARA CHORIZOS X 1 KG","v":[8500,9000,9500,null,null,null]}]}]}];
+var sections = FALLBACK, term = "";
+var $n = function(n) { if (n === null || n === undefined) return ""; return "$ " + Math.round(n).toLocaleString("es-AR"); };
+var OPTIONS = [];
+var cart = [];
+var UNIT_DEFS = [
+  {re:/CAJ[OÃ“]N(ES)?/, u:"cajÃ³n", pl:"cajones"},
+  {re:/CAJAS?/, u:"caja", pl:"cajas"},
+  {re:/BOLSAS?/, u:"bolsa", pl:"bolsas"},
+  {re:/BANDEJAS?/, u:"bandeja", pl:"bandejas"},
+  {re:/PAQUETES?/, u:"paquete", pl:"paquetes"},
+  {re:/(\bKG\b|KILOS?)/, u:"kg", pl:"kg"},
+  {re:/UNIDADES?|UNIDAD/, u:"unidad", pl:"unidades"}
+];
+function unitPlural(u){ for(var i=0;i<UNIT_DEFS.length;i++){ if(UNIT_DEFS[i].u===u) return UNIT_DEFS[i].pl; } return u; }
+function unitLabel(u, qty){ return (qty===1) ? u : unitPlural(u); }
+function unitClass(u){ return "u-"+String(u).toLowerCase().replace(/Ã³/g,"o").replace(/[^a-z]/g,""); }
+function parseHeader(h){
+  var str = String(h).toUpperCase();
+  var best = null;
+  UNIT_DEFS.forEach(function(d){
+    var m = d.re.exec(str);
+    if(m){ if(best===null || m.index<best.index) best={index:m.index, u:d.u}; }
+  });
+  if(!best) return null;
+  var before = str.slice(0, best.index);
+  var nm = before.match(/(\d+)\s*$/);
+  var min = nm ? parseInt(nm[1],10) : 1;
+  return {min:min, unit:best.u};
+}
+function priceForTiers(t, q){ var p=t[0].price; for(var i=0;i<t.length;i++){ if(q>=t[i].min) p=t[i].price; } return p; }
+function cartQtyFor(name, brand, unit){ for(var i=0;i<cart.length;i++){ var l=cart[i]; if(l.name===name && l.brand===brand && l.unit===unit) return l.qty; } return 0; }
+function render() {
+  var root = document.getElementById("root"), t = term.toLowerCase(), html = "";
+  OPTIONS = [];
+  sections.forEach(function(sec) {
+    var tbH = "", vis = false;
+    (sec.tables || []).forEach(function(tbl) {
+      var fr = t ? tbl.rows.filter(function(r) { return r.p.toLowerCase().indexOf(t) >= 0; }) : tbl.rows;
+      if (!fr.length) return;
+      vis = true;
+      var cols = [];
+      (tbl.headers || []).forEach(function(h, i) {
+        if (i === 0) return;
+        if (!h || !String(h).trim()) return;
+        var pc = parseHeader(h);
+        if (pc) cols.push({idx:i, min:pc.min, unit:pc.unit});
+      });
+      var nVals = 0;
+      fr.forEach(function(r) { var vl = (r.v || []).length; if (vl > nVals) nVals = vl; });
+      var total = Math.max(nVals, (tbl.headers || []).length - 1);
+      var valCols = [];
+      for (var ci = 1; ci <= total; ci++) {
+        var hdr = (tbl.headers || [])[ci];
+        var hasHdr = hdr && String(hdr).trim();
+        var hasData = fr.some(function(r) { var v = (r.v || [])[ci - 1]; return v !== null && v !== undefined && v !== ""; });
+        if (hasHdr || hasData) valCols.push(ci);
+      }
+      if (tbl.brand) tbH += "<div class=\"br\">" + tbl.brand + "</div>";
+      tbH += "<div class=\"tw\"><table>";
+      if (tbl.headers && tbl.headers.length) {
+        tbH += "<thead><tr><th class=\"l\">" + (tbl.headers[0] || "") + "</th>";
+        valCols.forEach(function(i) { tbH += "<th class=\"r\">" + (tbl.headers[i] || "") + "</th>"; });
+        tbH += "<th class=\"r ordhd\">PEDIR</th></tr></thead>";
+      }
+      tbH += "<tbody>";
+      fr.forEach(function(row) {
+        var groups = {};
+        cols.forEach(function(c) {
+          var price = (row.v || [])[c.idx - 1];
+          if (price === null || price === undefined) return;
+          (groups[c.unit] = groups[c.unit] || []).push({min:c.min, price:price});
+        });
+        var keys = Object.keys(groups), multi = keys.length > 1, orderCell = "";
+        keys.forEach(function(u, gi) {
+          var isMain = (gi === 0);
+          var tiers = groups[u].slice().sort(function(a,b){ return a.min - b.min; }).map(function(x){ return {min:x.min, price:x.price}; });
+          var opt = {name:row.p, brand:(tbl.brand||""), unit:u, tiers:tiers, main:isMain};
+          var oi = OPTIONS.push(opt) - 1;
+          var q = cartQtyFor(row.p, (tbl.brand||""), u);
+          var sub = "";
+          if (q > 0) { var up = priceForTiers(tiers, q); sub = "<b>" + $n(up*q) + "</b><span>" + q + " " + unitLabel(u, q) + " &middot; " + $n(up) + " c/u</span>"; }
+          orderCell += "<div class=\"qg\">";
+          orderCell += "<span class=\"qg-u " + (isMain ? "main" : "sub") + "\">por " + u + "</span>";
+          orderCell += "<div class=\"stp stp-sm\">"
+            + "<button type=\"button\" onclick=\"rowStep(" + oi + ",-1)\">&minus;</button>"
+            + "<input type=\"number\" inputmode=\"numeric\" id=\"q_" + oi + "\" value=\"" + (q||0) + "\" min=\"0\" onchange=\"rowSet(" + oi + ",this.value)\">"
+            + "<button type=\"button\" onclick=\"rowStep(" + oi + ",1)\">+</button>"
+            + "</div>";
+          orderCell += "<div class=\"qg-sub\" id=\"sub_" + oi + "\">" + sub + "</div>";
+          orderCell += "</div>";
+        });
+        tbH += "<tr><td class=\"l\">" + row.p + "</td>";
+        valCols.forEach(function(i) { tbH += "<td class=\"r\">" + $n((row.v || [])[i - 1]) + "</td>"; });
+        tbH += "<td class=\"r ordcell\">" + orderCell + "</td>";
+        tbH += "</tr>";
+      });
+      tbH += "</tbody></table></div>";
+    });
+    if (!vis) return;
+    html += "<details open><summary>" + sec.title + "</summary><div class=\"sb\">" + tbH + "</div></details>";
+  });
+  root.innerHTML = html || "<p style=\"color:#555;padding:20px;text-align:center\">Sin resultados</p>";
+}
+
+function filt() { term = document.getElementById("s").value; render(); }
+function saveCache(d) { try { localStorage.setItem("gdo_v3", JSON.stringify({ts: Date.now(), data: d})); } catch(e) {} }
+function loadCache() { try { var c = JSON.parse(localStorage.getItem("gdo_v3") || "null"); if (c && Date.now() - c.ts < 14400000) return c; } catch(e) {} return null; }
+var cache = loadCache();
+if (cache) { sections = cache.data; }
+render();
+fetch(API + (API.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now(), {cache:"no-store"}).then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
+  if (!data) return;
+  sections = data; saveCache(data); render();
+  document.getElementById("fecha").textContent = "Actualizada " + new Date().toLocaleDateString("es-AR", {day:"2-digit",month:"2-digit",year:"numeric"}) + " - Precios sujetos a modificaciones";
+}).catch(function() {});
+
+/* Aviso si se abre dentro de un navegador interno (TikTok, Instagram, Facebook, etc.) */
+(function detectInApp(){
+  try{
+    var ua = navigator.userAgent || "";
+    var inApp = /(BytedanceWebview|musical_ly|TikTok|Bytedance|Instagram|FBAN|FBAV|FB_IAB|Line\/|; wv\)|GSA\/)/i.test(ua);
+    if(inApp){ var b=document.getElementById("iabnr"); if(b) b.classList.add("show"); }
+  }catch(e){}
+})();
+
+/* ===== Pedido / carrito ===== */
+function loadCart(){ try{ var c=JSON.parse(localStorage.getItem("gdo_cart")||"[]"); if(Array.isArray(c)) cart=c; }catch(e){} }
+function persistCart(){ try{ localStorage.setItem("gdo_cart", JSON.stringify(cart)); }catch(e){} }
+function findLine(opt){ for(var i=0;i<cart.length;i++){ var l=cart[i]; if(l.name===opt.name && l.brand===opt.brand && l.unit===opt.unit) return l; } return null; }
+function lineUnitPrice(l){ return priceForTiers(l.tiers, l.qty); }
+function lineTotal(l){ return lineUnitPrice(l)*l.qty; }
+function cartTotal(){ var s=0; cart.forEach(function(l){ s+=lineTotal(l); }); return s; }
+function cartCount(){ return cart.length; }
+
+function rowSet(oi, val){
+  var opt=OPTIONS[oi]; if(!opt) return;
+  var q=parseInt(val,10); if(isNaN(q)||q<0) q=0;
+  var l=findLine(opt);
+  if(q===0){ if(l) cart.splice(cart.indexOf(l),1); }
+  else if(l){ l.qty=q; }
+  else { cart.push({name:opt.name, brand:opt.brand, unit:opt.unit, tiers:opt.tiers, qty:q, main:opt.main}); }
+  persistCart(); updateRowSub(oi, q); renderCartBar();
+}
+function rowStep(oi, d){
+  var inp=document.getElementById("q_"+oi);
+  var cur=inp?parseInt(inp.value,10):0; if(isNaN(cur)) cur=0;
+  var nv=cur+d; if(nv<0) nv=0;
+  if(inp) inp.value=nv;
+  rowSet(oi, nv);
+}
+function updateRowSub(oi, q){
+  var el=document.getElementById("sub_"+oi); if(!el) return;
+  var opt=OPTIONS[oi];
+  if(!opt || !q || q<=0){ el.innerHTML=""; return; }
+  var up=priceForTiers(opt.tiers, q);
+  el.innerHTML="<b>"+$n(up*q)+"</b><span>"+q+" "+unitLabel(opt.unit, q)+" &middot; "+$n(up)+" c/u</span>";
+}
+function renderCartBar(){
+  var bar=document.getElementById("cartbar");
+  if(cart.length){ bar.classList.add("show"); document.getElementById("cbCount").textContent=cartCount(); document.getElementById("cbTotal").textContent=$n(cartTotal()); }
+  else { bar.classList.remove("show"); }
+}
+function setQty(i, q){
+  var l=cart[i]; if(!l) return;
+  q=parseInt(q,10); if(isNaN(q)||q<0) q=0;
+  if(q===0){ cart.splice(i,1); } else { l.qty=q; }
+  persistCart(); renderCart(); renderCartBar();
+}
+function incQty(i, d){ var l=cart[i]; if(!l) return; setQty(i, l.qty + d); }
+function setNote(i, val, el){ var l=cart[i]; if(!l) return; l.note=val; persistCart(); if(el){ if(val&&val.trim()) el.classList.add("has"); else el.classList.remove("has"); } }
+function escAttr(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function removeLine(i){ cart.splice(i,1); persistCart(); renderCart(); renderCartBar(); }
+function clearCart(){ if(!cart.length) return; if(!confirm("Â¿Vaciar todo el pedido?")) return; cart=[]; persistCart(); renderCart(); renderCartBar(); }
+function renderCart(){
+  var list=document.getElementById("cartList"), sum=document.getElementById("sumRow"), form=document.getElementById("cartForm");
+  if(!cart.length){
+    list.innerHTML='<div class="empty">Tu pedido estÃ¡ vacÃ­o.<br>PonÃ© una cantidad en cualquier producto para agregarlo.</div>';
+    sum.style.display="none"; form.style.display="none"; return;
+  }
+  var h="";
+  cart.forEach(function(l,i){
+    var up=lineUnitPrice(l), tot=up*l.qty;
+    h+='<div class="ci">'
+      +'<div class="ci-top">'
+        +'<div class="ci-main">'
+          +(l.brand?'<div class="ci-brand">'+l.brand+'</div>':'')
+          +'<div class="ci-name">'+l.name+'</div>'
+          +'<div class="ci-price">'+$n(up)+' c/u <span class="qg-u '+((l.main===false)?'sub':'main')+'">por '+l.unit+'</span></div>'
+          +'<button class="rm" onclick="removeLine('+i+')">Eliminar</button>'
+        +'</div>'
+        +'<div class="ci-right">'
+          +'<div class="ci-total">'+$n(tot)+'</div>'
+          +'<div class="stp">'
+            +'<button type="button" onclick="incQty('+i+',-1)">&minus;</button>'
+            +'<input type="number" inputmode="numeric" value="'+l.qty+'" min="0" onchange="setQty('+i+',this.value)">'
+            +'<button type="button" onclick="incQty('+i+',1)">+</button>'
+          +'</div>'
+          +'<div class="ci-unit">'+unitPlural(l.unit)+'</div>'
+        +'</div>'
+      +'</div>'
+      +'<div class="ci-notebox">'
+        +'<span class="ci-notelbl">ðŸ“ AclaraciÃ³n para este producto</span>'
+        +'<input class="ci-note'+((l.note&&l.note.trim())?' has':'')+'" type="text" placeholder="Ej: fileteada para churrasco, cajÃ³n de 6 cabezas" value="'+escAttr(l.note||"")+'" oninput="setNote('+i+',this.value,this)">'
+      +'</div>'
+    +'</div>';
+  });
+  list.innerHTML=h;
+  sum.style.display="flex"; form.style.display="block";
+  document.getElementById("grandTotal").textContent=$n(cartTotal());
+  restoreForm();
+}
+function openCart(){ renderCart(); document.getElementById("ovl").classList.add("show"); document.body.style.overflow="hidden"; }
+function closeCart(){ document.getElementById("ovl").classList.remove("show"); document.body.style.overflow=""; render(); }
+document.getElementById("ovl").addEventListener("click", function(e){ if(e.target===this) closeCart(); });
+
+function val(id){ var el=document.getElementById(id); return el?el.value:""; }
+function saveForm(){ try{ localStorage.setItem("gdo_form", JSON.stringify({ n:val("cName"), t:val("cTel"), a:val("cAddr"), p:val("cPay"), o:val("cNotes") })); }catch(e){} }
+function restoreForm(){
+  try{ var f=JSON.parse(localStorage.getItem("gdo_form")||"null"); if(!f) return;
+    if(!val("cName")) document.getElementById("cName").value=f.n||"";
+    if(!val("cTel")) document.getElementById("cTel").value=f.t||"";
+    if(!val("cAddr")) document.getElementById("cAddr").value=f.a||"";
+    if(f.p) document.getElementById("cPay").value=f.p;
+    if(!val("cNotes")) document.getElementById("cNotes").value=f.o||"";
+  }catch(e){}
+}
+function sendWhatsApp(){
+  var name=val("cName").trim(), tel=val("cTel").trim(), ok=true;
+  var fgN=document.getElementById("fgName"), fgT=document.getElementById("fgTel");
+  if(!name){ fgN.classList.add("err"); ok=false; } else fgN.classList.remove("err");
+  if(!tel){ fgT.classList.add("err"); ok=false; } else fgT.classList.remove("err");
+  if(!cart.length){ alert("Tu pedido estÃ¡ vacÃ­o."); return; }
+  if(!ok) return;
+  var addr=val("cAddr").trim(), pay=val("cPay"), notes=val("cNotes").trim();
+  var L=[];
+  L.push("ðŸ›’ *NUEVO PEDIDO*");
+  L.push("*Granja del Oeste*");
+  L.push("");
+  L.push("â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+  L.push("ðŸ‘¤ *DATOS DEL CLIENTE*");
+  L.push("");
+  L.push("â€¢ *Nombre:* "+name);
+  L.push("â€¢ *TelÃ©fono:* "+tel);
+  if(addr) L.push("â€¢ *DirecciÃ³n/Localidad:* "+addr);
+  L.push("â€¢ *Forma de pago:* "+pay);
+  if(notes) L.push("â€¢ *Notas generales:* "+notes);
+  L.push("");
+  L.push("â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+  L.push("ðŸ“¦ *DETALLE DEL PEDIDO*");
+  L.push("");
+  cart.forEach(function(l,i){
+    var up=lineUnitPrice(l), tot=up*l.qty, nm=l.name+(l.brand?" ("+l.brand+")":"");
+    L.push("*"+(i+1)+") "+nm+"*");
+    L.push("    "+l.qty+" "+unitLabel(l.unit, l.qty)+" Ã— "+$n(up)+" = *"+$n(tot)+"*");
+    if(l.note && l.note.trim()) L.push("    ðŸ“ _"+l.note.trim()+"_");
+    L.push("");
+  });
+  L.push("â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+  L.push("ðŸ’° *TOTAL ESTIMADO: "+$n(cartTotal())+"*");
+  L.push("â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+  L.push("");
+  L.push("_El pedido serÃ¡ confirmado por un miembro del equipo en horario comercial para coordinar la forma de pago, y la entrega o retiro segÃºn corresponda._");
+  var url="https://wa.me/5491135800164?text="+encodeURIComponent(L.join("\n"));
+  window.open(url, "_blank");
+}
+loadCart();
+renderCartBar();
+render();
+
+</script>
+<div class="cartbar" id="cartbar">
+  <div class="cartbar-in">
+    <button onclick="openCart()">
+      <span class="cb-count" id="cbCount">0</span>
+      <span>Ver pedido</span>
+      <span class="cb-total" id="cbTotal">$ 0</span>
+    </button>
+  </div>
+</div>
+<div class="ovl" id="ovl">
+  <div class="sheet">
+    <div class="sheet-h">
+      <h2>Tu pedido</h2>
+      <button class="x" onclick="closeCart()">&times;</button>
+    </div>
+    <div class="sheet-b">
+      <div id="cartList"></div>
+      <div class="sumrow" id="sumRow" style="display:none">
+        <span class="sl">Total estimado</span>
+        <span class="sv" id="grandTotal">$ 0</span>
+      </div>
+      <div class="form" id="cartForm" style="display:none">
+        <h3>Tus datos</h3>
+        <div class="fg" id="fgName">
+          <label>Nombre y apellido <span class="req">*</span></label>
+          <input id="cName" type="text" placeholder="Tu nombre" oninput="saveForm()">
+          <div class="ferr">IngresÃ¡ tu nombre</div>
+        </div>
+        <div class="fg" id="fgTel">
+          <label>TelÃ©fono / WhatsApp <span class="req">*</span></label>
+          <input id="cTel" type="tel" inputmode="tel" placeholder="11 1234-5678" oninput="saveForm()">
+          <div class="ferr">IngresÃ¡ un telÃ©fono</div>
+        </div>
+        <div class="fg">
+          <label>DirecciÃ³n / Localidad</label>
+          <input id="cAddr" type="text" placeholder="Calle, nÃºmero, localidad" oninput="saveForm()">
+        </div>
+        <div class="fg">
+          <label>Forma de pago</label>
+          <select id="cPay" onchange="saveForm()">
+            <option value="A coordinar">A coordinar</option>
+            <option value="Efectivo">Efectivo</option>
+            <option value="Transferencia">Transferencia</option>
+            <option value="DÃ©bito / CrÃ©dito">DÃ©bito / CrÃ©dito</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Notas / aclaraciones</label>
+          <textarea id="cNotes" placeholder="Horario de entrega, retiro, comentarios..." oninput="saveForm()"></textarea>
+        </div>
+        <div class="note">El pedido <b>no es una compra cerrada</b>: serÃ¡ confirmado por un miembro del equipo en horario comercial (Lun&#8209;SÃ¡b 6:00 a 13:30) para coordinar la forma de pago, y la entrega o retiro segÃºn corresponda. Los precios pueden estar sujetos a modificaciones.</div>
+        <button class="send" id="sendBtn" onclick="sendWhatsApp()">
+          <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+          Enviar pedido por WhatsApp
+        </button>
+        <div class="acts">
+          <button onclick="closeCart()">Seguir comprando</button>
+          <button class="clear" onclick="clearCart()">Vaciar pedido</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase.js"></script>
+<script src="js/geo.js"></script>
+<script>
+/* ====== Integración con la app de reparto GDO ======
+   Cada pedido enviado por WhatsApp se registra también en la cola
+   (localStorage 'gdo_reparto_inbox') que la app de reparto lee. El
+   administrador solo tiene que asignar el chofer. En producción esto
+   se reemplaza por una escritura a Firestore (misma forma de pedido). */
+(function(){
+  var INBOX='gdo_reparto_inbox';
+  function hoy(){ return new Date().toISOString().slice(0,10); }
+  function nid(){ return 'p_'+Math.random().toString(36).slice(2,9); }
+  function val2(id){ var e=document.getElementById(id); return e?e.value:''; }
+
+  // Autocompletado de dirección (Georef AR): al elegir una sugerencia guarda
+  // las coordenadas para que el pedido llegue ya ubicado a la app de reparto.
+  var picked=null;
+  (function initAuto(){
+    var inp=document.getElementById('cAddr');
+    if(inp && window.GDO && GDO.Geo && GDO.Geo.attachAutocomplete){
+      GDO.Geo.attachAutocomplete(inp, function(it){
+        if(it && it.lat!=null) picked={ direccion: it.direccion||it.label, lat: it.lat, lng: it.lng };
+      }, { provincia:'Buenos Aires', departamento:'Hurlingham' });
+      inp.addEventListener('input', function(){ picked=null; });
+    }
+  })();
+
+  function registrarPedidoReparto(){
+    if(!window.cart || !cart.length) return;
+    var name=val2('cName').trim(), tel=val2('cTel').trim();
+    if(!name || !tel) return;
+    var addr=val2('cAddr').trim(), pay=val2('cPay'), notes=val2('cNotes').trim();
+    var lat=null, lng=null;
+    if(picked && picked.direccion && addr && picked.direccion.toLowerCase()===addr.toLowerCase()){ lat=picked.lat; lng=picked.lng; }
+    var items=cart.map(function(l){
+      return { producto: l.name+(l.brand?' ('+l.brand+')':''), cantidad: l.qty,
+               unidad: (typeof unitLabel==='function'? unitLabel(l.unit,l.qty): l.unit),
+               nota: (l.note||'').trim() };
+    });
+    var esp=[];
+    if(pay) esp.push('Pago: '+pay);
+    if(notes) esp.push(notes);
+    cart.forEach(function(l){ if(l.note&&l.note.trim()) esp.push(l.name+': '+l.note.trim()); });
+    var pedido={
+      id: nid(), origen:'tienda', cliente:name, telefono:tel,
+      direccion:addr, entrecalles:'', lat:lat, lng:lng,
+      items:items, fechaEntrega:'', especificaciones:esp.join(' · '),
+      prioridad:'normal', estado:'pendiente', creadoPor:null, rutaId:null,
+      ventana:'', historia:[], ts:Date.now()
+    };
+    // Cola local: el admin lo ve sin internet en el mismo navegador.
+    function pushInbox(p){
+      var inbox=[];
+      try{ inbox=JSON.parse(localStorage.getItem(INBOX)||'[]'); if(!Array.isArray(inbox)) inbox=[]; }catch(e){ inbox=[]; }
+      inbox.push(p);
+      try{ localStorage.setItem(INBOX, JSON.stringify(inbox)); }catch(e){}
+    }
+    // Con Firebase: escribe directo a Firestore para que el admin lo vea desde
+    // cualquier dispositivo. Sin Firebase (offline): cae a la cola local.
+    if(window.GDO && GDO.FB && GDO.FB.ready){
+      GDO.FB.ready.then(function(en){
+        if(en && GDO.FB.db){ try{ GDO.FB.db.collection('pedidos').doc(pedido.id).set(pedido); return; }catch(e){} }
+        pushInbox(pedido);
+      });
+    } else { pushInbox(pedido); }
+  }
+  var _send=window.sendWhatsApp;
+  if(typeof _send==='function'){
+    window.sendWhatsApp=function(){
+      try{ registrarPedidoReparto(); }catch(e){}
+      return _send.apply(this, arguments);
+    };
+  }
+})();
+</script>
+</body>
+</html>
