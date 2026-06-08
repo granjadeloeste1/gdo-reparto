@@ -10,31 +10,32 @@
   <!-- Fondo naranja de marca (full-bleed para icono maskable) -->
   <rect width="512" height="512" fill="#F58220"/>
 
-  <!-- Caminito de puntos: curva (valle) por abajo que une el pin con el pollo -->
+  <!-- Caminito: curva cerrada que sale de los puntos del isologo y sube
+       hasta el destino, adelante de la mirada del pollo -->
   <g class="dot">
-    <circle cx="138" cy="298" r="9"/>
-    <circle cx="132" cy="335" r="9"/>
-    <circle cx="146" cy="369" r="9"/>
-    <circle cx="176" cy="396" r="9"/>
-    <circle cx="214" cy="414" r="9"/>
-    <circle cx="256" cy="422" r="9"/>
-    <circle cx="300" cy="420" r="9"/>
-    <circle cx="340" cy="406" r="9"/>
-    <circle cx="372" cy="381" r="9"/>
-    <circle cx="392" cy="347" r="9"/>
-    <circle cx="398" cy="310" r="9"/>
+    <circle cx="285" cy="300" r="8.5"/>
+    <circle cx="255" cy="326" r="8.5"/>
+    <circle cx="218" cy="340" r="8.5"/>
+    <circle cx="180" cy="337" r="8.5"/>
+    <circle cx="152" cy="317" r="8.5"/>
+    <circle cx="139" cy="285" r="8.5"/>
+    <circle cx="141" cy="249" r="8.5"/>
+    <circle cx="152" cy="219" r="8.5"/>
   </g>
 
-  <!-- Pin de ubicación (izquierda): blanco con punto rojo de marca -->
-  <path d="M140,280 C 92,214 84,198 84,158 a 56 56 0 1 1 112 0 C 196,198 188,214 140,280 Z" fill="#ffffff"/>
-  <circle cx="140" cy="158" r="23" fill="#e30613"/>
+  <!-- Pin de destino (adelante de la mirada): blanco con punto rojo de marca -->
+  <path d="M165,206 C 123,150 117,138 117,120 a 48 48 0 1 1 96 0 C 213,138 207,150 165,206 Z" fill="#ffffff"/>
+  <circle cx="165" cy="120" r="20" fill="#e30613"/>
 
-  <!-- Isotipo (pollo) original de Granja del Oeste, a la derecha mirando a la izquierda -->
-  <g transform="translate(222,68) scale(1.0)">
+  <!-- Isotipo (pollo) original de Granja del Oeste, con sus puntos propios -->
+  <g transform="translate(245,95) scale(0.92)">
     <path class="c3" d="M37.08,24.61s6.21-12.41,16.14-10.92c0,0-3.48,2.36-3.48,5.4,0,0,7.45-2.67,17.38-1.43,9.93,1.24,13.91-2.98,13.91-2.98,0,0-2.73,31.04-43.96,9.93"/>
     <path class="c0" d="M173.13,88.64s-69.18-58.12-114.01,0c0,0-24.25,36.16,8.08,85.51,0,0,14.46-60.83,105.92-49.77,0,0-28.93-31.88-76.57-9.56,0,0,17.87-23.62,76.57-10.43,0,0-44.24-29.18-80.83-10.97,0,0,20.42-23.91,80.83-4.77"/>
     <path class="c0" d="M36.58,29.51s11.49,13.23,2.98,64.47c-8.51,51.24,21.27,80.16,21.27,80.16,0,0-42.97-74.85,14.89-105.27,0,0-5.95-31.28-39.14-39.36"/>
     <path class="c1" d="M32.57,29.79s-10.1-2.77-17.1,1.95c0,0,18.89,9.61,23.45,18.56,0,0-1.47-11.07-6.35-20.51"/>
     <path class="c3" d="M38.92,54.91s3.3,29.21-8.16,29.21-3.64-23.66,8.16-29.21"/>
+    <circle class="dot" cx="59.31" cy="185.93" r="7.54"/>
+    <circle class="dot" cx="79.95" cy="185.93" r="7.54"/>
+    <circle class="dot" cx="102.22" cy="185.93" r="7.54"/>
   </g>
 </svg>
