@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Seguí tu pedido — Granja del Oeste</title>
+<meta name="theme-color" content="#0a0a0a"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0a0a;color:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+  .hdr{background:#111;border-bottom:3px solid #F58220;padding:14px 16px;text-align:center}
+  .hdr b{color:#fff;font-size:16px;letter-spacing:.04em}
+  .hdr .br{display:block;color:#F58220;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;margin-top:2px}
+  .wrap{max-width:560px;margin:0 auto;padding:16px}
+  .card{background:#111;border:1px solid #1e1e1e;border-radius:14px;padding:18px;margin-bottom:14px}
+  .estado{display:flex;align-items:center;gap:12px}
+  .estado .ic{font-size:34px;line-height:1}
+  .estado .tx h1{font-size:18px;color:#fff;margin-bottom:2px}
+  .estado .tx p{font-size:13px;color:#9a9a9a}
+  .eta{margin-top:14px;background:rgba(245,130,32,.1);border:1px solid rgba(245,130,32,.5);border-radius:10px;padding:12px 14px;text-align:center}
+  .eta .big{font-size:26px;font-weight:800;color:#F58220;font-family:monospace}
+  .eta .lbl{font-size:11px;color:#c89466;text-transform:uppercase;letter-spacing:.08em}
+  .row{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:8px 0;border-top:1px solid #1c1c1c}
+  .row:first-child{border-top:none}
+  .row .k{color:#888}.row .v{color:#fff;text-align:right;font-weight:600}
+  #map{height:240px;border-radius:12px;border:1px solid #1e1e1e;background:#0f0f0f}
+  .steps{list-style:none;margin-top:6px}
+  .steps li{display:flex;align-items:flex-start;gap:10px;padding:7px 0;font-size:13px;color:#666}
+  .steps li .dot{width:14px;height:14px;border-radius:50%;background:#262626;flex-shrink:0;margin-top:2px;border:2px solid #262626}
+  .steps li.on{color:#fff}
+  .steps li.on .dot{background:#F58220;border-color:#F58220}
+  .steps li.done{color:#9a9a9a}
+  .steps li.done .dot{background:#3a7a4f;border-color:#3a7a4f}
+  .muted{color:#777;font-size:12px;text-align:center;margin-top:10px}
+  .err{background:#1a0000;border:1px solid #3a0000;border-radius:12px;padding:24px;text-align:center;color:#f87171;font-size:14px}
+  .wa{display:block;text-align:center;background:#25D366;color:#073b1c;text-decoration:none;font-weight:800;border-radius:10px;padding:13px;margin-top:6px;font-size:14px}
+  .load{text-align:center;color:#888;padding:40px 0}
+  a.linkmap{color:#F58220;text-decoration:none;font-size:13px}
+</style>
+</head>
+<body>
+  <div class="hdr"><b>Seguí tu pedido</b><span class="br">Granja del Oeste</span></div>
+  <div class="wrap" id="app"><div class="load">Cargando tu pedido…</div></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script>
+  (function () {
+    var app = document.getElementById('app');
+    var pid = new URLSearchParams(location.search).get('p');
+    if (!pid) { app.innerHTML = '<div class="err">Falta el código del pedido en el enlace.</div>'; return; }
+
+    var cfg = {
+      apiKey: 'AIzaSyDljWSSEDrZylMxgYCPaqaqU2x-3QYvZaM',
+      authDomain: 'ruteogdo.firebaseapp.com',
+      projectId: 'ruteogdo',
+      storageBucket: 'ruteogdo.firebasestorage.app',
+      messagingSenderId: '507253098011',
+      appId: '1:507253098011:web:785699004cd41dfe1f9abe',
+    };
+    if (typeof firebase === 'undefined' || !firebase.initializeApp) {
+      app.innerHTML = '<div class="err">No hay conexión. Probá de nuevo con internet.</div>'; return;
+    }
+    var db, auth;
+    try { firebase.initializeApp(cfg); db = firebase.firestore(); auth = firebase.auth(); }
+    catch (e) { app.innerHTML = '<div class="err">No se pudo conectar. Probá más tarde.</div>'; return; }
+
+    var VEL_KMH = 24, SALIDA_DEF = 8 * 60;
+    function haversine(a, b) {
+      var R = 6371, toR = function (d) { return d * Math.PI / 180; };
+      var dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+      var x = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+    }
+    function fmtHora(min) {
+      if (min == null || isNaN(min)) return '';
+      var h = Math.floor(min / 60) % 24, m = Math.round(min % 60);
+      return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+    }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+    // Estima la hora de llegada a este pedido recorriendo la ruta desde el origen.
+    function calcularEta(ruta, pedidoId) {
+      if (!ruta || !ruta.origen || ruta.origen.lat == null) return null;
+      var ids = (ruta.orden && ruta.orden.length ? ruta.orden : ruta.pedidoIds) || [];
+      var idx = ids.indexOf(pedidoId);
+      if (idx < 0) return null;
+      var t = ruta.salidaMin == null ? SALIDA_DEF : ruta.salidaMin;
+      var prev = ruta.origen;
+      for (var i = 0; i <= idx; i++) {
+        var p = (ruta._paradas || {})[ids[i]];
+        if (p && p.lat != null && prev.lat != null) t += (haversine(prev, p) / VEL_KMH) * 60;
+        if (i < idx) { var dem = (ruta.demoraPorId && ruta.demoraPorId[ids[i]] != null) ? ruta.demoraPorId[ids[i]] : (ruta.demoraDefaultMin || 0); t += dem; }
+        if (p) prev = p;
+      }
+      return { eta: t, pos: idx + 1, total: ids.length };
+    }
+
+    var STEPS = [
+      { k: 'recibido', lbl: 'Pedido recibido' },
+      { k: 'asignado', lbl: 'Asignado a un reparto' },
+      { k: 'en_camino', lbl: 'En camino' },
+      { k: 'entregado', lbl: 'Entregado' },
+    ];
+
+    var map = null, marker = null;
+    function pintarMapa(p) {
+      if (p.lat == null || !window.L) return;
+      var el = document.getElementById('map');
+      if (!el) return;
+      if (!map) {
+        map = L.map(el, { zoomControl: true, attributionControl: false }).setView([p.lat, p.lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+      }
+      if (marker) map.removeLayer(marker);
+      var icon = L.divIcon({ className: '', iconSize: [30, 30], iconAnchor: [15, 28], html: '<div style="font-size:30px;line-height:1">📍</div>' });
+      marker = L.marker([p.lat, p.lng], { icon: icon }).addTo(map);
+      map.setView([p.lat, p.lng], 15);
+      setTimeout(function () { try { map.invalidateSize(); } catch (e) {} }, 150);
+    }
+
+    function render(p, info) {
+      var entregado = p.estado === 'entregado';
+      var noEntregado = p.estado === 'no_entregado';
+      var enCamino = p.estado === 'en_ruta' || p.estado === 'salteado';
+      var asignado = p.estado === 'asignado' || p.rutaId;
+
+      var ic = '📦', tit = 'Pedido recibido', sub = 'Lo estamos preparando.';
+      var paso = 0;
+      if (asignado && !enCamino && !entregado && !noEntregado) { ic = '🗂️'; tit = 'Asignado a reparto'; sub = 'Tu pedido ya tiene chofer asignado.'; paso = 1; }
+      if (enCamino) { ic = '🚚'; tit = 'En camino'; sub = 'El repartidor está en ruta hacia vos.'; paso = 2; }
+      if (entregado) { ic = '✅'; tit = '¡Entregado!'; sub = 'Tu pedido fue entregado. ¡Gracias!'; paso = 3; }
+      if (noEntregado) { ic = '⚠️'; tit = 'No pudimos entregar'; sub = 'Nos vamos a comunicar para reprogramar.'; paso = 2; }
+
+      var etaHTML = '';
+      if (enCamino && info && info.eta != null) {
+        etaHTML = '<div class="eta"><div class="lbl">Llegada estimada</div><div class="big">' + fmtHora(info.eta) + ' hs</div>' +
+          '<div class="lbl" style="margin-top:4px">Sos la parada ' + info.pos + ' de ' + info.total + '</div></div>';
+      }
+
+      var mapHTML = (p.lat != null) ? '<div class="card" style="padding:0;overflow:hidden"><div id="map"></div></div>' : '';
+      var dirRow = p.direccion ? '<div class="row"><span class="k">Dirección</span><span class="v">' + esc(p.direccion) + '</span></div>' : '';
+      var navLink = (p.lat != null) ? '<div style="text-align:center;margin-top:8px"><a class="linkmap" target="_blank" href="https://www.google.com/maps?q=' + p.lat + ',' + p.lng + '">Ver en el mapa ↗</a></div>' : '';
+
+      var stepsHTML = '<ul class="steps">' + STEPS.map(function (s, i) {
+        var cls = i < paso ? 'done' : (i === paso ? 'on' : '');
+        if (noEntregado && i === 3) return '';
+        return '<li class="' + cls + '"><span class="dot"></span>' + s.lbl + '</li>';
+      }).join('') + '</ul>';
+
+      app.innerHTML =
+        '<div class="card"><div class="estado"><div class="ic">' + ic + '</div>' +
+          '<div class="tx"><h1>' + tit + '</h1><p>' + sub + '</p></div></div>' + etaHTML + '</div>' +
+        mapHTML +
+        '<div class="card">' +
+          '<div class="row"><span class="k">Cliente</span><span class="v">' + esc(p.cliente || '') + '</span></div>' +
+          dirRow +
+          (p.entrecalles ? '<div class="row"><span class="k">Entre calles</span><span class="v">' + esc(p.entrecalles) + '</span></div>' : '') +
+          navLink +
+        '</div>' +
+        '<div class="card">' + stepsHTML + '</div>' +
+        '<div class="muted">Se actualiza solo. Dejá esta pantalla abierta para ver el avance.</div>';
+
+      if (p.lat != null) pintarMapa(p);
+    }
+
+    function arrancar() {
+      var pedidoActual = null, rutaActual = null, rutaIdActual = null, rutaUnsub = null;
+
+      function refrescar() {
+        if (!pedidoActual) return;
+        var info = rutaActual ? calcularEta(rutaActual, pedidoActual.id) : null;
+        render(pedidoActual, info);
+      }
+
+      db.collection('pedidos').doc(pid).onSnapshot(function (doc) {
+        if (!doc.exists) { app.innerHTML = '<div class="err">No encontramos este pedido. Revisá el enlace.</div>'; return; }
+        var p = doc.data(); p.id = doc.id;
+        pedidoActual = p;
+
+        // engancha la ruta (para ETA y posición) solo cuando cambia
+        if (p.rutaId && p.rutaId !== rutaIdActual) {
+          rutaIdActual = p.rutaId;
+          if (rutaUnsub) rutaUnsub();
+          rutaUnsub = db.collection('rutas').doc(p.rutaId).onSnapshot(function (rd) {
+            if (!rd.exists) return;
+            var ruta = rd.data(); ruta.id = rd.id; ruta._paradas = {};
+            // trae coords de las paradas para estimar tiempos
+            var ids = (ruta.orden && ruta.orden.length ? ruta.orden : ruta.pedidoIds) || [];
+            Promise.all(ids.map(function (id) {
+              return db.collection('pedidos').doc(id).get().then(function (pd) {
+                if (pd.exists) { var d = pd.data(); ruta._paradas[id] = { lat: d.lat, lng: d.lng }; }
+              }).catch(function () {});
+            })).then(function () { rutaActual = ruta; refrescar(); });
+          }, function () {});
+        }
+        if (!p.rutaId) { rutaActual = null; rutaIdActual = null; if (rutaUnsub) { rutaUnsub(); rutaUnsub = null; } }
+        refrescar();
+      }, function (err) {
+        app.innerHTML = '<div class="err">No se pudo cargar el pedido. Probá de nuevo.</div>';
+      });
+    }
+
+    // login anónimo (puerta para las reglas de Firestore); si no está, igual probamos
+    var arrancado = false;
+    function arrancarUnaVez() { if (arrancado) return; arrancado = true; arrancar(); }
+    auth.signInAnonymously().catch(function () {});
+    auth.onAuthStateChanged(function () { arrancarUnaVez(); });
+    setTimeout(arrancarUnaVez, 2500);
+  })();
+  </script>
+</body>
+</html>
