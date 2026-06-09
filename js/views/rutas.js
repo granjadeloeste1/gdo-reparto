@@ -64,6 +64,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     } : JSON.parse(JSON.stringify(Store.ruta(rutaId)));
     if (!ruta) { c.innerHTML = '<div class="empty">Ruta no encontrada.</div>'; return; }
     ruta.demoraPorId = ruta.demoraPorId || {};
+    ruta.progreso = ruta.progreso || {};
+    // Estado al abrir el editor: sirve para no degradar/pisar una ruta que el
+    // chofer ya aceptó o está haciendo, y para detectar paradas agregadas.
+    const yaAsignada = !esNueva && ruta.estado !== 'borrador';
+    const enMarcha = !esNueva && ['asignada', 'aceptada', 'en_curso'].includes(ruta.estado);
+    const idsOriginales = new Set((ruta.pedidoIds || []).slice());
+    const repOriginal = ruta.repartidorId;
 
     const repartidores = Store.users().filter((u) => u.roles.includes('repartidor') && u.activo);
     // pedidos elegibles: pendientes + los que ya están en esta ruta
@@ -78,6 +85,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-ghost btn-sm" id="r-volver">← Volver</button>
       </div>
       <div class="note">Punto A y B fijados al depósito <b>Acuña 1334, Villa Tesei</b>. Podés modificarlos por cualquier inconveniente.</div>
+      ${yaAsignada ? `<div class="note" style="background:#fff7e6;border-color:#f0c97a;color:#8a5a00">✏️ Estás editando una ruta <b>ya asignada</b>. Las paradas que agregues se suman al final del recorrido; al guardar, el chofer ve los cambios en su panel y puede volver a optimizar.</div>` : ''}
       <div class="panel"><div class="panel-b">
         <div class="form-grid">
           <div class="field"><label>Nombre de la ruta</label><input id="r-nom" value="${esc(ruta.nombre)}"/></div>
@@ -110,7 +118,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div class="toolbar" style="margin-top:18px">
         <div class="spacer"></div>
         <button class="btn btn-ghost" id="r-save">Guardar borrador</button>
-        <button class="btn btn-primary" id="r-asignar">Optimizar y asignar al chofer</button>
+        <button class="btn btn-primary" id="r-asignar">${yaAsignada ? 'Guardar y avisar al chofer' : 'Optimizar y asignar al chofer'}</button>
       </div>`;
 
     const $ = (s) => c.querySelector(s);
@@ -157,10 +165,22 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const recompute = () => {
       readForm();
       const paradas = ruta.pedidoIds.map((id) => Store.pedido(id)).filter(Boolean);
-      const ordenIds = (ruta.orden && ruta.orden.length) ? ruta.orden.filter((id) => ruta.pedidoIds.includes(id)) : null;
       let orden;
-      if (ordenIds && ordenIds.length === paradas.length) orden = ordenIds.map((id) => Store.pedido(id));
-      else { orden = Route.optimizar(ruta.origen, paradas, ruta.destino); ruta.orden = orden.map((p) => p.id); }
+      let ordenIds = (ruta.orden || []).filter((id) => ruta.pedidoIds.includes(id));
+      const faltan = ruta.pedidoIds.filter((id) => !ordenIds.includes(id));
+      if (enMarcha && ordenIds.length) {
+        // Ruta ya asignada/en curso: NO reordenes lo que el chofer ya está
+        // recorriendo. Mantené el orden actual y agregá las paradas nuevas al final.
+        ordenIds = ordenIds.concat(faltan);
+        orden = ordenIds.map((id) => Store.pedido(id)).filter(Boolean);
+        ruta.orden = orden.map((p) => p.id);
+      } else if (ordenIds.length === paradas.length && ordenIds.length) {
+        orden = ordenIds.map((id) => Store.pedido(id)).filter(Boolean);
+        ruta.orden = orden.map((p) => p.id);
+      } else {
+        orden = Route.optimizar(ruta.origen, paradas, ruta.destino);
+        ruta.orden = orden.map((p) => p.id);
+      }
       calc = Route.calcular(ruta.origen, orden, ruta.destino, ruta.demoraDefaultMin, ruta.demoraPorId, ruta.salidaMin);
       drawSumario(orden);
       Route.render('map', ruta.origen, orden, ruta.destino, { sameAsOrigin: ruta.sameAsOrigin });
@@ -219,11 +239,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const persist = (estado) => {
       readForm();
       if (estado) ruta.estado = estado;
-      // marcar pedidos
-      ruta.pedidoIds.forEach((id) => { const p = Store.pedido(id); if (p) { p.rutaId = ruta.id || '__tmp'; p.fechaEntrega = ruta.fecha; p.estado = estado === 'asignada' ? 'asignado' : (p.estado === 'pendiente' ? 'pendiente' : p.estado); } });
       const saved = Store.upsertRuta(ruta);
       ruta.id = saved.id;
-      ruta.pedidoIds.forEach((id) => { const p = Store.pedido(id); if (p) p.rutaId = saved.id; });
+      // Estado de los pedidos según el estado de la ruta. No pisamos los que el
+      // chofer ya resolvió (entregado / no entregado).
+      const estadoPed = ruta.estado === 'borrador' ? null
+        : ruta.estado === 'asignada' ? 'asignado' : 'en_ruta'; // aceptada / en_curso
+      ruta.pedidoIds.forEach((id) => {
+        const p = Store.pedido(id); if (!p) return;
+        p.rutaId = saved.id; p.fechaEntrega = ruta.fecha;
+        const resuelto = ['entregado', 'no_entregado'].includes(ruta.progreso[id]);
+        if (estadoPed && !resuelto) p.estado = estadoPed;
+      });
       Store.save();
       return saved;
     };
@@ -233,11 +260,21 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       readForm();
       if (!ruta.repartidorId) { toast('Asigná un repartidor', 'err'); return; }
       if (!ruta.pedidoIds.length) { toast('Seleccioná al menos un pedido', 'err'); return; }
-      const saved = persist('asignada');
-      saved.pedidoIds.forEach((id) => { const p = Store.pedido(id); if (p) p.estado = 'asignado'; });
-      Store.save();
-      Store.pushNotif(ruta.repartidorId, `Te asignaron la ruta "${ruta.nombre}" con ${ruta.pedidoIds.length} paradas.`, { tipo: 'ruta', rutaId: saved.id });
-      toast('Ruta asignada al chofer', 'ok');
+      // No degradamos una ruta que el chofer ya aceptó / está haciendo: queda
+      // en su estado actual; si todavía no estaba asignada, pasa a "asignada".
+      const yaEnCurso = ['aceptada', 'en_curso', 'finalizada'].includes(ruta.estado);
+      const cambioChofer = repOriginal !== ruta.repartidorId;
+      const agregados = ruta.pedidoIds.filter((id) => !idsOriginales.has(id));
+      const saved = persist(yaEnCurso ? ruta.estado : 'asignada');
+      // Aviso al chofer según el caso.
+      if (!yaAsignada || cambioChofer) {
+        Store.pushNotif(ruta.repartidorId, `Te asignaron la ruta "${ruta.nombre}" con ${ruta.pedidoIds.length} paradas.`, { tipo: 'ruta', rutaId: saved.id });
+      } else if (agregados.length) {
+        Store.pushNotif(ruta.repartidorId, `Se actualizó tu ruta "${ruta.nombre}": +${agregados.length} parada(s) (ahora ${ruta.pedidoIds.length}). Si querés, volvé a optimizar el recorrido.`, { tipo: 'ruta', rutaId: saved.id });
+      } else {
+        Store.pushNotif(ruta.repartidorId, `Se actualizó tu ruta "${ruta.nombre}".`, { tipo: 'ruta', rutaId: saved.id });
+      }
+      toast(yaAsignada ? 'Ruta actualizada · se avisó al chofer' : 'Ruta asignada al chofer', 'ok');
       go('#/rutas');
     };
   };

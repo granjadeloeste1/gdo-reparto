@@ -110,6 +110,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
             <div class="panel" style="margin-bottom:14px"><div class="panel-b flush"><div id="dmap" class="mapbox" style="height:240px"></div></div></div>
 
+            ${ruta.estado !== 'finalizada' && pendientes.length >= 2 ? `<button class="btn btn-dark btn-block" id="d-reopt" style="margin-bottom:14px">↻ Optimizar el recorrido que falta</button>` : ''}
+
             ${!aceptada ? `
               <div class="dstop cur" style="text-align:center">
                 <p style="margin:0 0 10px">Revisá la ruta y aceptala para comenzar el reparto.</p>
@@ -233,6 +235,21 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (fin) fin.onclick = () => finalizar('¿Finalizar la ruta? Las paradas salteadas o sin marcar quedarán pendientes.');
       const volvi = mount.querySelector('[data-volvi]');
       if (volvi) volvi.onclick = () => finalizar('¿Confirmás que llegaste al depósito y finalizás la ruta?');
+      // Reoptimizar: reordena SOLO lo que falta (las entregadas/no entregadas
+      // quedan donde están). Útil cuando llega una parada nueva o cambió algo.
+      const reopt = mount.querySelector('#d-reopt');
+      if (reopt) reopt.onclick = () => {
+        const ordA = orden();
+        const hechos = ordA.filter((p) => ['entregado', 'no_entregado'].includes(ruta.progreso[p.id]));
+        const restantes = ordA.filter((p) => !['entregado', 'no_entregado'].includes(ruta.progreso[p.id]));
+        if (restantes.length < 2) { toast('No hay suficientes paradas para optimizar', ''); return; }
+        const opt = Route.optimizar(ruta.origen, restantes, ruta.destino);
+        ruta.orden = hechos.map((p) => p.id).concat(opt.map((p) => p.id));
+        _road = null; _roadSig = ''; // forzar recálculo del trazado real por calles
+        Store.upsertRuta(ruta); Store.save();
+        toast('Recorrido reoptimizado ✓', 'ok');
+        render();
+      };
       wireTop(mount);
     }
 
