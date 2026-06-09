@@ -1,0 +1,8 @@
+# ====== Reglas de dominio (Netlify) ======
+# La app de reparto vive en rutas.granjadeloeste.com (index.html, raiz).
+# La tienda (lista de precios + pedidos) se muestra en la raiz del dominio
+# lista.granjadeloeste.com, sirviendo tienda.html sin cambiar la URL.
+# Estas reglas recien tienen efecto cuando el dominio lista.granjadeloeste.com
+# este conectado a ESTE sitio de Netlify (Domain settings).
+https://lista.granjadeloeste.com/   /tienda.html   200!
+http://lista.granjadeloeste.com/    /tienda.html   200!
