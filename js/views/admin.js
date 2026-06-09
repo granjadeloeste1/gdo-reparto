@@ -107,10 +107,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <option value="normal"${!p||p.prioridad==='normal'?' selected':''}>Normal</option>
               <option value="alta"${p&&p.prioridad==='alta'?' selected':''}>Alta</option>
             </select></div>
-          <div class="field"><label>Ubicación en el mapa (lat, lng)</label>
+          <div class="field"><label>Ubicación (coordenadas o link de Google Maps)</label>
             <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
             <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>
-            <span class="help">Se ubica sola desde la dirección al guardar. Si estás parado en el lugar de entrega, tocá “Usar mi ubicación actual” para fijar el punto exacto.</span></div>
+            <span class="help">Se ubica sola desde la dirección al guardar. Si no la encuentra (o querés el punto exacto): abrí <b>Google Maps</b>, mantené apretado / clic derecho en el lugar, copiá el <b>link</b> o las <b>coordenadas</b> y pegalas acá. También podés tocar “Usar mi ubicación actual” si estás en la puerta.</span></div>
           <div class="field col-2"><label>Pedido (productos)</label><div id="f-items"></div>
             <button class="btn btn-ghost btn-sm" id="f-additem" style="align-self:flex-start;margin-top:6px">+ Agregar producto</button></div>
           <div class="field col-2"><label>Comentarios / especificaciones de entrega</label>
@@ -134,8 +134,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         node.querySelector('#f-additem').onclick = () => { items.push({ producto: '', cantidad: 1 }); drawItems(); };
         node.querySelector('[data-cancel]').onclick = close;
 
+        // Acepta "lat, lng" o un link de Google Maps pegado (saca las coords).
         const coordFromInput = () => {
-          const cm = node.querySelector('#f-coord').value.split(',').map((x) => parseFloat(x.trim()));
+          const v = node.querySelector('#f-coord').value;
+          if (GDO.Geo && GDO.Geo.parseLatLng) {
+            const r = GDO.Geo.parseLatLng(v);
+            if (r) return r;
+            if (GDO.Geo.esLinkCorto && GDO.Geo.esLinkCorto(v)) { toast('Ese es un link corto de Google Maps. Abrilo, copiá el link largo (el de la barra de direcciones) o las coordenadas, y pegalo.', 'err'); return null; }
+          }
+          const cm = v.split(',').map((x) => parseFloat(x.trim()));
           if (cm.length === 2 && !isNaN(cm[0]) && !isNaN(cm[1])) return { lat: cm[0], lng: cm[1] };
           return null;
         };

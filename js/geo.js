@@ -353,5 +353,36 @@ window.GDO = window.GDO || {};
     input.addEventListener('blur', () => setTimeout(hide, 150));
   }
 
-  GDO.Geo = { geocode, suggest, attachAutocomplete, locatePending };
+  // Extrae {lat,lng} de un texto: coordenadas sueltas o un link de Google Maps.
+  // Útil cuando el geocodificador gratuito no tiene la cuadra exacta (algunas
+  // zonas de William Morris, etc.): el operador busca el punto en Google Maps,
+  // copia el link o las coordenadas y las pega. Es exacto y 100% gratis.
+  // Soporta: "lat, lng" · .../@lat,lng,17z · ...!3dlat!4dlng (el pin real) ·
+  // ?q=lat,lng / ?query= / ?ll= / destination=lat,lng.
+  // OJO: los links cortos (maps.app.goo.gl / goo.gl/maps) NO se pueden resolver
+  // desde el navegador (CORS); hay que usar el link largo o las coordenadas.
+  function parseLatLng(text) {
+    const s = String(text || '').trim();
+    if (!s) return null;
+    const ok = (a, b) => {
+      const lat = +a, lng = +b;
+      if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+      return { lat, lng };
+    };
+    let m = s.match(/^\s*(-?\d{1,3}\.\d+)\s*[, ]\s*(-?\d{1,3}\.\d+)\s*$/); // "lat, lng"
+    if (m) return ok(m[1], m[2]);
+    m = s.match(/!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/); // pin exacto del lugar
+    if (m) return ok(m[1], m[2]);
+    m = s.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/); // centro del mapa en la URL
+    if (m) return ok(m[1], m[2]);
+    m = s.match(/[?&](?:q|query|ll|destination|sll|daddr)=(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/);
+    if (m) return ok(m[1], m[2]);
+    m = s.match(/(-?\d{1,3}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/); // último recurso
+    if (m) return ok(m[1], m[2]);
+    return null;
+  }
+
+  const esLinkCorto = (s) => /(maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(String(s || ''));
+
+  GDO.Geo = { geocode, suggest, attachAutocomplete, locatePending, parseLatLng, esLinkCorto };
 })();
