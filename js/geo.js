@@ -35,13 +35,45 @@ window.GDO = window.GDO || {};
   // Posición del partido en la zona (0 = más cercano). -1 = fuera de zona.
   const zonaRank = (partido) => _zonaSet.indexOf(_sinAcento(partido));
   const inZona = (partido) => zonaRank(partido) >= 0;
+
+  // ---- Localidades de la zona (para separar calle de localidad) -----------
+  // Georef necesita SOLO la calle (y la altura) en el campo "direccion". Si el
+  // texto trae la localidad pegada (p. ej. "Valentín Alsina William Morris"),
+  // la interpreta como nombre de calle y NO encuentra nada. Por eso detectamos
+  // la localidad al final de la dirección, la separamos y la mandamos aparte.
+  const LOCALIDADES = [
+    'hurlingham', 'william morris', 'villa tesei', 'villa club',
+    'moron', 'castelar', 'el palomar', 'haedo', 'villa sarmiento',
+    'ituzaingo', 'villa udaondo', 'parque leloir', 'villa gobernador udaondo',
+    'caseros', 'santos lugares', 'saenz pena', 'jose ingenieros', 'ciudadela',
+    'el libertador', 'churruca', 'martin coronado', 'pablo podesta',
+    'loma hermosa', 'ciudad jardin', 'tres de febrero',
+    'san andres', 'villa ballester', 'jose leon suarez', 'billinghurst',
+    'general san martin', 'san martin',
+    'san miguel', 'bella vista', 'munro', 'los polvorines', 'pablo nogues',
+    'grand bourg', 'tortuguitas', 'del viso', 'jose c paz',
+    'merlo', 'san antonio de padua', 'padua', 'libertad', 'parque san martin',
+    'moreno', 'paso del rey', 'francisco alvarez',
+  ].sort((a, b) => b.length - a.length); // más larga primero (matchea antes)
+
+  // "Calle [altura] [, ] Localidad" -> { calle, localidad }. Trabaja sobre el
+  // texto sin acentos y normalizado (Georef es insensible a acentos).
+  function partirDireccion(base) {
+    const limpio = _sinAcento(base).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+    for (const loc of LOCALIDADES) {
+      if (limpio === loc) return { calle: '', localidad: loc };
+      if (limpio.endsWith(' ' + loc)) return { calle: limpio.slice(0, limpio.length - loc.length).trim(), localidad: loc };
+    }
+    return { calle: limpio, localidad: '' };
+  }
   function loadCache() { try { return JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (e) { return {}; } }
   function saveCache(c) { try { localStorage.setItem(CACHE, JSON.stringify(c)); } catch (e) {} }
 
   // Una consulta a Georef /direcciones. Devuelve [{label,direccion,lat,lng,...}].
-  async function _georefQuery(q, provincia, departamento, max) {
+  async function _georefQuery(q, provincia, departamento, max, localidad) {
     const params = { direccion: q, provincia: provincia || 'Buenos Aires', max: String(max || 6), campos: 'estandar' };
     if (departamento) params.departamento = departamento;
+    if (localidad) params.localidad = localidad;
     const r = await fetch(GEOREF + '/direcciones?' + new URLSearchParams(params), { headers: { Accept: 'application/json' } });
     if (!r.ok) return [];
     const data = await r.json();
@@ -85,13 +117,18 @@ window.GDO = window.GDO || {};
           if (out.length >= max) break;
         }
       };
+      // Separamos la localidad si el usuario la escribió pegada a la calle.
+      const { calle, localidad } = partirDireccion(q);
+      const qCalle = calle || q;
+      // 0) Si hay localidad detectada, buscamos la calle filtrando por ella.
+      if (localidad) push((await _georefQuery(qCalle, ZONA.provincia, null, max, localidad)).filter((it) => inZona(it.partido)));
       // 1) Base: Hurlingham (zona principal de GDO) — match exacto y rápido.
-      push(await _georefQuery(q, ZONA.provincia, 'Hurlingham', max));
+      if (out.length < max) push(await _georefQuery(qCalle, ZONA.provincia, 'Hurlingham', max));
       // 2) Completar con el resto de la PROVINCIA pero filtrando SOLO a los
       //    partidos de la zona de reparto (Morón, Ituzaingó, etc.). Así nunca
       //    aparece una calle homónima de un pueblo lejano.
       if (out.length < max) {
-        const prov = await _georefQuery(q, ZONA.provincia, null, 30);
+        const prov = await _georefQuery(qCalle, ZONA.provincia, null, 30);
         push(prov.filter((it) => inZona(it.partido)));
       }
       // Ordenar por cercanía de zona (Hurlingham primero).
@@ -139,19 +176,28 @@ window.GDO = window.GDO || {};
   async function geocode(direccion) {
     const base = String(direccion || '').trim();
     if (!base) return null;
-    // Clave de caché versionada ('z2'): invalida coordenadas viejas mal ubicadas
-    // (de antes de acotar a la zona) que pudieran estar guardadas en el navegador.
-    const key = 'z2|' + norm(base);
+    // Clave de caché versionada ('z3'): invalida coordenadas viejas mal ubicadas
+    // y los "no encontrado" anteriores (antes de separar calle/localidad).
+    const key = 'z3|' + norm(base);
     const cache = loadCache();
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
     let res = null;
+    // Separamos la localidad (si viene pegada) para no romper el parser de Georef.
+    const { calle, localidad } = partirDireccion(base);
+    const qCalle = calle || base;
     try {
-      // 1) Georef en Hurlingham (base) — altura exacta.
-      let list = await _georefQuery(base, ZONA.provincia, 'Hurlingham', 1);
-      list = list.filter((it) => it.lat != null);
-      // 2) Si no está en Hurlingham, buscar en el resto de la zona de reparto.
+      // 1) Si detectamos localidad, la usamos como filtro (lo más preciso).
+      let list = [];
+      if (localidad) {
+        list = (await _georefQuery(qCalle, ZONA.provincia, null, 5, localidad))
+          .filter((it) => it.lat != null && inZona(it.partido))
+          .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
+      }
+      // 2) Georef en Hurlingham (base de GDO) con la calle sola.
+      if (!list.length) list = (await _georefQuery(qCalle, ZONA.provincia, 'Hurlingham', 3)).filter((it) => it.lat != null);
+      // 3) Si no está en Hurlingham, buscar en el resto de la zona de reparto.
       if (!list.length) {
-        const prov = await _georefQuery(base, ZONA.provincia, null, 30);
+        const prov = await _georefQuery(qCalle, ZONA.provincia, null, 30);
         list = prov.filter((it) => inZona(it.partido) && it.lat != null)
           .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
       }
@@ -177,7 +223,11 @@ window.GDO = window.GDO || {};
     if (_running || !GDO.Store) return;
     _running = true;
     try {
-      const pend = GDO.Store.pedidos().filter((p) => p.estado === 'pendiente' && p.lat == null && p.direccion);
+      // Ubica todo pedido activo que tenga dirección y aún no tenga coords
+      // (no solo los pendientes): así un pedido ya asignado o en ruta que quedó
+      // "sin ubicar" se corrige solo en cuanto mejora el geocodificador.
+      const activos = ['pendiente', 'asignado', 'en_ruta', 'salteado'];
+      const pend = GDO.Store.pedidos().filter((p) => p.lat == null && p.direccion && activos.includes(p.estado));
       for (const p of pend) {
         const g = await geocode(p.direccion);
         if (g) { p.lat = g.lat; p.lng = g.lng; if (g.localidad && !p.localidad) p.localidad = g.localidad; GDO.Store.save(); if (onUpdate) try { onUpdate(p); } catch (e) {} }
