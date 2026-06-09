@@ -66,10 +66,19 @@ window.GDO = window.GDO || {};
     return ruta;
   }
 
+  const tieneGeo = (p) => p && p.lat != null && p.lng != null;
+
+  // Optimiza solo las paradas CON coordenadas; las que no tienen ubicación
+  // (p. ej. una dirección fuera de la zona que el geocodificador no encontró)
+  // se agregan al final, en el orden en que se seleccionaron. El chofer las
+  // navega igual con la dirección escrita (Google Maps la resuelve al llegar).
   function optimizar(origen, paradas, destino) {
-    if (paradas.length <= 2) return vecinoMasCercano(origen, paradas);
-    const inicial = vecinoMasCercano(origen, paradas);
-    return dosOpt(origen, inicial, destino || origen);
+    const con = paradas.filter(tieneGeo);
+    const sin = paradas.filter((p) => !tieneGeo(p));
+    let ord;
+    if (con.length <= 2) ord = vecinoMasCercano(origen, con);
+    else ord = dosOpt(origen, vecinoMasCercano(origen, con), destino || origen);
+    return ord.concat(sin);
   }
 
   // Calcula tiempos acumulados. demoraPorParada en minutos (puede ser por parada).
@@ -86,7 +95,7 @@ window.GDO = window.GDO || {};
     ordenParadas.forEach((p, i) => {
       let d, min;
       if (useRoad) { d = road.legs[i].km; min = road.legs[i].min; }
-      else { d = haversine(prev, p); min = (d / VEL_KMH) * 60; }
+      else { d = (tieneGeo(prev) && tieneGeo(p)) ? haversine(prev, p) : 0; min = (d / VEL_KMH) * 60; }
       km += d; t += min;
       llegada.push(t);
       const dem = (demoraPorId && demoraPorId[p.id] != null) ? demoraPorId[p.id] : demoraGlobalMin;
@@ -97,7 +106,7 @@ window.GDO = window.GDO || {};
     // regreso al destino
     let dv, dvmin;
     if (useRoad) { dv = road.legs[ordenParadas.length].km; dvmin = road.legs[ordenParadas.length].min; }
-    else { dv = haversine(prev, destino); dvmin = (dv / VEL_KMH) * 60; }
+    else { dv = (tieneGeo(prev) && tieneGeo(destino)) ? haversine(prev, destino) : 0; dvmin = (dv / VEL_KMH) * 60; }
     km += dv; t += dvmin;
     return {
       totalKm: Math.round(km * 10) / 10,
@@ -177,6 +186,7 @@ window.GDO = window.GDO || {};
     const mo = L.marker([origen.lat, origen.lng], { icon: pinIcon('A', NAR) }).addTo(_map).bindPopup('Salida: ' + (origen.nombre || 'Depósito'));
     _layers.push(mo); all.push([origen.lat, origen.lng]);
     ordenParadas.forEach((p, i) => {
+      if (p.lat == null || p.lng == null) return; // sin ubicar: no se puede dibujar
       const m = L.marker([p.lat, p.lng], { icon: pinIcon(String(i + 1), NEG) }).addTo(_map)
         .bindPopup(`<b>${i + 1}. ${p.cliente}</b><br>${p.direccion}`);
       _layers.push(m); all.push([p.lat, p.lng]);

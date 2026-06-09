@@ -67,7 +67,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
     const repartidores = Store.users().filter((u) => u.roles.includes('repartidor') && u.activo);
     // pedidos elegibles: pendientes + los que ya están en esta ruta
-    const elegibles = Store.pedidos().filter((p) => (p.estado === 'pendiente' || ruta.pedidoIds.includes(p.id)) && p.lat != null);
+    // Elegibles: pendientes (o ya en esta ruta), TENGAN O NO ubicación. Los que
+    // no tienen coords (p. ej. una dirección fuera de zona) se pueden asignar
+    // igual: van al final del recorrido y el chofer los navega por la dirección.
+    const elegibles = Store.pedidos().filter((p) => (p.estado === 'pendiente' || ruta.pedidoIds.includes(p.id)));
 
     c.innerHTML = `
       <div class="section-title">
@@ -119,11 +122,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // lista de pedidos elegibles con checkbox
     const pedsBox = $('#r-peds');
     const drawPeds = () => {
-      if (!elegibles.length) { pedsBox.innerHTML = `<div class="empty">No hay pedidos pendientes con ubicación cargada.</div>`; return; }
+      if (!elegibles.length) { pedsBox.innerHTML = `<div class="empty">No hay pedidos pendientes.</div>`; return; }
       pedsBox.innerHTML = `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Pedido</th><th>Prioridad</th></tr></thead><tbody>
         ${elegibles.map((p) => `<tr>
           <td><input type="checkbox" data-pid="${p.id}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
-          <td><b>${esc(p.cliente)}</b></td><td class="small">${esc(p.direccion)}</td>
+          <td><b>${esc(p.cliente)}</b></td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
           <td class="small">${(p.items||[]).map((i)=>i.cantidad+'× '+i.producto).join(', ')}</td>
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
         </tr>`).join('')}</tbody></table>`;
@@ -190,7 +193,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const noEnt = st === 'no_entregado' ? (p.historia || []).slice().reverse().find((e) => e.est === 'no_entregado' && e.detalle) : null;
           return `
           <div class="stop"><div class="seq">${i+1}</div>
-            <div class="body"><div class="cli">${esc(p.cliente)}${stChip}</div><div class="dir">${esc(p.direccion)}</div>
+            <div class="body"><div class="cli">${esc(p.cliente)}${stChip}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar</span>' : ''}</div><div class="dir">${esc(p.direccion)}</div>
               ${noEnt ? `<div class="small" style="color:#c62828;margin-top:4px">Motivo: ${esc(noEnt.detalle)}</div>` : ''}
               <div style="margin-top:6px;display:flex;align-items:center;gap:6px">
                 <span class="small muted">Demora:</span>
