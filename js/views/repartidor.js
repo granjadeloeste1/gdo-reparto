@@ -199,7 +199,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
       // acciones
       const ac = mount.querySelector('#d-aceptar');
-      if (ac) ac.onclick = () => { ruta.estado = 'aceptada'; Store.upsertRuta(ruta); ruta.pedidoIds.forEach((id)=>{const p=Store.pedido(id); if(p)p.estado='en_ruta';}); Store.save(); toast('Ruta aceptada. ¡Buen reparto!', 'ok'); render(); };
+      if (ac) ac.onclick = () => {
+        ruta.estado = 'aceptada';
+        // "Salir ahora": congelamos la hora de salida al momento real en que el
+        // chofer arranca, así las llegadas estimadas se calculan desde ahora.
+        if (ruta.salirAhora !== false) { const d = new Date(); ruta.salidaMin = d.getHours() * 60 + d.getMinutes(); }
+        Store.upsertRuta(ruta); ruta.pedidoIds.forEach((id)=>{const p=Store.pedido(id); if(p)p.estado='en_ruta';}); Store.save(); toast('Ruta aceptada. ¡Buen reparto!', 'ok'); render();
+      };
       box.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => {
         const p = Store.pedido(b.dataset.ok);
         comprobanteModal(p, (pod) => {

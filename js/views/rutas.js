@@ -59,7 +59,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       repartidorId: '', vehiculoId: '',
       origen: { ...Store.depot() }, destino: { ...Store.depot() }, sameAsOrigin: true,
       pedidoIds: [], orden: [], estado: 'borrador',
-      demoraDefaultMin: 10, salidaMin: Route.SALIDA_DEFAULT, demoraPorId: {},
+      demoraDefaultMin: 10, salidaMin: Route.SALIDA_DEFAULT, salirAhora: true, demoraPorId: {},
       creadaPor: Store.current().id,
     } : JSON.parse(JSON.stringify(Store.ruta(rutaId)));
     if (!ruta) { c.innerHTML = '<div class="empty">Ruta no encontrada.</div>'; return; }
@@ -94,7 +94,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <select id="r-rep"><option value="">— Seleccionar —</option>${repartidores.map((u) => `<option value="${u.id}"${u.id===ruta.repartidorId?' selected':''}>${esc(u.nombre)}</option>`).join('')}</select></div>
           <div class="field"><label>Vehículo</label>
             <select id="r-veh"><option value="">— Seleccionar —</option>${Store.vehiculos().map((v) => `<option value="${v.id}"${v.id===ruta.vehiculoId?' selected':''}>${esc(v.nombre)} (${esc(v.patente)})</option>`).join('')}</select></div>
-          <div class="field"><label>Salida (hora)</label><input id="r-sal" type="time" value="${fmtHora(ruta.salidaMin)}"/></div>
+          <div class="field"><label>Salida</label>
+            <label style="font-weight:400;font-size:13px"><input type="checkbox" id="r-ahora" ${ruta.salirAhora !== false ? 'checked' : ''} style="width:auto"/> Salir ahora (usar la hora en que arranca el chofer)</label>
+            <input id="r-sal" type="time" value="${fmtHora(ruta.salidaMin)}" style="margin-top:6px"/>
+            <span class="help">Con “Salir ahora” los horarios de llegada se calculan desde el momento real en que el chofer inicia el reparto. Destildalo solo si querés programar una hora fija.</span></div>
           <div class="field"><label>Demora por parada (min)</label><input id="r-dem" type="number" min="0" value="${ruta.demoraDefaultMin}"/>
             <span class="help">Tiempo estimado de descarga/entrega por cliente.</span></div>
           <div class="field col-2"><label><input type="checkbox" id="r-same" ${ruta.sameAsOrigin?'checked':''} style="width:auto"/> Finalizar en el mismo punto de salida (depósito)</label></div>
@@ -122,9 +125,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </div>`;
 
     const $ = (s) => c.querySelector(s);
+    const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+    const iniciada = !esNueva && ['aceptada', 'en_curso', 'finalizada'].includes(ruta.estado);
     const toggleDest = () => { $('#r-dest-wrap').style.display = $('#r-same').checked ? 'none' : ''; };
-    toggleDest();
+    const toggleAhora = () => { $('#r-sal').style.display = $('#r-ahora').checked ? 'none' : ''; };
+    toggleDest(); toggleAhora();
     $('#r-same').onchange = toggleDest;
+    $('#r-ahora').onchange = () => { toggleAhora(); recompute(); };
     $('#r-volver').onclick = () => go('#/rutas');
 
     // lista de pedidos elegibles con checkbox
@@ -153,8 +160,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       ruta.fecha = $('#r-fec').value;
       ruta.repartidorId = $('#r-rep').value;
       ruta.vehiculoId = $('#r-veh').value;
-      const [hh, mm] = $('#r-sal').value.split(':').map(Number);
-      if (!isNaN(hh)) ruta.salidaMin = hh * 60 + (mm || 0);
+      ruta.salirAhora = $('#r-ahora').checked;
+      if (ruta.salirAhora) {
+        // Si la ruta ya arrancó, dejamos la hora real de inicio que quedó
+        // congelada; si no, la previsualización usa la hora actual.
+        if (!iniciada) ruta.salidaMin = nowMin();
+      } else {
+        const [hh, mm] = $('#r-sal').value.split(':').map(Number);
+        if (!isNaN(hh)) ruta.salidaMin = hh * 60 + (mm || 0);
+      }
       ruta.demoraDefaultMin = Math.max(0, +$('#r-dem').value || 0);
       ruta.sameAsOrigin = $('#r-same').checked;
       ruta.origen = { nombre: $('#r-orig').value.trim(), ...parseCoord($('#r-orig-c').value, ruta.origen) };
