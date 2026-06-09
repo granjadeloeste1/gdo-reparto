@@ -76,7 +76,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (est === 'salteado') p.salteado = true;
       p.historia = p.historia || [];
       p.historia.push({ ts: Date.now(), est, detalle: detalle || '', por: me.id });
-      Store.upsertRuta(ruta); Store.save();
+      Store.upsertRuta(ruta); Store.upsertPedido(p); Store.save();
       avisar(p, accionLabel, detalle);
       render();
     }
@@ -176,6 +176,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           ${p.especificaciones ? `<div class="spec">📌 ${esc(p.especificaciones)}</div>` : ''}
           ${aceptada && ruta.estado !== 'finalizada' && !done ? `<div class="acts">
               <a class="btn btn-dark full" data-nav="${p.id}" href="${(p.direccion || p.lat != null) ? Route.navStop(p) : '#'}" target="_blank"${!(p.direccion || p.lat != null) ? ' style="opacity:.5;pointer-events:none"' : ''}>🧭 Navegar a esta parada</a>
+              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(calc.llegada[i]), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
               <button class="btn btn-verde" data-ok="${p.id}">✓ Entregado</button>
               <button class="btn btn-rojo" data-no="${p.id}">✕ No entregado</button>
               <button class="btn btn-amarillo full" data-skip="${p.id}">↷ Saltear parada</button>
@@ -199,7 +200,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       // acciones
       const ac = mount.querySelector('#d-aceptar');
       if (ac) ac.onclick = () => { ruta.estado = 'aceptada'; Store.upsertRuta(ruta); ruta.pedidoIds.forEach((id)=>{const p=Store.pedido(id); if(p)p.estado='en_ruta';}); Store.save(); toast('Ruta aceptada. ¡Buen reparto!', 'ok'); render(); };
-      box.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => { ruta.estado='en_curso'; setEstado(Store.pedido(b.dataset.ok), 'entregado', 'Entregado'); toast('Entrega confirmada', 'ok'); });
+      box.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => {
+        const p = Store.pedido(b.dataset.ok);
+        comprobanteModal(p, (pod) => {
+          ruta.estado = 'en_curso';
+          if (pod) p.pod = pod;
+          setEstado(p, 'entregado', 'Entregado', pod && pod.receptor ? 'Recibió: ' + pod.receptor : '');
+          toast('Entrega confirmada', 'ok');
+        });
+      });
       box.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => {
         const p = Store.pedido(b.dataset.no);
         motivoModal('Motivo de no entrega', (mot) => { ruta.estado='en_curso'; setEstado(p, 'no_entregado', 'No entregado', mot); toast('Marcado como no entregado · aviso enviado', 'err'); });
@@ -251,6 +260,52 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         render();
       };
       wireTop(mount);
+    }
+
+    // Comprobante de entrega: foto del lugar/mercadería + firma de quien recibe.
+    // Todo opcional (el chofer puede confirmar sin nada), pero deja constancia.
+    // La foto se comprime antes de guardar para no inflar Firestore.
+    function comprobanteModal(p, onOk) {
+      const m = modal({
+        title: 'Comprobante de entrega', width: 460,
+        bodyHTML: `
+          <div class="field"><label>📷 Foto (opcional)</label>
+            <input type="file" accept="image/*" capture="environment" id="pod-foto"/>
+            <img id="pod-prev" style="display:none;margin-top:8px;max-width:100%;border-radius:10px;border:1px solid #e3e3e3"/>
+          </div>
+          <div class="field"><label>✍️ Firma de quien recibe (opcional)</label>
+            <canvas id="pod-firma" style="width:100%;height:150px;border:1px dashed #c8c8c8;border-radius:10px;background:#fff;touch-action:none"></canvas>
+            <button class="btn btn-ghost btn-sm" id="pod-clear" type="button" style="align-self:flex-start;margin-top:6px">Borrar firma</button>
+          </div>
+          <div class="field"><label>Recibió (opcional)</label>
+            <input id="pod-rec" placeholder="Nombre de quien recibió"/></div>
+          <div class="note">Podés confirmar sin foto ni firma. Quedan guardadas como respaldo de la entrega.</div>`,
+        footHTML: `<button class="btn btn-ghost" data-c>Cancelar</button><button class="btn btn-verde" data-ok>✓ Confirmar entrega</button>`,
+        onMount(node, close) {
+          let fotoData = '';
+          const prev = node.querySelector('#pod-prev');
+          const inp = node.querySelector('#pod-foto');
+          inp.onchange = async () => {
+            const f = inp.files && inp.files[0];
+            if (!f) { fotoData = ''; prev.style.display = 'none'; return; }
+            try { fotoData = await GDO.Img.comprimir(f); prev.src = fotoData; prev.style.display = 'block'; }
+            catch (e) { toast('No se pudo procesar la foto', 'err'); fotoData = ''; }
+          };
+          const firma = GDO.Sign.pad(node.querySelector('#pod-firma'));
+          node.querySelector('#pod-clear').onclick = () => firma.limpiar();
+          node.querySelector('[data-c]').onclick = close;
+          node.querySelector('[data-ok]').onclick = () => {
+            const receptor = node.querySelector('#pod-rec').value.trim();
+            const firmaData = firma.dataURL();
+            const pod = (fotoData || firmaData || receptor)
+              ? { foto: fotoData || '', firma: firmaData || '', receptor, ts: Date.now() }
+              : null;
+            close();
+            onOk(pod);
+          };
+        },
+      });
+      return m;
     }
 
     function motivoModal(title, onOk) {

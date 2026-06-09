@@ -73,10 +73,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${p.fechaEntrega ? fmtFecha(p.fechaEntrega) : '<span class="chip chip-pend" style="font-size:10px">A asignar</span>'}</td>
           <td>${ESTADO_CHIP[p.estado] || p.estado}</td>
           <td class="t-actions">
+            ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${p.id}" title="Ver comprobante de entrega">🧾</button>` : ''}
+            ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
             <button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
             <button class="btn btn-ghost btn-sm" data-del="${p.id}">🗑</button>
           </td>
         </tr>`).join('')}</tbody></table>`;
+    box.querySelectorAll('[data-pod]').forEach((b) => b.onclick = () => podModal(Store.pedido(b.dataset.pod)));
+    box.querySelectorAll('[data-wpp]').forEach((b) => b.onclick = () => wppModal(Store.pedido(b.dataset.wpp)));
     box.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => pedidoModal(b.dataset.edit, () => GDO.App.render()));
     box.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
       const p = Store.pedido(b.dataset.del);
@@ -84,6 +88,66 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   const resumenItems = (items) => (items || []).map((i) => `${i.cantidad}× ${i.producto}`).join(', ');
+
+  /* ---- Ver comprobante de entrega (foto + firma) ---- */
+  function podModal(p) {
+    if (!p || !p.pod) { toast('Este pedido no tiene comprobante', 'err'); return; }
+    const pod = p.pod;
+    const fecha = pod.ts ? new Date(pod.ts).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+    modal({
+      title: 'Comprobante — ' + esc(p.cliente), width: 480,
+      bodyHTML: `
+        ${fecha ? `<div class="note">Entregado el <b>${esc(fecha)}</b>${pod.receptor ? ' · recibió <b>' + esc(pod.receptor) + '</b>' : ''}.</div>` : ''}
+        ${pod.foto ? `<div class="field"><label>Foto</label><img src="${pod.foto}" style="max-width:100%;border-radius:10px;border:1px solid #e3e3e3"/></div>` : ''}
+        ${pod.firma ? `<div class="field"><label>Firma</label><img src="${pod.firma}" style="max-width:100%;border-radius:10px;border:1px solid #e3e3e3;background:#fff"/></div>` : ''}
+        ${!pod.foto && !pod.firma ? '<div class="empty">Sin foto ni firma. Solo se registró la confirmación de entrega.</div>' : ''}`,
+      footHTML: `<button class="btn btn-primary" data-cancel>Cerrar</button>`,
+      onMount(node, close) { node.querySelector('[data-cancel]').onclick = close; },
+    });
+  }
+  GDO.Views.podModal = podModal;
+
+  /* ---- Avisar al cliente por WhatsApp ---- */
+  // Abre wa.me con un mensaje armado. El operador elige el momento (salió,
+  // está cerca, entregado, reprogramar) y revisa/edita el texto antes de enviar.
+  function wppModal(p) {
+    if (!p) return;
+    if (!GDO.Wpp.tieneTel(p.telefono)) { toast('Este pedido no tiene teléfono cargado', 'err'); return; }
+    const link = GDO.Wpp.seguimientoUrl(p.id);
+    const plantillas = {
+      salio: GDO.Wpp.msg('salio', p, { link }),
+      cerca: GDO.Wpp.msg('cerca', p, { link }),
+      entregado: GDO.Wpp.msg('entregado', p),
+      reprogramar: GDO.Wpp.msg('reprogramar', p),
+    };
+    modal({
+      title: 'Avisar a ' + esc(p.cliente) + ' por WhatsApp', width: 520,
+      bodyHTML: `
+        <div class="field"><label>Tipo de aviso</label>
+          <select id="w-tipo">
+            <option value="salio">🚚 Tu pedido salió</option>
+            <option value="cerca">📍 Está por llegar</option>
+            <option value="entregado">✅ Pedido entregado</option>
+            <option value="reprogramar">🔁 Reprogramar entrega</option>
+          </select></div>
+        <div class="field"><label>Mensaje (podés editarlo)</label>
+          <textarea id="w-msg" rows="6">${esc(plantillas.salio)}</textarea></div>
+        <div class="note">Se abre WhatsApp con el mensaje listo. Vos tocás <b>Enviar</b> en WhatsApp.</div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><a class="btn btn-verde" data-send target="_blank">💬 Abrir WhatsApp</a>`,
+      onMount(node, close) {
+        const sel = node.querySelector('#w-tipo');
+        const ta = node.querySelector('#w-msg');
+        const send = node.querySelector('[data-send]');
+        const refresh = () => { send.href = GDO.Wpp.link(p.telefono, ta.value); };
+        sel.onchange = () => { ta.value = plantillas[sel.value]; refresh(); };
+        ta.oninput = refresh;
+        refresh();
+        node.querySelector('[data-cancel]').onclick = close;
+        send.onclick = () => { toast('WhatsApp abierto con el mensaje', 'ok'); setTimeout(close, 300); };
+      },
+    });
+  }
+  GDO.Views.wppModal = wppModal;
 
   /* ---- Modal cargar / editar pedido ---- */
   function pedidoModal(id, after) {
