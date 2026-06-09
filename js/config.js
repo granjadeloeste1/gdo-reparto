@@ -10,7 +10,7 @@
 window.GDO = window.GDO || {};
 GDO.CONFIG = {
   // Pegá acá la clave de Google (Maps JavaScript API). Ej: 'AIzaSy...'
-  googleKey: '',
+  googleKey: 'AIzaSyCPwMUNJjtukzrFC2C2saOV49HPESfr3Jk',
 };
 
 /* Carga la librería de Google Maps SOLO si hay clave. Expone:
