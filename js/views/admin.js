@@ -40,6 +40,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </select>
         <div class="spacer"></div>
         <a class="btn btn-ghost" href="tienda/index.html" target="_blank">🛒 Tienda online ↗</a>
+        <button class="btn btn-ghost" id="p-import">📥 Importar</button>
         <button class="btn btn-primary" id="p-new">+ Nuevo pedido</button>
       </div>
       <div class="note">Los pedidos hechos por los clientes en la <b>tienda online</b> entran acá automáticamente como “pendientes”. Solo resta ubicarlos en el mapa y asignarles chofer.</div>
@@ -56,9 +57,137 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#p-q').oninput = draw;
     c.querySelector('#p-est').onchange = draw;
     c.querySelector('#p-new').onclick = () => pedidoModal(null, draw);
+    c.querySelector('#p-import').onclick = () => importModal(draw);
     draw();
     if (GDO.Geo) GDO.Geo.locatePending(() => { if (document.body.contains(c)) draw(); });
   };
+
+  /* ---- Importar pedidos desde Excel/CSV ---- */
+  // Pegás o elegís un CSV (Excel: Guardar como CSV), la app detecta columnas
+  // por su nombre, te deja revisar el mapeo y previsualizar, y da de alta todo
+  // de una. Después geocodifica en segundo plano las direcciones que pueda.
+  function importModal(after) {
+    // Campos destino y los nombres de columna que reconocemos para cada uno.
+    const CAMPOS = [
+      { k: 'cliente', lbl: 'Cliente *', alias: ['cliente', 'nombre', 'comercio', 'razon social', 'razonsocial'] },
+      { k: 'direccion', lbl: 'Dirección *', alias: ['direccion', 'domicilio', 'calle', 'direccion de entrega'] },
+      { k: 'localidad', lbl: 'Localidad', alias: ['localidad', 'ciudad', 'barrio', 'partido'] },
+      { k: 'entrecalles', lbl: 'Entre calles', alias: ['entrecalles', 'entre calles', 'referencia', 'referencias'] },
+      { k: 'telefono', lbl: 'Teléfono', alias: ['telefono', 'tel', 'celular', 'whatsapp', 'cel', 'contacto'] },
+      { k: 'items', lbl: 'Pedido / productos', alias: ['items', 'pedido', 'productos', 'producto', 'detalle', 'mercaderia'] },
+      { k: 'prioridad', lbl: 'Prioridad', alias: ['prioridad'] },
+      { k: 'ventana', lbl: 'Ventana horaria', alias: ['ventana', 'horario', 'franja'] },
+      { k: 'fechaEntrega', lbl: 'Fecha de entrega', alias: ['fecha', 'fecha de entrega', 'fechaentrega', 'entrega'] },
+      { k: 'especificaciones', lbl: 'Comentarios', alias: ['especificaciones', 'comentarios', 'observaciones', 'notas', 'aclaraciones'] },
+    ];
+    const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
+    let filas = [], headers = [], mapeo = {};
+
+    const m = modal({
+      title: 'Importar pedidos desde Excel/CSV', width: 720,
+      bodyHTML: `
+        <div class="note">Exportá tu planilla como <b>CSV</b> (en Excel/Drive: “Descargar → CSV”) y elegí el archivo, o pegá las filas acá abajo. La primera fila debe tener los <b>títulos</b> de columna.</div>
+        <div class="field"><label>Archivo CSV</label><input type="file" accept=".csv,text/csv,text/plain" id="imp-file"/></div>
+        <div class="field"><label>…o pegar el contenido</label><textarea id="imp-text" rows="4" placeholder="cliente,direccion,telefono,pedido&#10;Kiosco Ana,Av. Vergara 1234 Hurlingham,11 5555 5555,20 huevos; 10 pollo"></textarea>
+          <button class="btn btn-ghost btn-sm" id="imp-parse" style="align-self:flex-start;margin-top:6px">Analizar pegado</button></div>
+        <div id="imp-conf"></div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save disabled>Importar</button>`,
+      onMount(node, close) {
+        const conf = node.querySelector('#imp-conf');
+        const saveBtn = node.querySelector('[data-save]');
+
+        const analizar = (texto) => {
+          const rows = GDO.CSV.parse(texto);
+          if (rows.length < 2) { toast('El CSV no tiene filas de datos (¿falta la fila de títulos?)', 'err'); return; }
+          headers = rows[0].map((h) => h.trim());
+          filas = rows.slice(1);
+          // auto-mapeo por nombre de columna
+          mapeo = {};
+          CAMPOS.forEach((campo) => {
+            const idx = headers.findIndex((h) => campo.alias.includes(norm(h)));
+            if (idx >= 0) mapeo[campo.k] = idx;
+          });
+          dibujarConf();
+        };
+
+        const dibujarConf = () => {
+          const opts = (sel) => `<option value="-1">(ninguna)</option>` +
+            headers.map((h, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${esc(h || ('Columna ' + (i + 1)))}</option>`).join('');
+          conf.innerHTML = `
+            <div class="note">Detectamos <b>${filas.length}</b> filas. Revisá qué columna va en cada campo:</div>
+            <div class="form-grid">
+              ${CAMPOS.map((campo) => `<div class="field"><label>${campo.lbl}</label>
+                <select data-map="${campo.k}">${opts(mapeo[campo.k] == null ? -1 : mapeo[campo.k])}</select></div>`).join('')}
+            </div>
+            <label style="font-weight:600;margin:8px 0 4px;display:block">Vista previa (primeras 5)</label>
+            <div id="imp-prev"></div>`;
+          conf.querySelectorAll('[data-map]').forEach((s) => s.onchange = () => {
+            const v = +s.value; mapeo[s.dataset.map] = v < 0 ? null : v; dibujarPrev();
+          });
+          dibujarPrev();
+          saveBtn.disabled = !(mapeo.cliente != null && mapeo.direccion != null);
+        };
+
+        const val = (fila, k) => (mapeo[k] != null && fila[mapeo[k]] != null) ? String(fila[mapeo[k]]).trim() : '';
+        const dibujarPrev = () => {
+          const prev = conf.querySelector('#imp-prev');
+          if (!prev) return;
+          const muestra = filas.slice(0, 5);
+          prev.innerHTML = `<table><thead><tr><th>Cliente</th><th>Dirección</th><th>Localidad</th><th>Tel</th><th>Pedido</th></tr></thead><tbody>
+            ${muestra.map((f) => `<tr>
+              <td class="small">${esc(val(f, 'cliente')) || '<span class="chip chip-no" style="font-size:10px">falta</span>'}</td>
+              <td class="small">${esc(val(f, 'direccion')) || '<span class="chip chip-no" style="font-size:10px">falta</span>'}</td>
+              <td class="small">${esc(val(f, 'localidad'))}</td>
+              <td class="small">${esc(val(f, 'telefono'))}</td>
+              <td class="small">${esc(val(f, 'items'))}</td>
+            </tr>`).join('')}</tbody></table>`;
+          saveBtn.disabled = !(mapeo.cliente != null && mapeo.direccion != null);
+        };
+
+        node.querySelector('#imp-file').onchange = (e) => {
+          const f = e.target.files && e.target.files[0];
+          if (!f) return;
+          const fr = new FileReader();
+          fr.onload = () => { node.querySelector('#imp-text').value = ''; analizar(String(fr.result || '')); };
+          fr.onerror = () => toast('No se pudo leer el archivo', 'err');
+          fr.readAsText(f, 'UTF-8');
+        };
+        node.querySelector('#imp-parse').onclick = () => {
+          const t = node.querySelector('#imp-text').value;
+          if (!t.trim()) { toast('Pegá el contenido del CSV primero', 'err'); return; }
+          analizar(t);
+        };
+
+        node.querySelector('[data-cancel]').onclick = close;
+        saveBtn.onclick = () => {
+          const prioNorm = (s) => { const v = norm(s); return ['alta', 'baja', 'normal'].includes(v) ? v : 'normal'; };
+          let n = 0;
+          filas.forEach((f) => {
+            const cli = val(f, 'cliente'), dir = val(f, 'direccion');
+            if (!cli || !dir) return;
+            Store.upsertPedido({
+              cliente: cli, direccion: dir,
+              localidad: val(f, 'localidad'), entrecalles: val(f, 'entrecalles'),
+              telefono: val(f, 'telefono'), ventana: val(f, 'ventana'),
+              fechaEntrega: val(f, 'fechaEntrega'), prioridad: prioNorm(val(f, 'prioridad')),
+              especificaciones: val(f, 'especificaciones'),
+              items: GDO.CSV.parseItems(val(f, 'items')),
+              lat: null, lng: null, creadoPor: Store.current().id, origen: 'importado',
+            });
+            n++;
+          });
+          toast(n + ' pedido' + (n === 1 ? '' : 's') + ' importado' + (n === 1 ? '' : 's') + ' ✓', 'ok');
+          close();
+          after && after();
+          // geocodifica en segundo plano lo que se pueda
+          if (GDO.Geo) GDO.Geo.locatePending(() => { GDO.App && GDO.App.render && GDO.App.render(); });
+        };
+      },
+    });
+    return m;
+  }
+  GDO.Views.importModal = importModal;
 
   function renderPedidosTabla(box, list) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }

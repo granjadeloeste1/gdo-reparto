@@ -149,4 +149,59 @@ window.GDO = window.GDO || {};
   }
 
   GDO.Sign = { pad };
+
+  /* ---------------- CSV ---------------- */
+  // Detecta el separador (coma, punto y coma o tab) mirando la primera línea.
+  function detectarSep(texto) {
+    const linea = (texto.split(/\r?\n/)[0] || '');
+    const cand = [[';', (linea.match(/;/g) || []).length], [',', (linea.match(/,/g) || []).length], ['\t', (linea.match(/\t/g) || []).length]];
+    cand.sort((a, b) => b[1] - a[1]);
+    return cand[0][1] > 0 ? cand[0][0] : ',';
+  }
+
+  // Parser CSV que respeta comillas dobles (incluye saltos de línea y comillas
+  // escapadas ""). Devuelve un array de filas (array de celdas string).
+  function parseCSV(texto, sep) {
+    sep = sep || detectarSep(texto);
+    const filas = [];
+    let fila = [], celda = '', i = 0, enComillas = false;
+    const t = texto.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    while (i < t.length) {
+      const c = t[i];
+      if (enComillas) {
+        if (c === '"') {
+          if (t[i + 1] === '"') { celda += '"'; i += 2; continue; }
+          enComillas = false; i++; continue;
+        }
+        celda += c; i++; continue;
+      }
+      if (c === '"') { enComillas = true; i++; continue; }
+      if (c === sep) { fila.push(celda); celda = ''; i++; continue; }
+      if (c === '\n') { fila.push(celda); filas.push(fila); fila = []; celda = ''; i++; continue; }
+      celda += c; i++;
+    }
+    fila.push(celda); filas.push(fila);
+    // descarta filas totalmente vacías
+    return filas.filter((f) => f.some((x) => String(x).trim() !== ''));
+  }
+
+  // Convierte un texto de productos ("Pollo x40, Huevos x 20", "40 pollo; 20 huevos")
+  // en items [{producto, cantidad}]. Si no encuentra cantidad, asume 1.
+  function parseItems(texto) {
+    const s = String(texto || '').trim();
+    if (!s) return [];
+    return s.split(/[,;\n]+/).map((parte) => {
+      const p = parte.trim();
+      if (!p) return null;
+      // "Producto x40" / "Producto 40"
+      let m = p.match(/^(.+?)\s*[x×]?\s*(\d+)\s*$/i);
+      if (m && m[1].replace(/[x×]/i, '').trim()) return { producto: m[1].replace(/\s*[x×]\s*$/i, '').trim(), cantidad: parseInt(m[2], 10) || 1 };
+      // "40 Producto" / "40x Producto"
+      m = p.match(/^(\d+)\s*[x×]?\s*(.+)$/i);
+      if (m) return { producto: m[2].trim(), cantidad: parseInt(m[1], 10) || 1 };
+      return { producto: p, cantidad: 1 };
+    }).filter(Boolean);
+  }
+
+  GDO.CSV = { parse: parseCSV, detectarSep, parseItems };
 })();
