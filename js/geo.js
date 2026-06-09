@@ -206,24 +206,64 @@ window.GDO = window.GDO || {};
     return partes.map((s) => s.trim()).filter(Boolean).join(', ');
   }
 
+  // Geocodificación con Google (Maps JavaScript API). Solo se usa si hay clave
+  // cargada (GDO.CONFIG.googleKey). Es el motor MÁS preciso en Argentina: ubica
+  // a nivel de puerta. Igual validamos que el punto caiga dentro de la zona de
+  // reparto; si no, devolvemos null para que sigan Georef/OSM. No requiere
+  // separar localidad ni calle: Google entiende la dirección completa.
+  async function _googleGeocode(direccion) {
+    try {
+      if (!GDO.Google) return null;
+      if (!GDO.Google.disponible) { const ok = await GDO.Google.ready; if (!ok) return null; }
+      if (typeof google === 'undefined' || !google.maps || !google.maps.Geocoder) return null;
+      const b = ZONA.box;
+      const bounds = new google.maps.LatLngBounds(
+        new google.maps.LatLng(b.minLat, b.minLng),
+        new google.maps.LatLng(b.maxLat, b.maxLng));
+      const q = /argentina/i.test(direccion) ? direccion : direccion + ', Buenos Aires, Argentina';
+      const geocoder = new google.maps.Geocoder();
+      const dentro = (lat, lng) => lat >= b.minLat && lat <= b.maxLat && lng >= b.minLng && lng <= b.maxLng;
+      return await new Promise((resolve) => {
+        geocoder.geocode({ address: q, bounds, region: 'ar', componentRestrictions: { country: 'AR' } }, (results, status) => {
+          if (status !== 'OK' || !results || !results.length) { resolve(null); return; }
+          // Preferimos un resultado dentro de la caja de la zona de reparto.
+          let r = results.find((x) => { const l = x.geometry.location; return dentro(l.lat(), l.lng()); }) || results[0];
+          const lat = r.geometry.location.lat(), lng = r.geometry.location.lng();
+          if (!dentro(lat, lng)) { resolve(null); return; } // fuera de zona → que sigan Georef/OSM
+          const lt = r.geometry.location_type; // ROOFTOP > RANGE_INTERPOLATED > GEOMETRIC_CENTER > APPROXIMATE
+          const aprox = !(lt === 'ROOFTOP' || lt === 'RANGE_INTERPOLATED');
+          let loc = '';
+          (r.address_components || []).forEach((c) => {
+            if (!loc && (c.types.indexOf('locality') >= 0 || c.types.indexOf('sublocality') >= 0)) loc = c.long_name;
+          });
+          resolve({ lat, lng, display: r.formatted_address, localidad: loc, partido: '', aprox });
+        });
+      });
+    } catch (e) { return null; }
+  }
+
   // Devuelve una Promesa con {lat,lng,display,aprox} o null si no se encontró.
-  // OSM en esta zona muchas veces no tiene la altura exacta; si la dirección
-  // completa falla, reintenta sin el número para caer al menos a nivel de calle
-  // (marca aprox:true) en vez de no ubicar nada.
+  // Orden de motores: Google (si hay clave, lo más preciso) → Georef (oficial AR)
+  // → OSM/Nominatim. OSM en esta zona muchas veces no tiene la altura exacta; si
+  // la dirección completa falla, reintenta sin el número para caer al menos a
+  // nivel de calle (marca aprox:true) en vez de no ubicar nada.
   async function geocode(direccion, entrecalles) {
     const base = String(direccion || '').trim();
     if (!base) return null;
     const ec = String(entrecalles || '').trim();
-    // Clave de caché versionada ('z4'): incluye las entrecalles (cambian el
-    // resultado) e invalida coordenadas/no-encontrados de versiones anteriores.
-    const key = 'z4|' + norm(base) + '|' + norm(ec);
+    // Clave de caché versionada ('z5'): incluye las entrecalles (cambian el
+    // resultado) e invalida coordenadas/no-encontrados de versiones anteriores
+    // (z5 fuerza re-geocodificar con Google donde haya clave).
+    const key = 'z5|' + norm(base) + '|' + norm(ec);
     const cache = loadCache();
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
     let res = null;
+    // 0) Google primero (si hay clave): es el más preciso en Argentina.
+    res = await _googleGeocode(base);
     // Separamos la localidad (si viene pegada) para no romper el parser de Georef.
     const { calle, localidad } = partirDireccion(base);
     const qCalle = calle || base;
-    try {
+    if (!res) try {
       // 0) Si hay entre-calles, intentamos la ESQUINA primero: es lo más preciso
       //    y distingue calles homónimas (la Valentín Alsina de Hurlingham de la
       //    de William Morris) sin depender de la localidad escrita.

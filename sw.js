@@ -3,11 +3,12 @@
    último (así los cambios publicados aparecen al toque), y si no hay señal usa
    lo guardado. Solo cachea archivos del propio sitio; CDNs/Firebase pasan
    directo (necesitan red). Subí CACHE de versión cuando quieras forzar limpieza. */
-const CACHE = 'gdo-reparto-v26';
+const CACHE = 'gdo-reparto-v27';
 const CORE = [
   './',
   'index.html',
   'css/styles.css',
+  'js/config.js',
   'js/firebase.js', 'js/data.js', 'js/notify.js', 'js/ui.js',
   'js/route.js', 'js/geo.js', 'js/extras.js', 'js/app.js',
   'js/views/login.js', 'js/views/admin.js', 'js/views/rutas.js', 'js/views/repartidor.js',
