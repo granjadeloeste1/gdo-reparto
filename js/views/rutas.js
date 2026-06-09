@@ -77,7 +77,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Elegibles: pendientes (o ya en esta ruta), TENGAN O NO ubicación. Los que
     // no tienen coords (p. ej. una dirección fuera de zona) se pueden asignar
     // igual: van al final del recorrido y el chofer los navega por la dirección.
-    const elegibles = Store.pedidos().filter((p) => (p.estado === 'pendiente' || ruta.pedidoIds.includes(p.id)));
+    // IMPORTANTE: un pedido que ya pertenece a OTRA ruta NO aparece acá, así no
+    // se asigna dos veces por error (rutas duplicadas). Solo vuelven a estar
+    // disponibles si se elimina/edita esa ruta o se reabren con "↻ Reasignar".
+    const elegibles = Store.pedidos().filter((p) =>
+      ruta.pedidoIds.includes(p.id) ||
+      (p.estado === 'pendiente' && (!p.rutaId || p.rutaId === ruta.id))
+    );
 
     c.innerHTML = `
       <div class="section-title">

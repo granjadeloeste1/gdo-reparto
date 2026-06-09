@@ -200,7 +200,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${esc(resumenItems(p.items))}</td>
           <td class="small">${p.fechaEntrega ? fmtFecha(p.fechaEntrega) : '<span class="chip chip-pend" style="font-size:10px">A asignar</span>'}</td>
-          <td>${ESTADO_CHIP[p.estado] || p.estado}</td>
+          <td>${ESTADO_CHIP[p.estado] || p.estado}${asignacionInfo(p)}</td>
           <td class="t-actions">
             ${p.estado === 'no_entregado' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
             ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${p.id}" title="Ver comprobante de entrega">🧾</button>` : ''}
@@ -224,6 +224,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   const resumenItems = (items) => (items || []).map((i) => `${i.cantidad}× ${i.producto}`).join(', ');
+
+  // Muestra, debajo del estado, a qué ruta/repartidor está asignado el pedido.
+  // Así, esté en pendiente / no entregado / entregado, se ve de un vistazo si ya
+  // forma parte de un reparto (y de cuál), evitando asignarlo dos veces.
+  const asignacionInfo = (p) => {
+    if (!p.rutaId) return '';
+    const r = Store.ruta(p.rutaId);
+    if (!r) return '';
+    const rep = r.repartidorId ? Store.user(r.repartidorId) : null;
+    const quien = rep ? ' · ' + esc(rep.nombre.split(' ')[0]) : '';
+    const borr = r.estado === 'borrador' ? ' (borrador)' : '';
+    return `<div class="small muted" style="margin-top:4px">🗂️ Asignado: ${esc(r.nombre)}${quien}${borr}</div>`;
+  };
 
   /* ---- Ver comprobante de entrega (foto + firma) ---- */
   function podModal(p) {
