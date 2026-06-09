@@ -179,7 +179,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             const btn = node.querySelector('[data-save]');
             const prev = btn.textContent;
             btn.disabled = true; btn.textContent = 'Ubicando…';
-            const g = await GDO.Geo.geocode(dir);
+            const g = await GDO.Geo.geocode(dir, node.querySelector('#f-ec').value.trim());
             btn.disabled = false; btn.textContent = prev;
             if (g) { coord = { lat: g.lat, lng: g.lng }; if (g.localidad && !node.querySelector('#f-loc').value.trim()) node.querySelector('#f-loc').value = g.localidad; }
             else toast('No se pudo ubicar la dirección. El pedido se guarda, ubicalo luego con 📍.', 'err');
