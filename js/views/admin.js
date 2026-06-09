@@ -202,12 +202,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${p.fechaEntrega ? fmtFecha(p.fechaEntrega) : '<span class="chip chip-pend" style="font-size:10px">A asignar</span>'}</td>
           <td>${ESTADO_CHIP[p.estado] || p.estado}</td>
           <td class="t-actions">
+            ${p.estado === 'no_entregado' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
             ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${p.id}" title="Ver comprobante de entrega">🧾</button>` : ''}
             ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
             <button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
             <button class="btn btn-ghost btn-sm" data-del="${p.id}">🗑</button>
           </td>
         </tr>`).join('')}</tbody></table>`;
+    box.querySelectorAll('[data-reasig]').forEach((b) => b.onclick = () => {
+      const p = Store.pedido(b.dataset.reasig);
+      confirmDlg(`Reabrir el pedido de "${p.cliente}" para reasignarlo. Vuelve a “Pendientes” y podés incluirlo en otra ruta. ¿Confirmás?`, () => {
+        Store.reasignarPedido(p.id); toast('Pedido reabierto · ya podés reasignarlo', 'ok'); GDO.App.render();
+      }, 'Reabrir');
+    });
     box.querySelectorAll('[data-pod]').forEach((b) => b.onclick = () => podModal(Store.pedido(b.dataset.pod)));
     box.querySelectorAll('[data-wpp]').forEach((b) => b.onclick = () => wppModal(Store.pedido(b.dataset.wpp)));
     box.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => pedidoModal(b.dataset.edit, () => GDO.App.render()));

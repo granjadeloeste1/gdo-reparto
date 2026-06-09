@@ -130,12 +130,32 @@ window.GDO = window.GDO || {};
 
   // origen/destino: {lat,lng}; ordenParadas: [{lat,lng,...}]
   // Devuelve {geometry:[[lat,lng]...], legs:[{km,min}], totalKm, totalMin} o null.
+  // IMPORTANTE: las paradas SIN coordenadas (van al final del recorrido) no se
+  // pueden rutear por calle; antes, una sola parada sin ubicar hacía caer TODO
+  // el cálculo a línea recta. Ahora ruteamos solo las paradas con coordenadas y
+  // devolvemos los tramos ALINEADOS a la lista completa (las sin ubicar quedan
+  // con tramo 0, igual que en la estimación), así el resto sigue por calle real.
   async function fetchRoad(origen, ordenParadas, destino) {
-    if (!origen || !destino) return null;
-    const pts = [[origen.lng, origen.lat], ...ordenParadas.map((p) => [p.lng, p.lat]), [destino.lng, destino.lat]];
+    if (!origen || !destino || !tieneGeo(origen) || !tieneGeo(destino)) return null;
+    const geo = ordenParadas.filter(tieneGeo);
+    const pts = [[origen.lng, origen.lat], ...geo.map((p) => [p.lng, p.lat]), [destino.lng, destino.lat]];
     if (pts.some((c) => c[0] == null || c[1] == null)) return null;
     const key = _sig(pts);
-    if (_roadCache[key]) return _roadCache[key];
+    const build = (raw) => {
+      // raw: tramos OSRM = origen→geo1, …, geoN→destino (geo.length + 1)
+      const legs = [];
+      let gi = 0;
+      ordenParadas.forEach((p) => {
+        if (tieneGeo(p)) { legs.push(raw[gi] || { km: 0, min: 0 }); gi++; }
+        else legs.push({ km: 0, min: 0 });
+      });
+      legs.push(raw[gi] || { km: 0, min: 0 }); // tramo de regreso al destino
+      return legs;
+    };
+    if (_roadCache[key]) {
+      const c = _roadCache[key];
+      return { geometry: c.geometry, legs: build(c.raw), totalKm: c.totalKm, totalMin: c.totalMin };
+    }
     try {
       const url = OSRM + pts.map((c) => c[0] + ',' + c[1]).join(';') + '?overview=full&geometries=geojson';
       const r = await fetch(url, { headers: { Accept: 'application/json' } });
@@ -143,14 +163,10 @@ window.GDO = window.GDO || {};
       const j = await r.json();
       if (!j || !j.routes || !j.routes.length) return null;
       const rt = j.routes[0];
-      const out = {
-        geometry: (rt.geometry.coordinates || []).map((c) => [c[1], c[0]]),
-        legs: (rt.legs || []).map((l) => ({ km: l.distance / 1000, min: l.duration / 60 })),
-        totalKm: rt.distance / 1000,
-        totalMin: rt.duration / 60,
-      };
-      _roadCache[key] = out;
-      return out;
+      const raw = (rt.legs || []).map((l) => ({ km: l.distance / 1000, min: l.duration / 60 }));
+      const geometry = (rt.geometry.coordinates || []).map((c) => [c[1], c[0]]);
+      _roadCache[key] = { geometry, raw, totalKm: rt.distance / 1000, totalMin: rt.duration / 60 };
+      return { geometry, legs: build(raw), totalKm: rt.distance / 1000, totalMin: rt.duration / 60 };
     } catch (e) { return null; }
   }
 

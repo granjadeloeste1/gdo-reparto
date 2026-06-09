@@ -295,6 +295,29 @@ window.GDO = window.GDO || {};
     deletePedido(id) { db.pedidos = db.pedidos.filter((p) => p.id !== id); persist(db); fsDel('pedidos', id); },
     pedidosPendientes: () => db.pedidos.filter((p) => p.estado === 'pendiente'),
 
+    // Reabre un pedido (p. ej. uno marcado "no entregado") para volver a
+    // asignarlo: lo saca de su ruta actual y lo deja "pendiente" en el tablero,
+    // listo para entrar en una ruta nueva.
+    reasignarPedido(id) {
+      const p = db.pedidos.find((x) => x.id === id);
+      if (!p) return null;
+      if (p.rutaId) {
+        const r = db.rutas.find((x) => x.id === p.rutaId);
+        if (r) {
+          r.pedidoIds = (r.pedidoIds || []).filter((x) => x !== id);
+          if (Array.isArray(r.orden)) r.orden = r.orden.filter((x) => x !== id);
+          if (r.progreso) delete r.progreso[id];
+          if (r.demoraPorId) delete r.demoraPorId[id];
+          fsSet('rutas', r);
+        }
+      }
+      p.estado = 'pendiente'; p.rutaId = null; p.salteado = false;
+      p.historia = p.historia || [];
+      p.historia.push({ ts: Date.now(), est: 'reabierto', detalle: 'Reabierto para reasignar', por: db.session ? db.session.userId : null });
+      persist(db); fsSet('pedidos', p);
+      return p;
+    },
+
     // ----- rutas -----
     rutas: () => db.rutas,
     ruta: (id) => db.rutas.find((r) => r.id === id),
