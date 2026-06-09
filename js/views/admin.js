@@ -39,7 +39,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <option value="no_entregado">No entregado</option><option value="salteado">Salteado</option>
         </select>
         <div class="spacer"></div>
-        <a class="btn btn-ghost" href="tienda.html" target="_blank">🛒 Tienda online ↗</a>
+        <a class="btn btn-ghost" href="tienda/index.html" target="_blank">🛒 Tienda online ↗</a>
         <button class="btn btn-primary" id="p-new">+ Nuevo pedido</button>
       </div>
       <div class="note">Los pedidos hechos por los clientes en la <b>tienda online</b> entran acá automáticamente como “pendientes”. Solo resta ubicarlos en el mapa y asignarles chofer.</div>
