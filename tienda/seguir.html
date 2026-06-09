@@ -169,6 +169,7 @@
 
     function arrancar() {
       var pedidoActual = null, rutaActual = null, rutaIdActual = null, rutaUnsub = null;
+      var pedidoUnsub = null, intentos = 0;
 
       function refrescar() {
         if (!pedidoActual) return;
@@ -176,40 +177,52 @@
         render(pedidoActual, info);
       }
 
-      db.collection('pedidos').doc(pid).onSnapshot(function (doc) {
-        if (!doc.exists) { app.innerHTML = '<div class="err">No encontramos este pedido. Revisá el enlace.</div>'; return; }
-        var p = doc.data(); p.id = doc.id;
-        pedidoActual = p;
+      function escuchar() {
+        if (pedidoUnsub) pedidoUnsub();
+        pedidoUnsub = db.collection('pedidos').doc(pid).onSnapshot(function (doc) {
+          intentos = 0; // lectura OK: reinicio el contador de reintentos
+          if (!doc.exists) { app.innerHTML = '<div class="err">No encontramos este pedido. Revisá el enlace.</div>'; return; }
+          var p = doc.data(); p.id = doc.id;
+          pedidoActual = p;
 
-        // engancha la ruta (para ETA y posición) solo cuando cambia
-        if (p.rutaId && p.rutaId !== rutaIdActual) {
-          rutaIdActual = p.rutaId;
-          if (rutaUnsub) rutaUnsub();
-          rutaUnsub = db.collection('rutas').doc(p.rutaId).onSnapshot(function (rd) {
-            if (!rd.exists) return;
-            var ruta = rd.data(); ruta.id = rd.id; ruta._paradas = {};
-            // trae coords de las paradas para estimar tiempos
-            var ids = (ruta.orden && ruta.orden.length ? ruta.orden : ruta.pedidoIds) || [];
-            Promise.all(ids.map(function (id) {
-              return db.collection('pedidos').doc(id).get().then(function (pd) {
-                if (pd.exists) { var d = pd.data(); ruta._paradas[id] = { lat: d.lat, lng: d.lng }; }
-              }).catch(function () {});
-            })).then(function () { rutaActual = ruta; refrescar(); });
-          }, function () {});
-        }
-        if (!p.rutaId) { rutaActual = null; rutaIdActual = null; if (rutaUnsub) { rutaUnsub(); rutaUnsub = null; } }
-        refrescar();
-      }, function (err) {
-        app.innerHTML = '<div class="err">No se pudo cargar el pedido. Probá de nuevo.</div>';
-      });
+          // engancha la ruta (para ETA y posición) solo cuando cambia
+          if (p.rutaId && p.rutaId !== rutaIdActual) {
+            rutaIdActual = p.rutaId;
+            if (rutaUnsub) rutaUnsub();
+            rutaUnsub = db.collection('rutas').doc(p.rutaId).onSnapshot(function (rd) {
+              if (!rd.exists) return;
+              var ruta = rd.data(); ruta.id = rd.id; ruta._paradas = {};
+              // trae coords de las paradas para estimar tiempos
+              var ids = (ruta.orden && ruta.orden.length ? ruta.orden : ruta.pedidoIds) || [];
+              Promise.all(ids.map(function (id) {
+                return db.collection('pedidos').doc(id).get().then(function (pd) {
+                  if (pd.exists) { var d = pd.data(); ruta._paradas[id] = { lat: d.lat, lng: d.lng }; }
+                }).catch(function () {});
+              })).then(function () { rutaActual = ruta; refrescar(); });
+            }, function () {});
+          }
+          if (!p.rutaId) { rutaActual = null; rutaIdActual = null; if (rutaUnsub) { rutaUnsub(); rutaUnsub = null; } }
+          refrescar();
+        }, function (err) {
+          // Apenas abre el link, el token anónimo puede tardar un instante y la
+          // primera lectura ser rechazada. En vez de fallar de una, reintentamos
+          // unas veces con una pequeña espera (antes había que refrescar a mano).
+          intentos++;
+          if (intentos <= 6) { setTimeout(escuchar, 600 * intentos); }
+          else if (!pedidoActual) { app.innerHTML = '<div class="err">No se pudo cargar el pedido. Revisá tu conexión e intentá de nuevo.</div>'; }
+        });
+      }
+      escuchar();
     }
 
-    // login anónimo (puerta para las reglas de Firestore); si no está, igual probamos
+    // login anónimo (puerta para las reglas de Firestore). Arrancamos SOLO cuando
+    // ya hay sesión (user != null); si no, la primera lectura se rechaza. Si la
+    // auth anónima estuviera deshabilitada, igual probamos pasado un margen.
     var arrancado = false;
     function arrancarUnaVez() { if (arrancado) return; arrancado = true; arrancar(); }
+    auth.onAuthStateChanged(function (user) { if (user) arrancarUnaVez(); });
     auth.signInAnonymously().catch(function () {});
-    auth.onAuthStateChanged(function () { arrancarUnaVez(); });
-    setTimeout(arrancarUnaVez, 2500);
+    setTimeout(arrancarUnaVez, 3500);
   })();
   </script>
 </body>
