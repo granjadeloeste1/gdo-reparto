@@ -192,13 +192,41 @@ window.GDO = window.GDO || {};
     })).catch((e) => { console.warn('[GDO] seed Firestore', e && e.code); });
   }
 
+  // Aviso de pedido nuevo llegado por Firestore (cliente desde otro dispositivo).
+  // ID de notificación determinístico (n_t_<pedido>_<admin>) para que, aunque
+  // varios dispositivos lo detecten a la vez, quede UNA sola notificación por
+  // admin (el set() colapsa al mismo doc). El chequeo en memoria evita resucitar
+  // una ya leída.
+  function notifPedidoTienda(p) {
+    db.users.filter((u) => u.roles.includes('admin')).forEach((a) => {
+      const id = 'n_t_' + p.id + '_' + a.id;
+      if (db.notificaciones.some((x) => x.id === id)) return;
+      const n = { id, paraUserId: a.id, leida: false, ts: Date.now(), tipo: 'cambio', pedidoId: p.id,
+        mensaje: '🛒 Nuevo pedido de la tienda online: ' + (p.cliente || 'cliente') + ' — falta asignar chofer' };
+      db.notificaciones.push(n); fsSet('notificaciones', n);
+    });
+  }
+
   // Escucha las colecciones: cada snapshot reemplaza la cache en memoria, la
   // guarda en localStorage (cache offline) y dispara el re-render.
   function startSync() {
     seedFirestore().then(() => {
+      let pedidosVistos = null; // null = primer snapshot (no avisar de lo ya existente)
       FS_COLLS.forEach((c) => {
         GDO.FB.db.collection(c).onSnapshot((snap) => {
-          db[c] = snap.docs.map((d) => Object.assign({}, d.data(), { id: d.id }));
+          const arr = snap.docs.map((d) => Object.assign({}, d.data(), { id: d.id }));
+          if (c === 'pedidos') {
+            if (pedidosVistos === null) {
+              pedidosVistos = new Set(arr.map((p) => p.id));
+            } else {
+              arr.forEach((p) => {
+                if (pedidosVistos.has(p.id)) return;
+                pedidosVistos.add(p.id);
+                if (p.origen === 'tienda' && p.estado === 'pendiente') notifPedidoTienda(p);
+              });
+            }
+          }
+          db[c] = arr;
           persist(db);
           scheduleRender();
         }, (err) => console.warn('[GDO] onSnapshot ' + c, err && err.code));

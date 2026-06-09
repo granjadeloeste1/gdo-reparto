@@ -94,6 +94,7 @@ window.GDO = window.GDO || {};
           <header class="topbar">
             <h1 id="tb-title">${titleFor(hash, rol)}</h1>
             <div class="actions">
+              <span class="tb-user" title="Sesión activa">${esc(u.nombre.split(' ')[0])}</span>
               <button class="bell" id="bell">🔔${noLeidas ? `<span class="badge">${noLeidas}</span>` : ''}</button>
               <button class="bell tb-logout" id="tb-logout" title="Cerrar sesión" aria-label="Cerrar sesión">🚪</button>
             </div>
