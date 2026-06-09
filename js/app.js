@@ -95,6 +95,7 @@ window.GDO = window.GDO || {};
             <h1 id="tb-title">${titleFor(hash, rol)}</h1>
             <div class="actions">
               <button class="bell" id="bell">🔔${noLeidas ? `<span class="badge">${noLeidas}</span>` : ''}</button>
+              <button class="bell tb-logout" id="tb-logout" title="Cerrar sesión" aria-label="Cerrar sesión">🚪</button>
             </div>
           </header>
           <div class="content" id="app-content"></div>
@@ -106,6 +107,8 @@ window.GDO = window.GDO || {};
 
     root().querySelectorAll('[data-hash]').forEach((a) => a.onclick = () => go(a.dataset.hash));
     root().querySelector('#sb-logout').onclick = () => App.logout();
+    const tbLo = root().querySelector('#tb-logout');
+    if (tbLo) tbLo.onclick = () => App.logout();
     const sw = root().querySelector('#rol-sw');
     if (sw) sw.onchange = () => { Store.setRolActivo(sw.value); afterLogin(); };
     root().querySelector('#bell').onclick = (e) => { e.stopPropagation(); toggleNotif(u); };
