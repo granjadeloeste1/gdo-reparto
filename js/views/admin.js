@@ -215,6 +215,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         Store.reasignarPedido(p.id); toast('Pedido reabierto · ya podés reasignarlo', 'ok'); GDO.App.render();
       }, 'Reabrir');
     });
+    box.querySelectorAll('[data-asig]').forEach((b) => b.onclick = () => asignacionModal(Store.pedido(b.dataset.asig)));
     box.querySelectorAll('[data-pod]').forEach((b) => b.onclick = () => podModal(Store.pedido(b.dataset.pod)));
     box.querySelectorAll('[data-wpp]').forEach((b) => b.onclick = () => wppModal(Store.pedido(b.dataset.wpp)));
     box.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => pedidoModal(b.dataset.edit, () => GDO.App.render()));
@@ -225,18 +226,45 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
   const resumenItems = (items) => (items || []).map((i) => `${i.cantidad}× ${i.producto}`).join(', ');
 
-  // Muestra, debajo del estado, a qué ruta/repartidor está asignado el pedido.
-  // Así, esté en pendiente / no entregado / entregado, se ve de un vistazo si ya
-  // forma parte de un reparto (y de cuál), evitando asignarlo dos veces.
+  // Si el pedido ya forma parte de un reparto, muestra una carpeta-enlace 🗂️
+  // junto al estado. Al tocarla se abre una ventana con la ruta, el chofer y
+  // demás datos, en vez de llenar de texto la lista / la página de inicio.
   const asignacionInfo = (p) => {
     if (!p.rutaId) return '';
     const r = Store.ruta(p.rutaId);
     if (!r) return '';
-    const rep = r.repartidorId ? Store.user(r.repartidorId) : null;
-    const quien = rep ? ' · ' + esc(rep.nombre.split(' ')[0]) : '';
-    const borr = r.estado === 'borrador' ? ' (borrador)' : '';
-    return `<div class="small muted" style="margin-top:4px">🗂️ Asignado: ${esc(r.nombre)}${quien}${borr}</div>`;
+    return ` <button class="btn btn-ghost btn-sm" data-asig="${p.id}" title="Ver ruta y chofer asignados" style="margin-left:2px">🗂️</button>`;
   };
+
+  // Ventana con el detalle de la asignación del pedido (ruta, chofer, vehículo,
+  // posición en el recorrido, estado). Botón para abrir la ruta directamente.
+  function asignacionModal(p) {
+    const r = p && p.rutaId ? Store.ruta(p.rutaId) : null;
+    if (!r) { toast('Este pedido no está asignado a ninguna ruta', 'err'); return; }
+    const rep = r.repartidorId ? Store.user(r.repartidorId) : null;
+    const veh = r.vehiculoId ? Store.vehiculos().find((v) => v.id === r.vehiculoId) : null;
+    const orden = (r.orden && r.orden.length ? r.orden : r.pedidoIds) || [];
+    const pos = orden.indexOf(p.id);
+    const estRuta = (GDO.Views.ESTADO_RUTA && GDO.Views.ESTADO_RUTA[r.estado]) || r.estado;
+    const fila = (lbl, val) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span class="muted small">${lbl}</span><span style="text-align:right">${val}</span></div>`;
+    modal({
+      title: 'Asignación — ' + esc(p.cliente), width: 460,
+      bodyHTML: `
+        ${fila('Ruta', `<b>${esc(r.nombre)}</b>`)}
+        ${fila('Estado de la ruta', estRuta)}
+        ${fila('Fecha', r.fecha ? fmtFecha(r.fecha) : '—')}
+        ${fila('Chofer', rep ? `<b>${esc(rep.nombre)}</b>${rep.telefono ? '<br><span class="small muted">' + esc(rep.telefono) + '</span>' : ''}` : '<span class="muted">Sin asignar</span>')}
+        ${fila('Vehículo', veh ? esc(veh.nombre) + (veh.patente ? ' (' + esc(veh.patente) + ')' : '') : '<span class="muted">—</span>')}
+        ${fila('Posición en el recorrido', pos >= 0 ? `Parada ${pos + 1} de ${orden.length}` : `${orden.length} paradas`)}
+        ${fila('Estado del pedido', ESTADO_CHIP[p.estado] || p.estado)}`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cerrar</button><button class="btn btn-primary" data-open>Abrir la ruta ↗</button>`,
+      onMount(node, close) {
+        node.querySelector('[data-cancel]').onclick = close;
+        node.querySelector('[data-open]').onclick = () => { close(); go('#/rutas/' + r.id); };
+      },
+    });
+  }
+  GDO.Views.asignacionModal = asignacionModal;
 
   /* ---- Ver comprobante de entrega (foto + firma) ---- */
   function podModal(p) {
