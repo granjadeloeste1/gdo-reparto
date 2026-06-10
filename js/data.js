@@ -25,6 +25,11 @@ window.GDO = window.GDO || {};
     try { GDO.FB.db.collection(coll).doc(id).delete(); } catch (e) {}
   }
 
+  // Emails que entran como ADMINISTRADORES al auto-crear su perfil la primera
+  // vez (acceso total). El resto de las cuentas válidas entra como repartidor y
+  // el admin puede cambiarles el rol desde el panel de usuarios.
+  const ADMIN_EMAILS = ['mlemos@granjadeloeste.com'];
+
   // Promesa que resuelve cuando llegó el primer snapshot de 'users': recién ahí
   // los perfiles están disponibles para resolver el login por email.
   let _usersResolve;
@@ -285,8 +290,27 @@ window.GDO = window.GDO || {};
         return GDO.FB.login(mail, pass)
           .then(() => usersReady) // espera a que carguen los perfiles
           .then(() => {
-            const u = db.users.find((x) => (x.email || '').toLowerCase() === mail && x.activo);
-            if (!u) { try { GDO.FB.logout(); } catch (e) {} } // autenticó pero no tiene perfil
+            let u = db.users.find((x) => (x.email || '').toLowerCase() === mail && x.activo);
+            // Auto-aprovisionamiento: la persona ya validó su contraseña contra
+            // Firebase Auth (cuenta creada por la empresa en la consola; la app
+            // NO permite auto-registro). Si todavía no tiene perfil en la base,
+            // se lo creamos solo, así entra sin pasos extra. Los emails de
+            // ADMIN_EMAILS entran como administradores; el resto como repartidor
+            // (el admin puede cambiar el rol después desde el panel de usuarios).
+            if (!u && GDO.FB.user) {
+              const fbu = GDO.FB.user;
+              const esAdmin = ADMIN_EMAILS.indexOf(mail) >= 0;
+              u = {
+                id: fbu.uid,
+                nombre: fbu.displayName || mail.split('@')[0],
+                email: mail,
+                roles: esAdmin ? ['admin', 'vendedor'] : ['repartidor'],
+                activo: true,
+              };
+              db.users.push(u);
+              fsSet('users', u); // queda guardado en Firestore para la próxima
+            }
+            if (!u) { try { GDO.FB.logout(); } catch (e) {} } // autenticó pero no se pudo crear perfil
             return setSession(u);
           })
           .catch((e) => { console.warn('[GDO] login', e && e.code); return null; });
