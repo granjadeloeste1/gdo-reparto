@@ -322,10 +322,11 @@ window.GDO = window.GDO || {};
     const base = String(direccion || '').trim();
     if (!base) return null;
     const ec = String(entrecalles || '').trim();
-    // Clave de caché versionada ('z5'): incluye las entrecalles (cambian el
-    // resultado) e invalida coordenadas/no-encontrados de versiones anteriores
-    // (z5 fuerza re-geocodificar con Google donde haya clave).
-    const key = 'z5|' + norm(base) + '|' + norm(ec);
+    // Clave de caché versionada ('z6'): incluye las entrecalles (cambian el
+    // resultado) e invalida lo guardado por versiones anteriores. z6 fuerza
+    // re-geocodificar con Google y limpia los "no encontrada" cacheados cuando
+    // la zona estaba restringida (p. ej. Ramos Mejía, que antes daba null).
+    const key = 'z6|' + norm(base) + '|' + norm(ec);
     const cache = loadCache();
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
     let res = null;
@@ -369,7 +370,10 @@ window.GDO = window.GDO || {};
       const b2 = sinAltura(base);
       if (norm(b2) !== norm(base)) res = await _queryBounded(b2, true);
     }
-    cache[key] = res; saveCache(cache);
+    // Solo cacheamos resultados POSITIVOS: si no se encontró (null), NO lo
+    // guardamos, así la próxima vez se reintenta (evita que un "no encontrada"
+    // viejo quede pegado y nunca muestre el mapa).
+    if (res) { cache[key] = res; saveCache(cache); }
     return res;
   }
 
