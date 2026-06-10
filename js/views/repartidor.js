@@ -5,6 +5,30 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur } = GDO.UI;
   const go = (hash) => { location.hash = hash; };
 
+  /* ---------- GPS del chofer EN VIVO ----------
+     Mientras el chofer está repartiendo (ruta aceptada/en curso), publicamos su
+     posición a la ruta cada ~15s. La página de seguimiento del cliente la lee y
+     muestra al chofer en el mapa + el ETA real. El estado vive a nivel módulo
+     (no en el closure de la vista) para que los re-render NO creen watchers
+     duplicados: hay un único watch activo a la vez. */
+  let _gpsWatchId = null, _gpsLast = 0, _gpsRutaId = null;
+  function pararGPSChofer() {
+    if (_gpsWatchId != null && navigator.geolocation) { try { navigator.geolocation.clearWatch(_gpsWatchId); } catch (e) {} }
+    _gpsWatchId = null; _gpsRutaId = null;
+  }
+  function iniciarGPSChofer(rutaId) {
+    if (_gpsWatchId != null && _gpsRutaId === rutaId) return; // ya activo para esta ruta
+    pararGPSChofer();
+    if (!navigator.geolocation) return;
+    _gpsRutaId = rutaId; _gpsLast = 0;
+    _gpsWatchId = navigator.geolocation.watchPosition(function (pos) {
+      const now = Date.now();
+      if (now - _gpsLast < 15000) return; // máx 1 escritura cada 15s
+      _gpsLast = now;
+      try { Store.setChoferPos(rutaId, { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: now }); } catch (e) {}
+    }, function () {}, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+  }
+
   /* ---------- Lista de rutas del chofer ---------- */
   GDO.Views.misRutas = function (mount) {
     const me = Store.current();
@@ -271,6 +295,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         render();
       };
       wireTop(mount);
+
+      // GPS en vivo: encendido solo mientras la ruta está activa (aceptada / en
+      // curso). En cuanto se finaliza, se apaga. Es idempotente: no reinicia el
+      // watch en cada re-render.
+      if (['aceptada', 'en_curso'].includes(ruta.estado)) iniciarGPSChofer(ruta.id);
+      else pararGPSChofer();
     }
 
     // Comprobante de entrega: foto del lugar/mercadería + firma de quien recibe.

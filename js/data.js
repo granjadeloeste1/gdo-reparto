@@ -437,6 +437,16 @@ window.GDO = window.GDO || {};
       else { r.id = uid('r'); db.rutas.push(r); full = r; }
       persist(db); fsSet('rutas', full); return r;
     },
+    // Posición GPS del chofer EN VIVO. Se escribe seguido (cada ~15s) mientras
+    // reparte, así que usamos update() de UN solo campo (no reescribimos toda la
+    // ruta) para que sea liviano. La página de seguimiento del cliente lee este
+    // campo y muestra al chofer en el mapa + el ETA real. Solo {lat,lng,ts}: sin
+    // datos personales. Las reglas permiten update a personal logueado.
+    setChoferPos(rutaId, pos) {
+      const r = db.rutas.find((x) => x.id === rutaId);
+      if (r) { r.choferPos = pos; persist(db); }
+      if (fsOn()) { try { GDO.FB.db.collection('rutas').doc(rutaId).update({ choferPos: pos }); } catch (e) {} }
+    },
     deleteRuta(id) {
       const r = db.rutas.find((x) => x.id === id);
       if (r) r.pedidoIds.forEach((pid) => { const p = Store.pedido(pid); if (p) { p.estado = 'pendiente'; p.rutaId = null; fsSet('pedidos', p); } });
