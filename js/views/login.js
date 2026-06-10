@@ -16,14 +16,24 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>
       </div>`;
 
-    const doLogin = (u) => {
-      if (!u) { toast('Email o contraseña incorrectos', 'err'); return; }
-      toast('Bienvenido/a ' + u.nombre.split(' ')[0], 'ok');
-      onLogin();
+    const btn = mount.querySelector('#lg-go');
+    const doLogin = () => {
+      if (btn.disabled) return;
+      const email = mount.querySelector('#lg-email').value.trim();
+      const pass = mount.querySelector('#lg-pass').value;
+      btn.disabled = true; const txt = btn.textContent; btn.textContent = 'Ingresando…';
+      // Store.login siempre devuelve una Promesa (valida contra Firebase Auth).
+      Promise.resolve(Store.login(email, pass)).then((u) => {
+        btn.disabled = false; btn.textContent = txt;
+        if (!u) { toast('Email o contraseña incorrectos', 'err'); return; }
+        toast('Bienvenido/a ' + u.nombre.split(' ')[0], 'ok');
+        onLogin();
+      }).catch(() => {
+        btn.disabled = false; btn.textContent = txt;
+        toast('Email o contraseña incorrectos', 'err');
+      });
     };
-    mount.querySelector('#lg-go').onclick = () => {
-      doLogin(Store.login(mount.querySelector('#lg-email').value.trim(), mount.querySelector('#lg-pass').value));
-    };
-    mount.querySelector('#lg-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') mount.querySelector('#lg-go').click(); });
+    btn.onclick = doLogin;
+    mount.querySelector('#lg-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
   };
 })();

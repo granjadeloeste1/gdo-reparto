@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // "Personal" = sesión iniciada con email + contraseña (Firebase Auth).
+    // El login anónimo (tienda / seguimiento de clientes) NO es personal.
+    function isStaff() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // ----- Datos internos: SOLO personal -----
+    match /users/{id}          { allow read, write: if isStaff(); }
+    match /vehiculos/{id}       { allow read, write: if isStaff(); }
+    match /notificaciones/{id}  { allow read, write: if isStaff(); }
+    match /meta/{id}            { allow read, write: if isStaff(); }
+
+    // ----- Pedidos -----
+    // get   : el cliente final ve SU pedido por el link de seguimiento (id).
+    // create: la tienda online (sesión anónima) puede cargar un pedido.
+    // resto : listar/editar/borrar, solo personal.
+    match /pedidos/{id} {
+      allow get: if true;
+      allow create: if request.auth != null;
+      allow list, update, delete: if isStaff();
+    }
+
+    // ----- Rutas -----
+    // get : el seguimiento público lee una ruta por id (para mostrar avance).
+    // resto: solo personal.
+    match /rutas/{id} {
+      allow get: if true;
+      allow list, create, update, delete: if isStaff();
+    }
+  }
+}

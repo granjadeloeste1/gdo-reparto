@@ -24,7 +24,9 @@ window.GDO = window.GDO || {};
   function go(hash) { location.hash = hash; }
 
   const App = {
-    logout() { Store.logout(); go('#/login'); render(); },
+    // Cerrar sesión: limpia la sesión local + cierra Firebase Auth y recarga
+    // para dejar todo en estado limpio (sin listeners de Firestore colgados).
+    logout() { Store.logout(); location.reload(); },
     render,
     go,
   };

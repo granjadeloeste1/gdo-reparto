@@ -25,15 +25,36 @@ window.GDO = window.GDO || {};
     try { GDO.FB.db.collection(coll).doc(id).delete(); } catch (e) {}
   }
 
+  // Promesa que resuelve cuando llegó el primer snapshot de 'users': recién ahí
+  // los perfiles están disponibles para resolver el login por email.
+  let _usersResolve;
+  const usersReady = new Promise((r) => { _usersResolve = r; });
+
+  // Limpieza única: borra de Firestore cualquier campo `pass` viejo (texto
+  // plano) que hubiera quedado de versiones anteriores. Las credenciales reales
+  // viven en Firebase Auth; en la base no debe quedar ninguna contraseña.
+  let _passStripped = false;
+  function stripPlainPasswords(users) {
+    if (_passStripped) return;
+    _passStripped = true;
+    users.forEach((u) => {
+      if (u && u.pass !== undefined) {
+        const clean = Object.assign({}, u); delete clean.pass;
+        fsSet('users', clean);
+      }
+    });
+  }
+
   // Depósito fijo (editable por ruta): Acuña 1334, Villa Tesei.
   // Coordenadas sobre la calle Acuña en Villa Tesei (partido de Hurlingham).
   const DEPOT = { nombre: 'Depósito GDO — Acuña 1334, Villa Tesei', lat: -34.629221, lng: -58.629581 };
 
   function seed() {
-    const admin = { id: 'u_admin', nombre: 'Administración GDO', email: 'admin@gdo.com', pass: '1234', roles: ['admin', 'vendedor'], activo: true };
-    const vende = { id: 'u_vende', nombre: 'Lucía Vendedora', email: 'ventas@gdo.com', pass: '1234', roles: ['vendedor'], activo: true };
-    const chof1 = { id: 'u_chof1', nombre: 'Carlos Chofer', email: 'carlos@gdo.com', pass: '1234', roles: ['repartidor'], activo: true };
-    const chof2 = { id: 'u_chof2', nombre: 'Diego Reparto', email: 'diego@gdo.com', pass: '1234', roles: ['vendedor', 'repartidor'], activo: true };
+    // Sin contraseñas en la base: las credenciales viven en Firebase Auth.
+    const admin = { id: 'u_admin', nombre: 'Administración GDO', email: 'admin@gdo.com', roles: ['admin', 'vendedor'], activo: true };
+    const vende = { id: 'u_vende', nombre: 'Lucía Vendedora', email: 'ventas@gdo.com', roles: ['vendedor'], activo: true };
+    const chof1 = { id: 'u_chof1', nombre: 'Carlos Chofer', email: 'carlos@gdo.com', roles: ['repartidor'], activo: true };
+    const chof2 = { id: 'u_chof2', nombre: 'Diego Reparto', email: 'diego@gdo.com', roles: ['vendedor', 'repartidor'], activo: true };
 
     const veh = [
       { id: 'v1', nombre: 'Camioneta Blanca', patente: 'AB123CD', tipo: 'Utilitario refrigerado' },
@@ -227,6 +248,10 @@ window.GDO = window.GDO || {};
             }
           }
           db[c] = arr;
+          if (c === 'users') {
+            if (_usersResolve) { _usersResolve(); _usersResolve = null; }
+            stripPlainPasswords(arr);
+          }
           persist(db);
           scheduleRender();
         }, (err) => console.warn('[GDO] onSnapshot ' + c, err && err.code));
@@ -246,17 +271,39 @@ window.GDO = window.GDO || {};
     sync() { if (drainInbox(db)) { persist(db); return true; } return false; },
 
     // ----- sesión -----
+    // Login del personal. Con Firebase: valida la contraseña contra Firebase
+    // Auth (servidor) y después busca el perfil por email. Sin Firebase (modo
+    // local de respaldo): match por email. SIEMPRE devuelve una Promesa que
+    // resuelve con el usuario o null.
     login(email, pass) {
-      const u = db.users.find((x) => x.email.toLowerCase() === String(email).toLowerCase() && x.pass === pass && x.activo);
-      if (u) { db.session = { userId: u.id, rolActivo: u.roles[0] }; persist(db); }
-      return u || null;
+      const mail = String(email || '').trim().toLowerCase();
+      const setSession = (u) => {
+        if (u) { db.session = { userId: u.id, rolActivo: u.roles[0] }; persist(db); }
+        return u || null;
+      };
+      if (GDO.FB && GDO.FB.enabled) {
+        return GDO.FB.login(mail, pass)
+          .then(() => usersReady) // espera a que carguen los perfiles
+          .then(() => {
+            const u = db.users.find((x) => (x.email || '').toLowerCase() === mail && x.activo);
+            if (!u) { try { GDO.FB.logout(); } catch (e) {} } // autenticó pero no tiene perfil
+            return setSession(u);
+          })
+          .catch((e) => { console.warn('[GDO] login', e && e.code); return null; });
+      }
+      // Modo local (sin Firebase): un solo dispositivo, sin contraseñas guardadas.
+      const u = db.users.find((x) => (x.email || '').toLowerCase() === mail && x.activo);
+      return Promise.resolve(setSession(u));
     },
     loginAs(userId) {
       const u = db.users.find((x) => x.id === userId);
       if (u) { db.session = { userId: u.id, rolActivo: u.roles[0] }; persist(db); }
       return u || null;
     },
-    logout() { db.session = null; persist(db); },
+    logout() {
+      db.session = null; persist(db);
+      if (GDO.FB && GDO.FB.enabled && GDO.FB.logout) { try { GDO.FB.logout(); } catch (e) {} }
+    },
     current() { return db.session ? db.users.find((u) => u.id === db.session.userId) : null; },
     setRolActivo(r) { if (db.session) { db.session.rolActivo = r; persist(db); } },
     rolActivo() { return db.session ? db.session.rolActivo : null; },
@@ -366,6 +413,19 @@ window.GDO = window.GDO || {};
 
   GDO.Store = Store;
 
-  // Cuando Firebase esté listo, arranca la sincronización en tiempo real.
-  if (GDO.FB && GDO.FB.ready) GDO.FB.ready.then((enabled) => { if (enabled) startSync(); });
+  // La sincronización en tiempo real arranca SOLO cuando hay personal logueado
+  // (las reglas de Firestore exigen sesión de personal para leer/escribir). Si
+  // Firebase no tiene sesión (nunca entró, o cerró sesión, o expiró), cerramos
+  // también la sesión local para no mostrar la app sin permisos.
+  let _syncStarted = false;
+  if (GDO.FB && GDO.FB.onAuth) {
+    GDO.FB.onAuth((staff) => {
+      if (staff) {
+        if (!_syncStarted) { _syncStarted = true; startSync(); }
+      } else {
+        if (db.session) { db.session = null; persist(db); }
+        if (GDO.App && GDO.App.render) GDO.App.render();
+      }
+    });
+  }
 })();
