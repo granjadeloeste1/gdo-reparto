@@ -36,12 +36,13 @@ service cloud.firestore {
     // ----- Pedidos -----
     // get   : el cliente final ve SU pedido por el link de seguimiento (id). El
     //         id es largo y aleatorio (128 bits): no se puede adivinar ni listar.
-    // create: la tienda online (sesión anónima) puede cargar un pedido, pero
-    //         SOLO si pasa la validación de arriba (anti-spam / anti-forjado).
+    // create: el PERSONAL (logueado) puede cargar pedidos a mano o por importar
+    //         (cualquier origen); además la tienda online (sesión anónima) puede
+    //         crear un pedido, pero SOLO si pasa la validación (anti-spam / forjado).
     // resto : listar/editar/borrar, solo personal.
     match /pedidos/{id} {
       allow get: if true;
-      allow create: if request.auth != null && pedidoTiendaValido();
+      allow create: if isStaff() || (request.auth != null && pedidoTiendaValido());
       allow list, update, delete: if isStaff();
     }
 
