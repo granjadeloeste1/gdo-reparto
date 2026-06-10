@@ -493,8 +493,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       bodyHTML: `
         <div class="form-grid">
           <div class="field col-2"><label>Nombre y apellido *</label><input id="u-nom" value="${esc(u ? u.nombre : '')}"/></div>
-          <div class="field"><label>Email *</label><input id="u-email" type="email" value="${esc(u ? u.email : '')}"/></div>
-          <div class="field"><label>Contraseña</label><input id="u-pass" value="${esc(u ? u.pass : '1234')}"/></div>
+          <div class="field col-2"><label>Email *</label><input id="u-email" type="email" value="${esc(u ? u.email : '')}"/></div>
+          <div class="field col-2"><div class="note" style="margin:0;font-size:12.5px">🔑 <b>El acceso (email + contraseña) se crea en la consola de Firebase</b>, no acá. En este panel definís el <b>nombre y los roles</b>; la persona entra por primera vez con la cuenta de Firebase y su perfil se vincula solo.</div></div>
           <div class="field col-2"><label>Roles asignados</label>
             <div class="roles-pick">${rolBox('admin', '👑 Administrador')}${rolBox('vendedor', '🏷️ Vendedor')}${rolBox('repartidor', '🚚 Repartidor')}</div>
             <span class="help">Administrador: acceso total · Vendedor: carga pedidos · Repartidor: ve sus rutas.</span></div>
@@ -509,7 +509,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const rs = [...node.querySelectorAll('.roles-pick input:checked')].map((x) => x.value);
           if (!nom || !email) { toast('Completá nombre y email', 'err'); return; }
           if (!rs.length) { toast('Asigná al menos un rol', 'err'); return; }
-          Store.upsertUser({ id: u ? u.id : undefined, nombre: nom, email, pass: node.querySelector('#u-pass').value, roles: rs, activo: node.querySelector('#u-act').checked });
+          Store.upsertUser({ id: u ? u.id : undefined, nombre: nom, email, roles: rs, activo: node.querySelector('#u-act').checked });
           toast('Usuario guardado', 'ok'); close(); after && after();
         };
       },

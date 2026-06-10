@@ -25,7 +25,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       // Store.login siempre devuelve una Promesa (valida contra Firebase Auth).
       Promise.resolve(Store.login(email, pass)).then((u) => {
         btn.disabled = false; btn.textContent = txt;
-        if (!u) { toast('Email o contraseña incorrectos', 'err'); return; }
+        if (!u) {
+          // Si Firebase no está disponible no se puede validar la contraseña:
+          // distinguimos "sin conexión" de "credenciales incorrectas".
+          if (GDO.FB && GDO.FB.enabled === false) { toast('Necesitás conexión a internet para iniciar sesión.', 'err'); return; }
+          toast('Email o contraseña incorrectos', 'err'); return;
+        }
         toast('Bienvenido/a ' + u.nombre.split(' ')[0], 'ok');
         onLogin();
       }).catch(() => {

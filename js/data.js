@@ -315,9 +315,13 @@ window.GDO = window.GDO || {};
           })
           .catch((e) => { console.warn('[GDO] login', e && e.code); return null; });
       }
-      // Modo local (sin Firebase): un solo dispositivo, sin contraseñas guardadas.
-      const u = db.users.find((x) => (x.email || '').toLowerCase() === mail && x.activo);
-      return Promise.resolve(setSession(u));
+      // Sin Firebase (SDK no cargó / sin internet en el PRIMER arranque): NO
+      // autenticamos. Antes se entraba solo con el email (sin contraseña), lo que
+      // era un bypass: con el dispositivo en la mano, cualquiera entraba como
+      // cualquier usuario cacheado. La contraseña solo la puede validar Firebase
+      // Auth. Si ya había una sesión iniciada, sigue activa offline (current()
+      // la lee de localStorage); esto solo bloquea logins nuevos sin conexión.
+      return Promise.resolve(null);
     },
     loginAs(userId) {
       const u = db.users.find((x) => x.id === userId);
@@ -393,6 +397,17 @@ window.GDO = window.GDO || {};
     rutas: () => db.rutas,
     ruta: (id) => db.rutas.find((r) => r.id === id),
     upsertRuta(r) {
+      // Coordenadas de cada parada embebidas en la ruta. Así la página de
+      // seguimiento del cliente calcula el ETA leyendo SOLO la ruta, sin tener
+      // que bajar el pedido completo de los demás clientes (que traía nombre,
+      // teléfono y dirección de terceros). Acá no guardamos datos personales:
+      // únicamente {lat,lng} por id de parada.
+      const coords = {};
+      (r.pedidoIds || []).forEach((pid) => {
+        const p = db.pedidos.find((x) => x.id === pid);
+        if (p && p.lat != null && p.lng != null) coords[pid] = { lat: p.lat, lng: p.lng };
+      });
+      r.coords = coords;
       let full;
       if (r.id) { full = Object.assign(db.rutas.find((x) => x.id === r.id), r); }
       else { r.id = uid('r'); db.rutas.push(r); full = r; }
