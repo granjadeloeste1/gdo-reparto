@@ -132,10 +132,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
     const iniciada = !esNueva && ['aceptada', 'en_curso', 'finalizada'].includes(ruta.estado);
     const toggleDest = () => { $('#r-dest-wrap').style.display = $('#r-same').checked ? 'none' : ''; };
-    const toggleAhora = () => { $('#r-sal').style.display = $('#r-ahora').checked ? 'none' : ''; };
-    toggleDest(); toggleAhora();
+    toggleDest();
     $('#r-same').onchange = toggleDest;
-    $('#r-ahora').onchange = () => { toggleAhora(); recompute(); };
     $('#r-volver').onclick = () => go('#/rutas');
 
     // lista de pedidos elegibles con checkbox
@@ -246,7 +244,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     drawPeds();
     recompute();
 
-    ['#r-nom','#r-fec','#r-rep','#r-veh','#r-sal','#r-dem','#r-orig','#r-orig-c','#r-dest','#r-dest-c'].forEach((s) => {
+    ['#r-nom','#r-fec','#r-rep','#r-veh','#r-dem','#r-orig','#r-orig-c','#r-dest','#r-dest-c'].forEach((s) => {
       const el = $(s); if (el) el.addEventListener('change', recompute);
     });
     $('#r-opt').onclick = () => { ruta.orden = []; recompute(); toast('Ruta optimizada', 'ok'); };
