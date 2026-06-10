@@ -3,7 +3,7 @@
    último (así los cambios publicados aparecen al toque), y si no hay señal usa
    lo guardado. Solo cachea archivos del propio sitio; CDNs/Firebase pasan
    directo (necesitan red). Subí CACHE de versión cuando quieras forzar limpieza. */
-const CACHE = 'gdo-reparto-v32';
+const CACHE = 'gdo-reparto-v33';
 const CORE = [
   './',
   'index.html',
@@ -34,8 +34,12 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // CDNs / Firebase: directo a la red
+  // 'reload' saltea la caché HTTP del navegador: así, con internet, SIEMPRE
+  // bajamos la última versión publicada (GitHub Pages cachea los archivos un
+  // rato y, sin esto, el navegador reusaba versiones viejas). Si no hay red,
+  // caemos a lo guardado en caché.
   e.respondWith(
-    fetch(req).then((res) => {
+    fetch(req, { cache: 'reload' }).then((res) => {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
       return res;
