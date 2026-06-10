@@ -368,6 +368,30 @@ window.GDO = window.GDO || {};
       persist(db); fsSet('pedidos', full); return p;
     },
     deletePedido(id) { db.pedidos = db.pedidos.filter((p) => p.id !== id); persist(db); fsDel('pedidos', id); },
+    // Borrado masivo: saca de la base (y de Firestore) todos los pedidos cuyos
+    // ids vengan en la lista, en una sola pasada. Además los desengancha de
+    // cualquier ruta que los tuviera (para no dejar paradas fantasma). Devuelve
+    // cuántos pedidos borró.
+    deletePedidos(ids) {
+      if (!Array.isArray(ids) || !ids.length) return 0;
+      const set = new Set(ids);
+      const antes = db.pedidos.length;
+      // Limpia las rutas que referenciaban alguno de estos pedidos.
+      db.rutas.forEach((r) => {
+        const tenia = (r.pedidoIds || []).some((id) => set.has(id));
+        if (!tenia) return;
+        r.pedidoIds = (r.pedidoIds || []).filter((id) => !set.has(id));
+        if (Array.isArray(r.orden)) r.orden = r.orden.filter((id) => !set.has(id));
+        if (r.coords) set.forEach((id) => delete r.coords[id]);
+        if (r.progreso) set.forEach((id) => delete r.progreso[id]);
+        if (r.demoraPorId) set.forEach((id) => delete r.demoraPorId[id]);
+        fsSet('rutas', r);
+      });
+      db.pedidos = db.pedidos.filter((p) => !set.has(p.id));
+      persist(db);
+      set.forEach((id) => fsDel('pedidos', id));
+      return antes - db.pedidos.length;
+    },
     pedidosPendientes: () => db.pedidos.filter((p) => p.estado === 'pendiente'),
 
     // Reabre un pedido (p. ej. uno marcado "no entregado") para volver a

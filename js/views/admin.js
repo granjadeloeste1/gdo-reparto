@@ -28,11 +28,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* ---------------- Pedidos ---------------- */
   GDO.Views.pedidos = function (c) {
     const soyVend = Store.rolActivo() === 'vendedor';
+    // Conjunto de ids tildados para acciones masivas (vive mientras dure la vista).
+    const sel = new Set();
     c.innerHTML = `
       <div class="section-title"><h2>${soyVend ? 'Carga de pedidos' : 'Pedidos'}</h2></div>
       <div class="toolbar">
         <input type="search" id="p-q" placeholder="Buscar cliente, dirección o localidad…"/>
         <select id="p-est">
+          <option value="activos">Activos (sin entregados)</option>
           <option value="">Todos los estados</option>
           <option value="pendiente">Pendiente</option><option value="asignado">Asignado</option>
           <option value="en_ruta">En ruta</option><option value="entregado">Entregado</option>
@@ -43,21 +46,53 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-ghost" id="p-import">📥 Importar</button>
         <button class="btn btn-primary" id="p-new">+ Nuevo pedido</button>
       </div>
-      <div class="note">Los pedidos hechos por los clientes en la <b>tienda online</b> entran acá automáticamente como “pendientes”. Solo resta ubicarlos en el mapa y asignarles chofer.</div>
+      <div class="note">Los pedidos hechos por los clientes en la <b>tienda online</b> entran acá automáticamente como “pendientes”. Solo resta ubicarlos en el mapa y asignarles chofer. El panel muestra los <b>pedidos activos</b>; los <b>entregados</b> quedan guardados (con su comprobante) y los ves eligiendo “Entregado” o “Todos”.</div>
+      <div id="p-bulk" class="toolbar" style="display:none;align-items:center;background:var(--gris-cl);border:1px solid var(--gris-bd);border-radius:10px;padding:8px 12px;margin-bottom:10px">
+        <b id="p-bulk-n">0 seleccionados</b>
+        <div class="spacer"></div>
+        <button class="btn btn-ghost btn-sm" id="p-bulk-clear">Quitar selección</button>
+        <button class="btn btn-rojo btn-sm" id="p-bulk-del">🗑 Eliminar seleccionados</button>
+      </div>
       <div class="panel"><div class="panel-b flush"><div id="p-tabla"></div></div></div>`;
+    const bulk = c.querySelector('#p-bulk');
+    const refreshBulk = () => {
+      const n = sel.size;
+      bulk.style.display = n ? 'flex' : 'none';
+      if (n) c.querySelector('#p-bulk-n').textContent = n + (n === 1 ? ' pedido seleccionado' : ' pedidos seleccionados');
+    };
     const draw = () => {
       const q = c.querySelector('#p-q').value.toLowerCase();
       const est = c.querySelector('#p-est').value;
       let list = Store.pedidos().slice().reverse();
       if (soyVend) list = list.filter((p) => p.creadoPor === Store.current().id);
       if (q) list = list.filter((p) => (p.cliente + ' ' + p.direccion + ' ' + (p.localidad || '')).toLowerCase().includes(q));
-      if (est) list = list.filter((p) => p.estado === est);
-      renderPedidosTabla(c.querySelector('#p-tabla'), list);
+      if (est === 'activos') list = list.filter((p) => p.estado !== 'entregado');
+      else if (est) list = list.filter((p) => p.estado === est);
+      // Mantenemos tildado solo lo que se sigue viendo (al cambiar filtro/busqueda).
+      const visibles = new Set(list.map((p) => p.id));
+      [...sel].forEach((id) => { if (!visibles.has(id)) sel.delete(id); });
+      renderPedidosTabla(c.querySelector('#p-tabla'), list, { sel, onSel: refreshBulk });
+      refreshBulk();
     };
     c.querySelector('#p-q').oninput = draw;
-    c.querySelector('#p-est').onchange = draw;
+    c.querySelector('#p-est').onchange = () => { sel.clear(); draw(); };
     c.querySelector('#p-new').onclick = () => pedidoModal(null, draw);
     c.querySelector('#p-import').onclick = () => importModal(draw);
+    c.querySelector('#p-bulk-clear').onclick = () => { sel.clear(); draw(); };
+    c.querySelector('#p-bulk-del').onclick = () => {
+      const ids = [...sel];
+      if (!ids.length) return;
+      const enRuta = ids.filter((id) => { const p = Store.pedido(id); return p && p.rutaId; }).length;
+      const aviso = enRuta
+        ? `Vas a eliminar ${ids.length} pedido(s). ⚠️ ${enRuta} está(n) asignado(s) a una ruta y se quitará(n) también de ahí. Esta acción no se puede deshacer. ¿Confirmás?`
+        : `Vas a eliminar ${ids.length} pedido(s). Esta acción no se puede deshacer. ¿Confirmás?`;
+      confirmDlg(aviso, () => {
+        const n = Store.deletePedidos(ids);
+        sel.clear();
+        toast(n + (n === 1 ? ' pedido eliminado' : ' pedidos eliminados'), 'ok');
+        GDO.App.render();
+      }, 'Eliminar');
+    };
     draw();
     if (GDO.Geo) GDO.Geo.locatePending(() => { if (document.body.contains(c)) draw(); });
   };
@@ -189,12 +224,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
   GDO.Views.importModal = importModal;
 
-  function renderPedidosTabla(box, list) {
+  function renderPedidosTabla(box, list, opts) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }
+    const sel = opts && opts.sel;            // Set de ids tildados (si la vista lo pide)
+    const onSel = (opts && opts.onSel) || function () {};
+    const checkable = !!sel;
+    const todos = checkable && list.every((p) => sel.has(p.id));
     box.innerHTML = `<table><thead><tr>
+        ${checkable ? `<th style="width:34px"><input type="checkbox" id="p-all" ${todos ? 'checked' : ''} title="Seleccionar todos"/></th>` : ''}
         <th>Cliente</th><th>Dirección</th><th>Localidad</th><th>Pedido</th><th>Entrega</th><th>Estado</th><th></th>
       </tr></thead><tbody>${list.map((p) => `
-        <tr>
+        <tr${checkable && sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
+          ${checkable ? `<td><input type="checkbox" data-sel="${p.id}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
           <td><b>${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
           <td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : ''}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
@@ -209,6 +250,23 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <button class="btn btn-ghost btn-sm" data-del="${p.id}">🗑</button>
           </td>
         </tr>`).join('')}</tbody></table>`;
+    if (checkable) {
+      const all = box.querySelector('#p-all');
+      box.querySelectorAll('[data-sel]').forEach((cb) => cb.onchange = () => {
+        if (cb.checked) sel.add(cb.dataset.sel); else sel.delete(cb.dataset.sel);
+        const tr = cb.closest('tr'); if (tr) tr.style.background = cb.checked ? 'var(--gris-cl)' : '';
+        if (all) all.checked = list.every((p) => sel.has(p.id));
+        onSel();
+      });
+      if (all) all.onchange = () => {
+        list.forEach((p) => { if (all.checked) sel.add(p.id); else sel.delete(p.id); });
+        box.querySelectorAll('[data-sel]').forEach((cb) => {
+          cb.checked = all.checked;
+          const tr = cb.closest('tr'); if (tr) tr.style.background = all.checked ? 'var(--gris-cl)' : '';
+        });
+        onSel();
+      };
+    }
     box.querySelectorAll('[data-reasig]').forEach((b) => b.onclick = () => {
       const p = Store.pedido(b.dataset.reasig);
       confirmDlg(`Reabrir el pedido de "${p.cliente}" para reasignarlo. Vuelve a “Pendientes” y podés incluirlo en otra ruta. ¿Confirmás?`, () => {
