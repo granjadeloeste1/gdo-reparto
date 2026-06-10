@@ -38,11 +38,11 @@ window.GDO = window.GDO || {};
     return { node: m, close };
   }
 
-  function confirmDlg(msg, onYes, yesLabel) {
+  function confirmDlg(msg, onYes, yesLabel, yesClass) {
     modal({
       title: 'Confirmar', width: 440,
       bodyHTML: `<p style="margin:0;font-size:15px">${esc(msg)}</p>`,
-      footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn btn-rojo" data-yes>${esc(yesLabel || 'Eliminar')}</button>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn ${yesClass || 'btn-rojo'}" data-yes>${esc(yesLabel || 'Eliminar')}</button>`,
       onMount(m, close) {
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-yes]').onclick = () => { close(); onYes(); };
