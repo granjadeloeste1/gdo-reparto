@@ -58,11 +58,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
     const recalc = () => {
       const ord = orden();
-      const aceptada = ['aceptada', 'en_curso', 'finalizada'].includes(ruta.estado);
-      // Si la ruta es "salir ahora" y todavía no se aceptó, mostramos los
-      // horarios calculados desde la hora ACTUAL (no desde la salida planificada
-      // que quedó fija a la mañana). Al aceptar, salidaMin se congela al momento real.
-      const sal = (ruta.salirAhora !== false && !aceptada) ? nowMin() : ruta.salidaMin;
+      // "Salir ahora": los horarios se calculan SIEMPRE desde la hora ACTUAL (en
+      // vivo), no desde la salida planificada ni congelada al aceptar. Así el ETA
+      // que ve el chofer (y el que se informa al cliente) refleja la hora real.
+      // Solo una ruta finalizada deja de moverse.
+      const sal = (ruta.salirAhora !== false && ruta.estado !== 'finalizada') ? nowMin() : ruta.salidaMin;
       return Route.calcular(ruta.origen, ord, ruta.destino, ruta.demoraDefaultMin, ruta.demoraPorId, sal, _road);
     };
 
@@ -207,9 +207,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const ac = mount.querySelector('#d-aceptar');
       if (ac) ac.onclick = () => {
         ruta.estado = 'aceptada';
-        // "Salir ahora": congelamos la hora de salida al momento real en que el
-        // chofer arranca, así las llegadas estimadas se calculan desde ahora.
-        if (ruta.salirAhora !== false) { const d = new Date(); ruta.salidaMin = d.getHours() * 60 + d.getMinutes(); }
+        // No congelamos la salida: con "salir ahora" los horarios siguen siendo
+        // en vivo (hora actual) tanto para el chofer como para el cliente.
         Store.upsertRuta(ruta); ruta.pedidoIds.forEach((id)=>{const p=Store.pedido(id); if(p)p.estado='en_ruta';}); Store.save(); toast('Ruta aceptada. ¡Buen reparto!', 'ok'); render();
       };
       box.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => {
@@ -330,5 +329,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     }
 
     render();
+
+    // Refresco en vivo: con "salir ahora" los horarios dependen de la hora
+    // actual, así que re-dibujamos cuando cambia el minuto (mientras la ruta
+    // siga activa y la vista montada). Así el ETA avanza solo, sin tocar nada.
+    let _lastMin = nowMin();
+    const _timer = setInterval(() => {
+      if (!mount.isConnected) { clearInterval(_timer); return; }
+      if (ruta.estado === 'finalizada' || ruta.salirAhora === false) return;
+      const m = nowMin();
+      if (m !== _lastMin) { _lastMin = m; render(); }
+    }, 20000);
   };
 })();
