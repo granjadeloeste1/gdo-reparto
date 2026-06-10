@@ -55,9 +55,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // cachea en _road; cuando llega, se redibuja con tiempos y trazado reales.
     let _road = null, _roadSig = '';
     const ordSig = (ord) => ord.map((p) => p.id).join(',') + '|' + ruta.origen.lat + ',' + ruta.origen.lng;
+    const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
     const recalc = () => {
       const ord = orden();
-      return Route.calcular(ruta.origen, ord, ruta.destino, ruta.demoraDefaultMin, ruta.demoraPorId, ruta.salidaMin, _road);
+      const aceptada = ['aceptada', 'en_curso', 'finalizada'].includes(ruta.estado);
+      // Si la ruta es "salir ahora" y todavía no se aceptó, mostramos los
+      // horarios calculados desde la hora ACTUAL (no desde la salida planificada
+      // que quedó fija a la mañana). Al aceptar, salidaMin se congela al momento real.
+      const sal = (ruta.salirAhora !== false && !aceptada) ? nowMin() : ruta.salidaMin;
+      return Route.calcular(ruta.origen, ord, ruta.destino, ruta.demoraDefaultMin, ruta.demoraPorId, sal, _road);
     };
 
     function avisar(p, accion, detalle) {
