@@ -90,6 +90,39 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       return Route.calcular(ruta.origen, ord, ruta.destino, ruta.demoraDefaultMin, ruta.demoraPorId, sal, _road);
     };
 
+    // ETA EN VIVO de una parada: hora actual + lo que falta desde DONDE está el
+    // chofer AHORA (su GPS en vivo si es reciente, si no la última parada ya
+    // resuelta), salteando las entregadas. Mismo criterio EXACTO que la página de
+    // seguimiento del cliente, para que chofer y cliente vean el MISMO horario.
+    // Nunca usa la hora de confirmación de la ruta.
+    const VEL_KMH_VIVO = 24;
+    const _hav = (a, b) => {
+      const R = 6371, toR = (d) => d * Math.PI / 180;
+      const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+      const x = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+    };
+    const etaVivoMin = (targetId) => {
+      const ids = (ruta.orden && ruta.orden.length ? ruta.orden : ruta.pedidoIds) || [];
+      const idx = ids.indexOf(targetId);
+      if (idx < 0) return null;
+      const prog = ruta.progreso || {};
+      const coord = (id) => { const p = Store.pedido(id); return (p && p.lat != null) ? { lat: p.lat, lng: p.lng } : null; };
+      const now = new Date(); let t = now.getHours() * 60 + now.getMinutes();
+      const chofer = (ruta.choferPos && ruta.choferPos.lat != null && (Date.now() - (ruta.choferPos.ts || 0) < 300000)) ? ruta.choferPos : null;
+      let prev = chofer || ruta.origen;
+      if (!chofer) { for (let j = 0; j < idx; j++) { const st = prog[ids[j]]; if (st === 'entregado' || st === 'no_entregado') { const pj = coord(ids[j]); if (pj) prev = pj; } } }
+      for (let i = 0; i <= idx; i++) {
+        const st = prog[ids[i]];
+        if (st === 'entregado' || st === 'no_entregado') continue;
+        const p = coord(ids[i]);
+        if (p && prev && prev.lat != null) t += (_hav(prev, p) / VEL_KMH_VIVO) * 60;
+        if (i < idx) { const dem = (ruta.demoraPorId && ruta.demoraPorId[ids[i]] != null) ? ruta.demoraPorId[ids[i]] : (ruta.demoraDefaultMin || 0); t += dem; }
+        if (p) prev = p;
+      }
+      return t;
+    };
+
     function avisar(p, accion, detalle) {
       const autor = Store.user(p.creadoPor);
       const msg = `Pedido "${p.cliente}" — ${accion}${detalle ? ': ' + detalle : ''} (ruta ${ruta.nombre}, repartidor ${me.nombre.split(' ')[0]}).`;
@@ -202,11 +235,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="hd"><div style="display:flex;gap:10px"><div class="seq">${i + 1}</div>
             <div><div class="cli">${esc(p.cliente)}</div><div class="dir">${esc(p.direccion)}${p.entrecalles ? ' · ' + esc(p.entrecalles) : ''}</div></div></div>
             ${badge}</div>
-          <div class="eta">⏱ Llegada estimada ${fmtHora(calc.llegada[i])} · ${(p.items||[]).map((x)=>x.cantidad+'× '+x.producto).join(', ')}</div>
+          <div class="eta">${done ? '' : '⏱ Llegada estimada ' + fmtHora(etaVivoMin(p.id)) + ' · '}${(p.items||[]).map((x)=>x.cantidad+'× '+x.producto).join(', ')}</div>
           ${p.especificaciones ? `<div class="spec">📌 ${esc(p.especificaciones)}</div>` : ''}
           ${aceptada && ruta.estado !== 'finalizada' && !done ? `<div class="acts">
               <a class="btn btn-dark full" data-nav="${p.id}" href="${(p.direccion || p.lat != null) ? Route.navStop(p) : '#'}" target="_blank"${!(p.direccion || p.lat != null) ? ' style="opacity:.5;pointer-events:none"' : ''}>🧭 Navegar a esta parada</a>
-              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(calc.llegada[i]), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
+              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(etaVivoMin(p.id)), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
               <button class="btn btn-verde" data-ok="${p.id}">✓ Entregado</button>
               <button class="btn btn-rojo" data-no="${p.id}">✕ No entregado</button>
               <button class="btn btn-amarillo full" data-skip="${p.id}">↷ Saltear parada</button>

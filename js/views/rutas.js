@@ -101,9 +101,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>Vehículo</label>
             <select id="r-veh"><option value="">— Seleccionar —</option>${Store.vehiculos().map((v) => `<option value="${v.id}"${v.id===ruta.vehiculoId?' selected':''}>${esc(v.nombre)} (${esc(v.patente)})</option>`).join('')}</select></div>
           <div class="field"><label>Salida</label>
-            <label style="font-weight:400;font-size:13px"><input type="checkbox" id="r-ahora" ${ruta.salirAhora !== false ? 'checked' : ''} style="width:auto"/> Salir ahora (usar la hora en que arranca el chofer)</label>
-            <input id="r-sal" type="time" value="${fmtHora(ruta.salidaMin)}" style="margin-top:6px"/>
-            <span class="help">Con “Salir ahora” los horarios de llegada se calculan desde el momento real en que el chofer inicia el reparto. Destildalo solo si querés programar una hora fija.</span></div>
+            <span class="help">⏱ <b>Automática.</b> Los horarios de llegada se calculan SIEMPRE desde la <b>hora en vivo</b> y la <b>ubicación real</b> del chofer mientras reparte — nunca desde una hora fija ni la de confirmación. Si el chofer se demora, el ETA se ajusta solo.</span></div>
           <div class="field"><label>Demora por parada (min)</label><input id="r-dem" type="number" min="0" value="${ruta.demoraDefaultMin}"/>
             <span class="help">Tiempo estimado de descarga/entrega por cliente.</span></div>
           <div class="field col-2"><label><input type="checkbox" id="r-same" ${ruta.sameAsOrigin?'checked':''} style="width:auto"/> Finalizar en el mismo punto de salida (depósito)</label></div>
@@ -166,15 +164,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       ruta.fecha = $('#r-fec').value;
       ruta.repartidorId = $('#r-rep').value;
       ruta.vehiculoId = $('#r-veh').value;
-      ruta.salirAhora = $('#r-ahora').checked;
-      if (ruta.salirAhora) {
-        // Si la ruta ya arrancó, dejamos la hora real de inicio que quedó
-        // congelada; si no, la previsualización usa la hora actual.
-        if (!iniciada) ruta.salidaMin = nowMin();
-      } else {
-        const [hh, mm] = $('#r-sal').value.split(':').map(Number);
-        if (!isNaN(hh)) ruta.salidaMin = hh * 60 + (mm || 0);
-      }
+      // Horario SIEMPRE en vivo: ya no hay hora de inicio configurable. Para la
+      // previsualización usamos la hora actual; en el reparto, el ETA se calcula
+      // en vivo desde la posición real del chofer (ver app del chofer y la página
+      // de seguimiento del cliente).
+      ruta.salirAhora = true;
+      ruta.salidaMin = nowMin();
       ruta.demoraDefaultMin = Math.max(0, +$('#r-dem').value || 0);
       ruta.sameAsOrigin = $('#r-same').checked;
       ruta.origen = { nombre: $('#r-orig').value.trim(), ...parseCoord($('#r-orig-c').value, ruta.origen) };
