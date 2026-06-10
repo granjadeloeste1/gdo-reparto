@@ -12,29 +12,32 @@ window.GDO = window.GDO || {};
   const GEOREF = 'https://apis.datos.gob.ar/georef/api';
   const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-  // ---- Zona de reparto de GDO ---------------------------------------------
-  // Una misma calle (p. ej. "Jauretche 410") existe en decenas de pueblos de
-  // la provincia; sin acotar, Georef devuelve cualquiera (¡Olavarría, a 350 km!).
-  // Por eso restringimos TODO a los partidos donde realmente reparte GDO.
-  // Hurlingham es la base (Villa Tesei). Editá esta lista si cambia la zona.
+  // ---- Cobertura: TODA la provincia de Buenos Aires + CABA ----------------
+  // GDO entrega en varias zonas (siempre Ramos Mejía/La Matanza, y eventualmente
+  // cualquier punto de la provincia). NO restringimos la búsqueda a partidos
+  // fijos: Google (motor principal) ubica cualquier dirección de Argentina, y
+  // acá cubrimos toda la provincia. La lista `partidos` se usa SOLO para ORDENAR
+  // las sugerencias (primero las zonas más habituales, cerca del depósito en
+  // Villa Tesei); NO filtra. Si una dirección está fuera, igual se ubica.
   const ZONA = {
     provincia: 'Buenos Aires',
-    // Orden = prioridad de cercanía (Hurlingham primero).
-    partidos: ['Hurlingham', 'Morón', 'Ituzaingó', 'Tres de Febrero',
-      'General San Martín', 'San Miguel', 'Malvinas Argentinas', 'José C. Paz',
-      'Merlo', 'Moreno'],
-    // Caja geográfica (oeste del GBA) para validar resultados de OSM/Nominatim.
-    // El borde este (-58.48) deja afuera CABA (General Paz) pero conserva los
-    // partidos del oeste (San Martín, Tres de Febrero) donde sí reparte GDO.
-    box: { minLng: -59.05, minLat: -34.86, maxLng: -58.48, maxLat: -34.40 },
+    // Orden = prioridad para MOSTRAR primero (no es filtro). Las más habituales.
+    partidos: ['Hurlingham', 'Ituzaingó', 'Morón', 'Tres de Febrero',
+      'La Matanza', 'General San Martín', 'San Miguel', 'Malvinas Argentinas',
+      'José C. Paz'],
+    // Caja geográfica: toda la provincia de Buenos Aires + CABA. Solo se usa
+    // para sesgar sugerencias y acotar el respaldo OSM/Nominatim; Google no se
+    // limita a esto (ubica en cualquier lado).
+    box: { minLng: -63.5, minLat: -41.1, maxLng: -56.6, maxLat: -33.2 },
   };
   const _sinAcento = (s) => String(s || '').toLowerCase()
     .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i')
     .replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').trim();
   const _zonaSet = ZONA.partidos.map(_sinAcento);
-  // Posición del partido en la zona (0 = más cercano). -1 = fuera de zona.
+  // Posición en el orden de cercanía (0 = más habitual). -1 = no listado.
   const zonaRank = (partido) => _zonaSet.indexOf(_sinAcento(partido));
-  const inZona = (partido) => zonaRank(partido) >= 0;
+  // Ya no filtramos por zona: aceptamos toda la provincia (la lista solo ordena).
+  const inZona = (partido) => true;
 
   // ---- Localidades de la zona (para separar calle de localidad) -----------
   // Georef necesita SOLO la calle (y la altura) en el campo "direccion". Si el
