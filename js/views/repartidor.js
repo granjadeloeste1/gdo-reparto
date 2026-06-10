@@ -123,6 +123,46 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       return t;
     };
 
+    // ETA "como Google Maps": tiempo de manejo REAL (calles + tráfico) desde la
+    // posición en vivo del chofer hasta el PRÓXIMO cliente, vía Directions API.
+    // Se consulta SOLO para la parada actual y con tope de 1 consulta cada 120s
+    // (barato: es interno y lo dispara el chofer, ~1 por entrega). Si Google no
+    // está disponible, cae al estimado por calles aproximado (etaVivoMin).
+    const _gEta = {}; // pedidoId -> { min, ts }
+    const _choferVivo = () => (ruta.choferPos && ruta.choferPos.lat != null && (Date.now() - (ruta.choferPos.ts || 0) < 300000)) ? ruta.choferPos : null;
+    function pedirEtaGoogle(stop) {
+      try {
+        if (!stop || stop.lat == null) return;
+        if (!(GDO.Google && GDO.Google.disponible)) return;
+        if (!(window.google && google.maps && google.maps.DirectionsService)) return;
+        const chofer = _choferVivo(); if (!chofer) return;
+        const cached = _gEta[stop.id];
+        if (cached && Date.now() - cached.ts < 120000) return; // todavía fresco / consulta en curso
+        _gEta[stop.id] = Object.assign({}, cached, { ts: Date.now() }); // marca para no repetir mientras resuelve
+        const svc = new google.maps.DirectionsService();
+        svc.route({
+          origin: { lat: chofer.lat, lng: chofer.lng },
+          destination: { lat: stop.lat, lng: stop.lng },
+          travelMode: google.maps.TravelMode.DRIVING,
+          drivingOptions: { departureTime: new Date(), trafficModel: google.maps.TrafficModel.BEST_GUESS },
+        }, (res, status) => {
+          if (status !== 'OK' || !res || !res.routes || !res.routes[0] || !res.routes[0].legs[0]) return;
+          const leg = res.routes[0].legs[0];
+          const durSec = (leg.duration_in_traffic || leg.duration).value;
+          const now = new Date();
+          _gEta[stop.id] = { min: now.getHours() * 60 + now.getMinutes() + Math.round(durSec / 60), ts: Date.now() };
+          if (mount.isConnected) render();
+        });
+      } catch (e) {}
+    }
+    // ETA a mostrar/enviar: el de Google si lo tenemos reciente (< 3 min), si no
+    // el estimado en vivo. Anclado SIEMPRE a la hora actual.
+    const etaMostrar = (p) => {
+      const g = _gEta[p.id];
+      if (g && g.min != null && Date.now() - g.ts < 180000) return g.min;
+      return etaVivoMin(p.id);
+    };
+
     function avisar(p, accion, detalle) {
       const autor = Store.user(p.creadoPor);
       const msg = `Pedido "${p.cliente}" — ${accion}${detalle ? ': ' + detalle : ''} (ruta ${ruta.nombre}, repartidor ${me.nombre.split(' ')[0]}).`;
@@ -214,6 +254,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       // navegación del pie: SOLO la parada actual (no todo el recorrido). Al
       // volver de Maps, el chofer confirma y la próxima pasa a ser la actual.
       const cur = curId ? Store.pedido(curId) : null;
+      // Pedimos a Google el tiempo real de manejo hacia el próximo cliente.
+      if (cur && aceptada && ruta.estado !== 'finalizada') pedirEtaGoogle(cur);
       const nav = mount.querySelector('#d-nav');
       if (nav) {
         if (cur && (cur.direccion || cur.lat != null)) { nav.href = Route.navStop(cur); nav.textContent = `🧭 Navegar a ${esc((cur.cliente || '').split(' ')[0])}`; nav.style.opacity = ''; nav.style.pointerEvents = ''; }
@@ -235,11 +277,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="hd"><div style="display:flex;gap:10px"><div class="seq">${i + 1}</div>
             <div><div class="cli">${esc(p.cliente)}</div><div class="dir">${esc(p.direccion)}${p.entrecalles ? ' · ' + esc(p.entrecalles) : ''}</div></div></div>
             ${badge}</div>
-          <div class="eta">${done ? '' : '⏱ Llegada estimada ' + fmtHora(etaVivoMin(p.id)) + ' · '}${(p.items||[]).map((x)=>x.cantidad+'× '+x.producto).join(', ')}</div>
+          <div class="eta">${done ? '' : '⏱ Llegada estimada ' + fmtHora(etaMostrar(p)) + ' · '}${(p.items||[]).map((x)=>x.cantidad+'× '+x.producto).join(', ')}</div>
           ${p.especificaciones ? `<div class="spec">📌 ${esc(p.especificaciones)}</div>` : ''}
           ${aceptada && ruta.estado !== 'finalizada' && !done ? `<div class="acts">
               <a class="btn btn-dark full" data-nav="${p.id}" href="${(p.direccion || p.lat != null) ? Route.navStop(p) : '#'}" target="_blank"${!(p.direccion || p.lat != null) ? ' style="opacity:.5;pointer-events:none"' : ''}>🧭 Navegar a esta parada</a>
-              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(etaVivoMin(p.id)), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
+              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(etaMostrar(p)), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
               <button class="btn btn-verde" data-ok="${p.id}">✓ Entregado</button>
               <button class="btn btn-rojo" data-no="${p.id}">✕ No entregado</button>
               <button class="btn btn-amarillo full" data-skip="${p.id}">↷ Saltear parada</button>
