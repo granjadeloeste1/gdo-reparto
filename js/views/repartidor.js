@@ -32,7 +32,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* ---------- Lista de rutas del chofer ---------- */
   GDO.Views.misRutas = function (mount) {
     const me = Store.current();
-    const rutas = Store.rutasDe(me.id).filter((r) => r.estado !== 'borrador').sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+    // El chofer ve solo sus rutas activas: NO mostramos borradores ni las
+    // FINALIZADAS (una vez que terminó la ruta, desaparece de su panel).
+    const rutas = Store.rutasDe(me.id).filter((r) => r.estado !== 'borrador' && r.estado !== 'finalizada').sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
     mount.className = '';
     mount.innerHTML = `
       <div class="driver">
