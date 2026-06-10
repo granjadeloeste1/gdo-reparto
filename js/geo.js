@@ -292,10 +292,12 @@ window.GDO = window.GDO || {};
       return await new Promise((resolve) => {
         geocoder.geocode({ address: q, bounds, region: 'ar', componentRestrictions: { country: 'AR' } }, (results, status) => {
           if (status !== 'OK' || !results || !results.length) { resolve(null); return; }
-          // Preferimos un resultado dentro de la caja de la zona de reparto.
+          // Preferimos un resultado dentro de la zona de reparto, pero si la
+          // dirección cae AFUERA igual la aceptamos: Google ya está restringido a
+          // Argentina y es preciso en todo el AMBA. (Antes la rechazábamos y la
+          // dirección quedaba sin ubicar / sin mapa; ahora SIEMPRE ubica.)
           let r = results.find((x) => { const l = x.geometry.location; return dentro(l.lat(), l.lng()); }) || results[0];
           const lat = r.geometry.location.lat(), lng = r.geometry.location.lng();
-          if (!dentro(lat, lng)) { resolve(null); return; } // fuera de zona → que sigan Georef/OSM
           const lt = r.geometry.location_type; // ROOFTOP > RANGE_INTERPOLATED > GEOMETRIC_CENTER > APPROXIMATE
           const aprox = !(lt === 'ROOFTOP' || lt === 'RANGE_INTERPOLATED');
           let loc = '';
