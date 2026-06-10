@@ -9,6 +9,24 @@ service cloud.firestore {
         && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
 
+    // Validación de un pedido creado por la tienda (sesión anónima). Limita lo
+    // que un anónimo puede escribir: campos obligatorios, estado/origen fijos,
+    // tamaños acotados (anti-spam y anti-forjado). NO puede llegar ya asignado a
+    // una ruta ni marcado como entregado, ni traer historia/creadoPor falsos.
+    function pedidoTiendaValido() {
+      let d = request.resource.data;
+      return d.origen == 'tienda'
+        && d.estado == 'pendiente'
+        && d.rutaId == null
+        && d.creadoPor == null
+        && d.cliente is string && d.cliente.size() > 0 && d.cliente.size() <= 120
+        && d.telefono is string && d.telefono.size() <= 40
+        && d.direccion is string && d.direccion.size() <= 300
+        && d.especificaciones is string && d.especificaciones.size() <= 2000
+        && d.items is list && d.items.size() > 0 && d.items.size() <= 100
+        && (!('historia' in d) || (d.historia is list && d.historia.size() == 0));
+    }
+
     // ----- Datos internos: SOLO personal -----
     match /users/{id}          { allow read, write: if isStaff(); }
     match /vehiculos/{id}       { allow read, write: if isStaff(); }
@@ -16,17 +34,21 @@ service cloud.firestore {
     match /meta/{id}            { allow read, write: if isStaff(); }
 
     // ----- Pedidos -----
-    // get   : el cliente final ve SU pedido por el link de seguimiento (id).
-    // create: la tienda online (sesión anónima) puede cargar un pedido.
+    // get   : el cliente final ve SU pedido por el link de seguimiento (id). El
+    //         id es largo y aleatorio (128 bits): no se puede adivinar ni listar.
+    // create: la tienda online (sesión anónima) puede cargar un pedido, pero
+    //         SOLO si pasa la validación de arriba (anti-spam / anti-forjado).
     // resto : listar/editar/borrar, solo personal.
     match /pedidos/{id} {
       allow get: if true;
-      allow create: if request.auth != null;
+      allow create: if request.auth != null && pedidoTiendaValido();
       allow list, update, delete: if isStaff();
     }
 
     // ----- Rutas -----
-    // get : el seguimiento público lee una ruta por id (para mostrar avance).
+    // get : el seguimiento público lee una ruta por id (para mostrar avance y
+    //       calcular el ETA). La ruta NO contiene datos personales de clientes:
+    //       solo coordenadas (ruta.coords) y el progreso de entrega.
     // resto: solo personal.
     match /rutas/{id} {
       allow get: if true;
