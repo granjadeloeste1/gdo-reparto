@@ -25,7 +25,7 @@ GDO.CONFIG = {
     window.__gdoGmapsReady = function () { GDO.Google.disponible = true; resolve(true); };
     const s = document.createElement('script');
     s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) +
-      '&libraries=geometry&loading=async&callback=__gdoGmapsReady';
+      '&libraries=geometry,places&loading=async&callback=__gdoGmapsReady';
     s.async = true; s.defer = true;
     s.onerror = function () { resolve(false); }; // si falla, la app usa Georef
     document.head.appendChild(s);

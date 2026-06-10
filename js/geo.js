@@ -139,11 +139,77 @@ window.GDO = window.GDO || {};
   // luego el resto de la provincia filtrado a esos partidos, así nunca se ofrece
   // una calle homónima de un pueblo lejano. opts: { max } (provincia/departamento
   // se mantienen por compatibilidad pero ya no cambian el resultado).
+  // ===== Google Places (autocompletado "pro", SDK nuevo) =====
+  // Sugerencias mientras se escribe usando Places (AutocompleteSuggestion). Es
+  // el motor más confiable en Argentina y trae la ALTURA exacta. Devuelve items
+  // SIN coordenadas (solo texto + placePrediction): las coords se resuelven al
+  // ELEGIR (1 sola consulta de detalle). Si Google no está / falla, null → Georef.
+  let _gToken = null, _gDisabled = false;
+  async function suggestGoogle(text) {
+    try {
+      if (_gDisabled) return null;
+      if (!(GDO.Google && GDO.Google.disponible)) return null;
+      if (!(window.google && google.maps && google.maps.places)) return null;
+      const P = google.maps.places;
+      if (!P.AutocompleteSuggestion || !P.AutocompleteSuggestion.fetchAutocompleteSuggestions) return null;
+      if (!_gToken && P.AutocompleteSessionToken) _gToken = new P.AutocompleteSessionToken();
+      const b = ZONA.box;
+      const req = {
+        input: text,
+        includedRegionCodes: ['ar'],
+        language: 'es',
+        locationBias: { west: b.minLng, south: b.minLat, east: b.maxLng, north: b.maxLat },
+      };
+      if (_gToken) req.sessionToken = _gToken;
+      const res = await P.AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
+      const sugg = (res && res.suggestions) || [];
+      const out = [];
+      for (const s of sugg) {
+        const pp = s.placePrediction;
+        if (!pp) continue;
+        const label = (pp.text && (pp.text.text || pp.text)) || '';
+        if (!label) continue;
+        out.push({ label: String(label), _pp: pp, _placeId: pp.placeId || null, lat: null, lng: null, localidad: '' });
+      }
+      return out;
+    } catch (e) { _gDisabled = true; return null; }
+  }
+
+  // Resuelve coords + localidad de una sugerencia de Google al elegirla.
+  async function placeCoords(item) {
+    try {
+      if (!(window.google && google.maps && google.maps.places)) return null;
+      let place = null;
+      if (item._pp && item._pp.toPlace) place = item._pp.toPlace();
+      else if (item._placeId && google.maps.places.Place) place = new google.maps.places.Place({ id: item._placeId });
+      if (!place) return null;
+      await place.fetchFields({ fields: ['location', 'addressComponents', 'formattedAddress'] });
+      _gToken = null; // cerrada la sesión: la próxima búsqueda abre una nueva
+      const loc = place.location;
+      const lat = loc && (typeof loc.lat === 'function' ? loc.lat() : loc.lat);
+      const lng = loc && (typeof loc.lng === 'function' ? loc.lng() : loc.lng);
+      if (lat == null || lng == null) return null;
+      let localidad = '', calle = '', num = '';
+      (place.addressComponents || []).forEach((c) => {
+        const t = c.types || [];
+        const txt = c.longText || c.long_name || '';
+        if (!localidad && (t.indexOf('locality') >= 0 || t.indexOf('sublocality') >= 0 || t.indexOf('administrative_area_level_2') >= 0)) localidad = txt;
+        if (t.indexOf('route') >= 0) calle = txt;
+        if (t.indexOf('street_number') >= 0) num = txt;
+      });
+      const direccion = calle ? (calle + (num ? ' ' + num : '')) : (place.formattedAddress || item.label);
+      return { lat: +lat, lng: +lng, localidad: localidad, direccion: direccion };
+    } catch (e) { return null; }
+  }
+
   async function suggest(text, opts) {
     const q = String(text || '').trim();
     if (q.length < 4) return [];
     opts = opts || {};
     const max = opts.max || 6;
+    // 1) Google primero (lo más confiable; trae la altura exacta). Si no está
+    //    disponible o falla, caemos a Georef (gratis) sin romper la experiencia.
+    try { const g = await suggestGoogle(q); if (g && g.length) return g.slice(0, max); } catch (e) {}
     try {
       const out = [], seen = {};
       const push = (list) => {
@@ -356,10 +422,16 @@ window.GDO = window.GDO || {};
       place();
       box.style.display = 'block';
     };
-    const pick = (it) => {
-      input.value = it.direccion || it.label || input.value;
+    const pick = async (it) => {
       hide();
-      if (onPick) try { onPick(it); } catch (e) {}
+      let enriched = it;
+      // Sugerencia de Google: trae solo el texto; resolvemos coords al elegir.
+      if (it && it.lat == null && (it._pp || it._placeId) && typeof placeCoords === 'function') {
+        const d = await placeCoords(it).catch(() => null);
+        if (d) enriched = Object.assign({}, it, d);
+      }
+      input.value = (enriched && (enriched.direccion || enriched.label)) || input.value;
+      if (onPick) try { onPick(enriched); } catch (e) {}
     };
 
     box.addEventListener('mousedown', (e) => {
