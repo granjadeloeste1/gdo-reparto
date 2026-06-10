@@ -176,10 +176,11 @@ window.GDO = window.GDO || {};
       if (!o || !o.id || d.pedidos.some((p) => p.id === o.id)) return;
       const nuevo = {
         id: o.id, cliente: o.cliente || 'Cliente', direccion: o.direccion || '',
-        entrecalles: o.entrecalles || '', lat: o.lat == null ? null : o.lat,
+        localidad: o.localidad || '', entrecalles: o.entrecalles || '', lat: o.lat == null ? null : o.lat,
         lng: o.lng == null ? null : o.lng, items: Array.isArray(o.items) ? o.items : [],
         fechaEntrega: o.fechaEntrega || '',
         especificaciones: o.especificaciones || '', prioridad: o.prioridad || 'normal',
+        formaPago: o.formaPago || '',
         estado: 'pendiente', creadoPor: o.creadoPor || null, rutaId: null,
         ventana: o.ventana || '', telefono: o.telefono || '', origen: 'tienda', historia: [],
       };

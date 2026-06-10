@@ -239,7 +239,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td><b>${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
           <td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : ''}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
-          <td class="small">${esc(resumenItems(p.items))}</td>
+          <td class="small">${esc(resumenItems(p.items))}${p.formaPago ? `<div class="small muted" style="margin-top:2px">💳 ${esc(p.formaPago)}</div>` : ''}</td>
           <td class="small">${p.fechaEntrega ? fmtFecha(p.fechaEntrega) : '<span class="chip chip-pend" style="font-size:10px">A asignar</span>'}</td>
           <td>${ESTADO_CHIP[p.estado] || p.estado}${asignacionInfo(p)}</td>
           <td class="t-actions">
@@ -406,6 +406,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <option value="normal"${!p||p.prioridad==='normal'?' selected':''}>Normal</option>
               <option value="alta"${p&&p.prioridad==='alta'?' selected':''}>Alta</option>
             </select></div>
+          <div class="field"><label>Forma de pago</label>
+            <select id="f-pago">
+              <option value=""${!p||!p.formaPago?' selected':''}>— Sin especificar —</option>
+              <option value="Efectivo al momento de la entrega"${p&&p.formaPago==='Efectivo al momento de la entrega'?' selected':''}>Efectivo al momento de la entrega</option>
+              <option value="Transferencia previo a la entrega"${p&&p.formaPago==='Transferencia previo a la entrega'?' selected':''}>Transferencia previo a la entrega</option>
+              <option value="QR al momento de la entrega"${p&&p.formaPago==='QR al momento de la entrega'?' selected':''}>QR al momento de la entrega</option>
+            </select></div>
           <div class="field"><label>Ubicación (coordenadas o link de Google Maps)</label>
             <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
             <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>
@@ -499,6 +506,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             fechaEntrega: node.querySelector('#f-fec').value,
             ventana: node.querySelector('#f-vent').value.trim(),
             prioridad: node.querySelector('#f-prio').value,
+            formaPago: node.querySelector('#f-pago').value,
             especificaciones: node.querySelector('#f-esp').value.trim(),
             items: clean, lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
             creadoPor: p ? p.creadoPor : Store.current().id,
