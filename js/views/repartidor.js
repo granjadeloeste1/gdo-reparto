@@ -187,6 +187,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     }
 
     function render() {
+      // Si el chofer YA salió de esta ruta (cambió el hash, p. ej. al finalizar y
+      // volver a "Mis rutas"), NO re-pintamos. Sin esto, callbacks async que
+      // siguen vivos unos segundos (ruteo OSRM, intervalo de ETA, ETA de Google)
+      // re-dibujaban la ruta finalizada en el panel "automáticamente".
+      if (location.hash !== '#/ruta/' + rutaId) return;
       const ord = orden();
       const calc = recalc();
       const hechos = ord.filter((p) => ruta.progreso[p.id] === 'entregado' || ruta.progreso[p.id] === 'no_entregado').length;
@@ -443,7 +448,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // siga activa y la vista montada). Así el ETA avanza solo, sin tocar nada.
     let _lastMin = nowMin();
     const _timer = setInterval(() => {
-      if (!mount.isConnected) { clearInterval(_timer); return; }
+      if (!mount.isConnected || location.hash !== '#/ruta/' + rutaId) { clearInterval(_timer); return; }
       if (ruta.estado === 'finalizada' || ruta.salirAhora === false) return;
       const m = nowMin();
       if (m !== _lastMin) { _lastMin = m; render(); }
