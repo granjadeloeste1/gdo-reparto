@@ -105,6 +105,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>Demora por parada (min)</label><input id="r-dem" type="number" min="0" value="${ruta.demoraDefaultMin}"/>
             <span class="help">Tiempo estimado de descarga/entrega por cliente.</span></div>
           <div class="field col-2"><label><input type="checkbox" id="r-same" ${ruta.sameAsOrigin?'checked':''} style="width:auto"/> Finalizar en el mismo punto de salida (depósito)</label></div>
+          <div class="field col-2"><label><input type="checkbox" id="r-chofermod" ${ruta.choferPuedeModificar!==false?'checked':''} style="width:auto"/> Permitir que el chofer reoptimice/modifique el recorrido</label>
+            <span class="help">Si lo desmarcás, el chofer sigue el recorrido tal cual lo armaste (no le aparece el botón de reoptimizar). Las marcas de entregado/no entregado/saltear siguen disponibles.</span></div>
           <div class="field"><label>Punto A — Salida</label><input id="r-orig" value="${esc(ruta.origen.nombre)}"/>
             <input id="r-orig-c" value="${ruta.origen.lat}, ${ruta.origen.lng}" class="small" style="margin-top:6px"/></div>
           <div class="field" id="r-dest-wrap"><label>Punto B — Regreso</label><input id="r-dest" value="${esc(ruta.destino.nombre)}"/>
@@ -170,6 +172,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       ruta.salidaMin = nowMin();
       ruta.demoraDefaultMin = Math.max(0, +$('#r-dem').value || 0);
       ruta.sameAsOrigin = $('#r-same').checked;
+      ruta.choferPuedeModificar = $('#r-chofermod').checked;
       ruta.origen = { nombre: $('#r-orig').value.trim(), ...parseCoord($('#r-orig-c').value, ruta.origen) };
       ruta.destino = ruta.sameAsOrigin ? { ...ruta.origen } : { nombre: $('#r-dest').value.trim(), ...parseCoord($('#r-dest-c').value, ruta.destino) };
     };

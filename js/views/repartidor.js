@@ -221,7 +221,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
             <div class="panel" style="margin-bottom:14px"><div class="panel-b flush"><div id="dmap" class="mapbox" style="height:240px"></div></div></div>
 
-            ${ruta.estado !== 'finalizada' && pendientes.length >= 2 ? `<button class="btn btn-dark btn-block" id="d-reopt" style="margin-bottom:14px">↻ Optimizar el recorrido que falta</button>` : ''}
+            ${ruta.estado !== 'finalizada' && pendientes.length >= 2 && ruta.choferPuedeModificar !== false ? `<button class="btn btn-dark btn-block" id="d-reopt" style="margin-bottom:14px">↻ Optimizar el recorrido que falta</button>` : ''}
 
             ${!aceptada ? `
               <div class="dstop cur" style="text-align:center">
