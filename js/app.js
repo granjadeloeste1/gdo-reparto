@@ -5,6 +5,11 @@ window.GDO = window.GDO || {};
   const { esc, h, hace } = GDO.UI;
   const V = GDO.Views;
   const root = () => document.getElementById('app');
+  // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
+  // para verificar de un vistazo que la app esté actualizada.
+  const VERSION = 'v50';
+  GDO.VERSION = VERSION;
+  GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
   const NAV = {
     admin: [
@@ -102,6 +107,7 @@ window.GDO = window.GDO || {};
             </div>
           </header>
           <div class="content" id="app-content"></div>
+          ${GDO.footHTML()}
         </div>
       </div>
       <nav class="mobile-tabbar">

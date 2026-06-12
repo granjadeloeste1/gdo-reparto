@@ -14,6 +14,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>Contraseña</label><input id="lg-pass" type="password" placeholder="••••" autocomplete="current-password"/></div>
           <button class="btn btn-primary btn-block btn-lg" id="lg-go" style="margin-top:6px">Ingresar</button>
         </div>
+        ${GDO.footHTML ? GDO.footHTML() : ''}
       </div>`;
 
     const btn = mount.querySelector('#lg-go');

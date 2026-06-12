@@ -49,6 +49,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
                 ${GDO.Views.ESTADO_RUTA[r.estado] || ''}</div>
               <div class="eta">Tocar para ver →</div></div>`;
           }).join('') : `<div class="empty">No tenés rutas asignadas todavía.</div>`}
+          ${GDO.footHTML ? GDO.footHTML() : ''}
         </div>
       </div>`;
     mount.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => go('#/ruta/' + b.dataset.open));
@@ -229,6 +230,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               </div>` : ''}
 
             <div id="d-stops"></div>
+            ${GDO.footHTML ? GDO.footHTML() : ''}
           </div>
           ${aceptada && ruta.estado !== 'finalizada' ? `<div class="driver-foot">
             <a class="btn btn-dark" id="d-nav" target="_blank">🧭 Navegar</a>
