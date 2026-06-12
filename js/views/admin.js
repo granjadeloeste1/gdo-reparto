@@ -43,6 +43,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </select>
         <div class="spacer"></div>
         <a class="btn btn-ghost" href="tienda/index.html" target="_blank">🛒 Tienda online ↗</a>
+        <button class="btn btn-ghost" id="p-ocr">📷 Desde imagen</button>
         <button class="btn btn-ghost" id="p-import">📥 Importar</button>
         <button class="btn btn-primary" id="p-new">+ Nuevo pedido</button>
       </div>
@@ -77,6 +78,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#p-q').oninput = draw;
     c.querySelector('#p-est').onchange = () => { sel.clear(); draw(); };
     c.querySelector('#p-new').onclick = () => pedidoModal(null, draw);
+    c.querySelector('#p-ocr').onclick = () => ocrPedidoModal(draw);
     c.querySelector('#p-import').onclick = () => importModal(draw);
     c.querySelector('#p-bulk-clear').onclick = () => { sel.clear(); draw(); };
     c.querySelector('#p-bulk-del').onclick = () => {
@@ -223,6 +225,154 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return m;
   }
   GDO.Views.importModal = importModal;
+
+  /* ---- Cargar pedido desde una IMAGEN (OCR) o pegando el texto ----
+     Pegás la captura de un pedido (de otra app / WhatsApp) y la app extrae los
+     datos de CONTACTO (nombre, dirección, localidad, entre calles, teléfono,
+     forma de pago) y abre "Nuevo pedido" precargado para revisar y guardar.
+     OCR 100% en el navegador con Tesseract.js (gratis, sin servidores). Si se
+     puede copiar el texto, pegarlo es más exacto que la imagen. */
+  let _tessLoading = null;
+  function cargarTesseract() {
+    if (window.Tesseract) return Promise.resolve();
+    if (_tessLoading) return _tessLoading;
+    _tessLoading = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    return _tessLoading;
+  }
+  // Pasa la imagen a gris y, si el fondo es oscuro (chat dark), la invierte: el
+  // OCR lee mucho mejor texto oscuro sobre claro. Devuelve un dataURL.
+  function preprocesarImagen(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const escala = Math.min(2, 1500 / Math.max(img.width, img.height)) || 1;
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(img.width * escala); cv.height = Math.round(img.height * escala);
+          const ctx = cv.getContext('2d');
+          ctx.drawImage(img, 0, 0, cv.width, cv.height);
+          const d = ctx.getImageData(0, 0, cv.width, cv.height); const px = d.data;
+          let sum = 0, n = 0;
+          for (let i = 0; i < px.length; i += 40) { sum += (px[i] + px[i + 1] + px[i + 2]) / 3; n++; }
+          const inv = (sum / Math.max(n, 1)) < 115; // fondo oscuro → invertir
+          for (let i = 0; i < px.length; i += 4) {
+            let g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+            if (inv) g = 255 - g;
+            px[i] = px[i + 1] = px[i + 2] = g;
+          }
+          ctx.putImageData(d, 0, 0);
+          resolve(cv.toDataURL('image/png'));
+        } catch (e) { resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+  async function ocrImagen(dataUrl, onProgress) {
+    await cargarTesseract();
+    const proc = await preprocesarImagen(dataUrl);
+    const { data } = await Tesseract.recognize(proc, 'spa', {
+      logger: (m) => { if (m.status === 'recognizing text' && onProgress) onProgress(Math.round((m.progress || 0) * 100)); },
+    });
+    return (data && data.text) || '';
+  }
+
+  // Extrae los datos de contacto de un texto con etiquetas (formato de las apps
+  // de pedidos / WhatsApp). Busca cada etiqueta y toma el valor de la misma
+  // línea (tras ':') o de la línea siguiente.
+  function parsePedidoDeTexto(txt) {
+    const sinac = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const limpiar = (s) => String(s || '').replace(/[*_#>•·]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const lineas = String(txt || '').split(/\r?\n/).map(limpiar).filter((l) => l.length > 0);
+    const ETIQUETAS = ['nombre', 'apellido', 'direccion', 'domicilio', 'localidad', 'entrecalle', 'entre calle',
+      'telefono', 'whatsapp', 'celular', 'metodo de pago', 'forma de pago', 'enviamos', 'seleccione la zona',
+      'pedido', 'subtotal', 'total', 'cant. articulo', 'articulo'];
+    const esEtiqueta = (ln) => { const n = sinac(ln); return ETIQUETAS.some((e) => n.includes(e)); };
+    const valorTras = (i) => {
+      const partes = lineas[i].split(':');
+      if (partes.length > 1) { const v = limpiar(partes.slice(1).join(':')); if (v) return v; }
+      for (let j = i + 1; j < lineas.length; j++) { if (esEtiqueta(lineas[j])) return ''; return lineas[j]; }
+      return '';
+    };
+    const buscar = (claves) => {
+      for (let i = 0; i < lineas.length; i++) { const n = sinac(lineas[i]); if (claves.some((c) => n.includes(c))) return valorTras(i); }
+      return '';
+    };
+    const out = {};
+    out.cliente = buscar(['nombre y apellido', 'nombre', 'apellido']);
+    out.direccion = buscar(['direccion', 'domicilio']);
+    out.localidad = buscar(['localidad', 'ciudad', 'partido']);
+    out.entrecalles = buscar(['entrecalle', 'entre calle']);
+    out.telefono = buscar(['telefono', 'whatsapp', 'celular']).replace(/[^\d]/g, '');
+    const pago = sinac(buscar(['metodo de pago', 'forma de pago']));
+    if (pago.indexOf('transfer') >= 0) out.formaPago = 'Transferencia previo a la entrega';
+    else if (pago.indexOf('efectivo') >= 0) out.formaPago = 'Efectivo al momento de la entrega';
+    else if (pago.indexOf('qr') >= 0) out.formaPago = 'QR al momento de la entrega';
+    else out.formaPago = '';
+    const zona = buscar(['enviamos', 'seleccione la zona']);
+    if (zona) out.especificaciones = 'Zona/día: ' + zona;
+    return out;
+  }
+
+  function ocrPedidoModal(after) {
+    let imgData = null;
+    modal({
+      title: 'Cargar pedido desde imagen o texto', width: 600,
+      bodyHTML: `
+        <div class="note">Pegá (Ctrl+V) la captura del pedido, subí la imagen, o pegá el texto. La app lee los <b>datos de contacto</b> y abre el formulario para que los <b>revises y confirmes</b>.</div>
+        <div class="field"><label>Imagen del pedido</label>
+          <div id="ocr-drop" style="border:2px dashed var(--gris-bd);border-radius:10px;padding:20px;text-align:center;color:#888;cursor:pointer">Pegá la imagen acá (Ctrl+V) o tocá para elegir un archivo</div>
+          <input type="file" accept="image/*" id="ocr-file" style="display:none"/>
+          <img id="ocr-prev" style="display:none;max-width:100%;margin-top:10px;border-radius:8px;border:1px solid var(--gris-bd)"/>
+        </div>
+        <div class="field"><label>…o pegá el texto del pedido (más exacto)</label>
+          <textarea id="ocr-text" rows="4" placeholder="Si podés copiar el texto del pedido, pegalo acá."></textarea></div>
+        <div id="ocr-msg" class="help" style="min-height:18px"></div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-go>Leer datos →</button>`,
+      onMount(node, close) {
+        const drop = node.querySelector('#ocr-drop');
+        const file = node.querySelector('#ocr-file');
+        const prev = node.querySelector('#ocr-prev');
+        const msg = node.querySelector('#ocr-msg');
+        const setImg = (url) => { imgData = url; prev.src = url; prev.style.display = 'block'; drop.textContent = '✓ Imagen lista (tocá para cambiar)'; };
+        drop.onclick = () => file.click();
+        file.onchange = () => { const f = file.files && file.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => setImg(r.result); r.readAsDataURL(f); };
+        node.addEventListener('paste', (e) => {
+          const items = (e.clipboardData && e.clipboardData.items) || [];
+          for (let i = 0; i < items.length; i++) {
+            if (items[i].type && items[i].type.indexOf('image') === 0) {
+              const f = items[i].getAsFile(); if (!f) continue;
+              const r = new FileReader(); r.onload = () => setImg(r.result); r.readAsDataURL(f);
+              e.preventDefault(); return;
+            }
+          }
+        });
+        node.querySelector('[data-cancel]').onclick = close;
+        node.querySelector('[data-go]').onclick = async () => {
+          let texto = node.querySelector('#ocr-text').value.trim();
+          if (!texto && imgData) {
+            const btn = node.querySelector('[data-go]'); btn.disabled = true;
+            msg.textContent = 'Leyendo la imagen… (la primera vez descarga el lector, puede tardar unos segundos)';
+            try { texto = await ocrImagen(imgData, (p) => { msg.textContent = 'Leyendo la imagen… ' + p + '%'; }); }
+            catch (e) { msg.textContent = '⚠️ No se pudo leer la imagen. Probá pegar el texto.'; btn.disabled = false; return; }
+            btn.disabled = false;
+          }
+          if (!texto) { msg.textContent = 'Pegá una imagen o el texto del pedido primero.'; return; }
+          const datos = parsePedidoDeTexto(texto);
+          if (!datos.cliente && !datos.direccion && !datos.telefono) { msg.textContent = '⚠️ No reconocí datos de contacto. Revisá la imagen o pegá el texto.'; return; }
+          close();
+          toast('Datos leídos · revisá y guardá', 'ok');
+          pedidoModal(null, after, datos);
+        };
+      },
+    });
+  }
+  GDO.Views.ocrPedidoModal = ocrPedidoModal;
 
   function renderPedidosTabla(box, list, opts) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }
@@ -385,18 +535,20 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   GDO.Views.wppModal = wppModal;
 
   /* ---- Modal cargar / editar pedido ---- */
-  function pedidoModal(id, after) {
+  function pedidoModal(id, after, prefill) {
     const p = id ? Store.pedido(id) : null;
+    // Valores pre-cargados (p. ej. extraídos de una imagen) para un pedido NUEVO.
+    const pf = (!p && prefill) ? prefill : {};
     const items = p ? JSON.parse(JSON.stringify(p.items || [])) : [{ producto: '', cantidad: 1 }];
     const m = modal({
       title: p ? 'Editar pedido' : 'Nuevo pedido', width: 680,
       bodyHTML: `
         <div class="form-grid">
-          <div class="field col-2"><label>Cliente *</label><input id="f-cli" value="${esc(p ? p.cliente : '')}" placeholder="Nombre del cliente / comercio"/></div>
-          <div class="field col-2"><label>Dirección de entrega *</label><input id="f-dir" value="${esc(p ? p.direccion : '')}" placeholder="Calle 1234, Localidad"/></div>
-          <div class="field"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : '')}" placeholder="Se completa al elegir la dirección"/></div>
-          <div class="field"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : '')}" placeholder="Calle A y Calle B"/></div>
-          <div class="field"><label>Teléfono</label><input id="f-tel" value="${esc(p ? p.telefono : '')}" placeholder="11 5555-5555"/></div>
+          <div class="field col-2"><label>Cliente *</label><input id="f-cli" value="${esc(p ? p.cliente : (pf.cliente || ''))}" placeholder="Nombre del cliente / comercio"/></div>
+          <div class="field col-2"><label>Dirección de entrega *</label><input id="f-dir" value="${esc(p ? p.direccion : (pf.direccion || ''))}" placeholder="Calle 1234, Localidad"/></div>
+          <div class="field"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : (pf.localidad || ''))}" placeholder="Se completa al elegir la dirección"/></div>
+          <div class="field"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : (pf.entrecalles || ''))}" placeholder="Calle A y Calle B"/></div>
+          <div class="field"><label>Teléfono</label><input id="f-tel" value="${esc(p ? p.telefono : (pf.telefono || ''))}" placeholder="11 5555-5555"/></div>
           <div class="field"><label>Fecha de entrega</label><input id="f-fec" type="date" value="${esc(p ? p.fechaEntrega : '')}"/>
             <span class="help">Opcional. Se asigna sola al armar la ruta.</span></div>
           <div class="field"><label>Ventana horaria</label><input id="f-vent" value="${esc(p ? p.ventana : '')}" placeholder="Ej: 8 a 11 hs"/></div>
@@ -408,10 +560,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             </select></div>
           <div class="field"><label>Forma de pago</label>
             <select id="f-pago">
-              <option value=""${!p||!p.formaPago?' selected':''}>— Sin especificar —</option>
-              <option value="Efectivo al momento de la entrega"${p&&p.formaPago==='Efectivo al momento de la entrega'?' selected':''}>Efectivo al momento de la entrega</option>
-              <option value="Transferencia previo a la entrega"${p&&p.formaPago==='Transferencia previo a la entrega'?' selected':''}>Transferencia previo a la entrega</option>
-              <option value="QR al momento de la entrega"${p&&p.formaPago==='QR al momento de la entrega'?' selected':''}>QR al momento de la entrega</option>
+              <option value=""${!(p?p.formaPago:pf.formaPago)?' selected':''}>— Sin especificar —</option>
+              <option value="Efectivo al momento de la entrega"${(p?p.formaPago:pf.formaPago)==='Efectivo al momento de la entrega'?' selected':''}>Efectivo al momento de la entrega</option>
+              <option value="Transferencia previo a la entrega"${(p?p.formaPago:pf.formaPago)==='Transferencia previo a la entrega'?' selected':''}>Transferencia previo a la entrega</option>
+              <option value="QR al momento de la entrega"${(p?p.formaPago:pf.formaPago)==='QR al momento de la entrega'?' selected':''}>QR al momento de la entrega</option>
             </select></div>
           <div class="field"><label>Ubicación (coordenadas o link de Google Maps)</label>
             <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
@@ -420,7 +572,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field col-2"><label>Pedido (productos)</label><div id="f-items"></div>
             <button class="btn btn-ghost btn-sm" id="f-additem" style="align-self:flex-start;margin-top:6px">+ Agregar producto</button></div>
           <div class="field col-2"><label>Comentarios / especificaciones de entrega</label>
-            <textarea id="f-esp" placeholder="Aclaraciones para el repartidor: a quién entregar, accesos, formas de pago, demoras habituales…">${esc(p ? p.especificaciones : '')}</textarea></div>
+            <textarea id="f-esp" placeholder="Aclaraciones para el repartidor: a quién entregar, accesos, formas de pago, demoras habituales…">${esc(p ? p.especificaciones : (pf.especificaciones || ''))}</textarea></div>
         </div>`,
       footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save>${p ? 'Guardar cambios' : 'Crear pedido'}</button>`,
       onMount(node, close) {
