@@ -46,28 +46,29 @@ window.GDO = window.GDO || {};
   // Mensajes listos para distintos momentos del reparto.
   function msg(tipo, p, extra) {
     extra = extra || {};
-    const nom = (p.cliente || '').trim();
-    const saludo = nom ? 'Hola ' + nom + '! ' : 'Hola! ';
-    const firma = '\n\n— Granja del Oeste';
+    // Solo el PRIMER nombre del cliente, para que el mensaje sea más cercano.
+    const nom = ((p.cliente || '').trim().split(/\s+/)[0] || '').trim();
+    const saludo = nom ? '¡Hola ' + nom + '! 👋 ' : '¡Hola! 👋 ';
+    const firma = '\n\n— Granja del Oeste 🐔';
     if (tipo === 'salio') {
-      return saludo + 'Tu pedido ya salió para entrega' +
-        (extra.eta ? ' y llegaría aproximadamente a las ' + extra.eta + ' hs' : '') + '.' +
-        (extra.link ? '\n\nSeguí tu entrega en vivo acá:\n' + extra.link : '') + firma;
+      return saludo + '🚚 Tu pedido ya salió para entrega' +
+        (extra.eta ? ' y llegaría aproximadamente a las ' + extra.eta + ' hs ⏰' : '') + '.' +
+        (extra.link ? '\n\n📍 Seguí tu entrega en vivo acá:\n' + extra.link : '') + firma;
     }
     if (tipo === 'cerca') {
-      return saludo + 'Tu pedido está por llegar' +
-        (extra.eta ? ' (aprox. ' + extra.eta + ' hs)' : '') + '. Te pedimos que estés atento/a.' +
-        (extra.link ? '\n\nSeguimiento en vivo:\n' + extra.link : '') + firma;
+      return saludo + '📍 ¡Tu pedido está por llegar!' +
+        (extra.eta ? ' (aprox. ' + extra.eta + ' hs ⏰)' : '') + ' Te pedimos que estés atento/a. 🙌' +
+        (extra.link ? '\n\n📍 Seguimiento en vivo:\n' + extra.link : '') + firma;
     }
     if (tipo === 'entregado') {
       const rec = ((p.pod && p.pod.receptor) || '').trim();
-      return saludo + 'Te confirmamos que tu pedido fue entregado' + (rec ? ', recibido por ' + rec : '') + '. ¡Gracias por tu compra!' + firma;
+      return saludo + '✅ Te confirmamos que tu pedido fue entregado' + (rec ? ', recibido por ' + rec : '') + '. ¡Gracias por tu compra! 🙏' + firma;
     }
     if (tipo === 'reprogramar') {
-      return saludo + 'No pudimos completar la entrega de tu pedido hoy. Nos comunicamos para reprogramarla.' + firma;
+      return saludo + '🔁 No pudimos completar la entrega de tu pedido hoy. Nos comunicamos para reprogramarla. 📅' + firma;
     }
     // genérico
-    return saludo + 'Te escribimos por tu pedido.' + firma;
+    return saludo + '📦 Te escribimos por tu pedido.' + firma;
   }
 
   // Link público de seguimiento en vivo (página servida en el dominio de la
