@@ -370,12 +370,26 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const hechos = ordA.filter((p) => ['entregado', 'no_entregado'].includes(ruta.progreso[p.id]));
         const restantes = ordA.filter((p) => !['entregado', 'no_entregado'].includes(ruta.progreso[p.id]));
         if (restantes.length < 2) { toast('No hay suficientes paradas para optimizar', ''); return; }
-        const opt = Route.optimizar(ruta.origen, restantes, ruta.destino);
-        ruta.orden = hechos.map((p) => p.id).concat(opt.map((p) => p.id));
-        _road = null; _roadSig = ''; // forzar recálculo del trazado real por calles
-        Store.upsertRuta(ruta); Store.save();
-        toast('Recorrido reoptimizado ✓', 'ok');
-        render();
+        const aplicar = (inicio, enVivo) => {
+          const opt = Route.optimizar(inicio, restantes, ruta.destino);
+          ruta.orden = hechos.map((p) => p.id).concat(opt.map((p) => p.id));
+          _road = null; _roadSig = ''; // forzar recálculo del trazado real por calles
+          Store.upsertRuta(ruta); Store.save();
+          toast('Recorrido reoptimizado' + (enVivo ? ' desde tu ubicación' : '') + ' ✓', 'ok');
+          render();
+        };
+        // Optimizamos lo que falta DESDE DONDE ESTÁ EL CHOFER AHORA (p. ej. salió
+        // desde un proveedor, no del depósito). Tomamos su GPS en vivo; si no se
+        // puede, la última posición conocida y, si no, el depósito.
+        const prev = reopt.textContent;
+        if (navigator.geolocation) {
+          reopt.disabled = true; reopt.textContent = 'Ubicándote…';
+          navigator.geolocation.getCurrentPosition(
+            (pos) => { reopt.disabled = false; reopt.textContent = prev; aplicar({ nombre: 'Mi ubicación', lat: pos.coords.latitude, lng: pos.coords.longitude }, true); },
+            () => { reopt.disabled = false; reopt.textContent = prev; const f = _choferVivo(); aplicar(f || ruta.origen, !!f); },
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+          );
+        } else { const f = _choferVivo(); aplicar(f || ruta.origen, !!f); }
       };
       wireTop(mount);
 
