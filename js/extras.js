@@ -60,7 +60,8 @@ window.GDO = window.GDO || {};
         (extra.link ? '\n\nSeguimiento en vivo:\n' + extra.link : '') + firma;
     }
     if (tipo === 'entregado') {
-      return saludo + 'Te confirmamos que tu pedido fue entregado. ¡Gracias por tu compra!' + firma;
+      const rec = ((p.pod && p.pod.receptor) || '').trim();
+      return saludo + 'Te confirmamos que tu pedido fue entregado' + (rec ? ', recibido por ' + rec : '') + '. ¡Gracias por tu compra!' + firma;
     }
     if (tipo === 'reprogramar') {
       return saludo + 'No pudimos completar la entrega de tu pedido hoy. Nos comunicamos para reprogramarla.' + firma;
