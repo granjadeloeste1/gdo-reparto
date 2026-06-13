@@ -18,36 +18,52 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   GDO.Views.rutas = function (c) {
     c.innerHTML = `
       <div class="section-title"><h2>Rutas de reparto</h2></div>
-      <div class="toolbar"><div class="spacer"></div><button class="btn btn-primary" id="r-new">+ Armar nueva ruta</button></div>
+      <div class="toolbar">
+        <select id="r-filtro">
+          <option value="activas">Activas (en curso / para iniciar)</option>
+          <option value="finalizada">Finalizadas</option>
+          <option value="">Todas</option>
+        </select>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" id="r-new">+ Armar nueva ruta</button>
+      </div>
+      <div class="note">Por defecto se muestran las rutas <b>activas</b>. Las <b>finalizadas</b> quedan guardadas y las ves eligiendo “Finalizadas” o “Todas”.</div>
       <div class="panel"><div class="panel-b flush"><div id="r-tabla"></div></div></div>`;
-    const list = Store.rutas().slice().reverse();
     const box = c.querySelector('#r-tabla');
-    box.innerHTML = list.length ? `<table><thead><tr>
-        <th>Ruta</th><th>Fecha</th><th>Repartidor</th><th>Vehículo</th><th>Paradas</th><th>Estado</th><th></th>
-      </tr></thead><tbody>${list.map((r) => {
-        const rep = Store.user(r.repartidorId);
-        const veh = Store.vehiculos().find((v) => v.id === r.vehiculoId);
-        return `<tr>
-          <td><b>${esc(r.nombre)}</b></td><td class="small">${fmtFecha(r.fecha)}</td>
-          <td class="small">${rep ? esc(rep.nombre) : '<span class="muted">—</span>'}</td>
-          <td class="small">${veh ? esc(veh.nombre) : '<span class="muted">—</span>'}</td>
-          <td>${r.pedidoIds.length}</td>
-          <td>${ESTADO_RUTA[r.estado] || r.estado}${(() => {
-            const pr = r.progreso || {};
-            const e = r.pedidoIds.filter((id) => pr[id] === 'entregado').length;
-            const n = r.pedidoIds.filter((id) => pr[id] === 'no_entregado').length;
-            return (e || n) ? `<div class="small muted" style="margin-top:4px">✓ ${e} entregados${n ? ` · ✕ ${n} no` : ''} de ${r.pedidoIds.length}</div>` : '';
-          })()}</td>
-          <td class="t-actions">
-            <button class="btn btn-ghost btn-sm" data-open="${r.id}">Abrir</button>
-            <button class="btn btn-ghost btn-sm" data-del="${r.id}">🗑</button>
-          </td></tr>`;
-      }).join('')}</tbody></table>` : `<div class="empty">Todavía no hay rutas. Tocá “Armar nueva ruta”.</div>`;
-    box.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => go('#/rutas/' + b.dataset.open));
-    box.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
-      confirmDlg('¿Eliminar la ruta? Los pedidos vuelven a “pendiente”.', () => { Store.deleteRuta(b.dataset.del); toast('Ruta eliminada', 'ok'); GDO.App.render(); });
-    });
+    const draw = () => {
+      const f = c.querySelector('#r-filtro').value;
+      let list = Store.rutas().slice().reverse();
+      if (f === 'activas') list = list.filter((r) => r.estado !== 'finalizada');
+      else if (f === 'finalizada') list = list.filter((r) => r.estado === 'finalizada');
+      box.innerHTML = list.length ? `<table><thead><tr>
+          <th>Ruta</th><th>Fecha</th><th>Repartidor</th><th>Vehículo</th><th>Paradas</th><th>Estado</th><th></th>
+        </tr></thead><tbody>${list.map((r) => {
+          const rep = Store.user(r.repartidorId);
+          const veh = Store.vehiculos().find((v) => v.id === r.vehiculoId);
+          return `<tr>
+            <td><b>${esc(r.nombre)}</b></td><td class="small">${fmtFecha(r.fecha)}</td>
+            <td class="small">${rep ? esc(rep.nombre) : '<span class="muted">—</span>'}</td>
+            <td class="small">${veh ? esc(veh.nombre) : '<span class="muted">—</span>'}</td>
+            <td>${r.pedidoIds.length}</td>
+            <td>${ESTADO_RUTA[r.estado] || r.estado}${(() => {
+              const pr = r.progreso || {};
+              const e = r.pedidoIds.filter((id) => pr[id] === 'entregado').length;
+              const n = r.pedidoIds.filter((id) => pr[id] === 'no_entregado').length;
+              return (e || n) ? `<div class="small muted" style="margin-top:4px">✓ ${e} entregados${n ? ` · ✕ ${n} no` : ''} de ${r.pedidoIds.length}</div>` : '';
+            })()}</td>
+            <td class="t-actions">
+              <button class="btn btn-ghost btn-sm" data-open="${r.id}">Abrir</button>
+              <button class="btn btn-ghost btn-sm" data-del="${r.id}">🗑</button>
+            </td></tr>`;
+        }).join('')}</tbody></table>` : `<div class="empty">No hay rutas para mostrar con este filtro.</div>`;
+      box.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => go('#/rutas/' + b.dataset.open));
+      box.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+        confirmDlg('¿Eliminar la ruta? Los pedidos vuelven a “pendiente”.', () => { Store.deleteRuta(b.dataset.del); toast('Ruta eliminada', 'ok'); GDO.App.render(); });
+      });
+    };
+    c.querySelector('#r-filtro').onchange = draw;
     c.querySelector('#r-new').onclick = () => go('#/rutas/nueva');
+    draw();
   };
 
   /* ---------------- Armador / editor de ruta ---------------- */
