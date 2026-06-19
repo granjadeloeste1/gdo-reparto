@@ -17,8 +17,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       return d ? d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'; }
     catch (e) { return '—'; }
   }
+  function horaCorta(ts) {
+    try { const d = ts && ts.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
+      return d ? d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : 'recién'; }
+    catch (e) { return 'recién'; }
+  }
 
-  let tab = 'socios';
+  let tab = 'mostrador';
   let subs = [];
   function clearSubs() { subs.forEach((u) => { try { u(); } catch (e) {} }); subs = []; }
 
@@ -27,6 +32,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (!db()) { c.innerHTML = '<div class="empty">Sin conexión con la base. Reintentá en un momento.</div>'; return; }
     c.innerHTML = `
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-sm ${tab === 'mostrador' ? '' : 'btn-ghost'}" data-tab="mostrador">📍 Mostrador <span id="mb-badge"></span></button>
         <button class="btn btn-sm ${tab === 'socios' ? '' : 'btn-ghost'}" data-tab="socios">👥 Socios</button>
         <button class="btn btn-sm ${tab === 'premios' ? '' : 'btn-ghost'}" data-tab="premios">🎁 Premios</button>
         <button class="btn btn-sm ${tab === 'canjes' ? '' : 'btn-ghost'}" data-tab="canjes">📋 Canjes</button>
@@ -34,10 +40,51 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div id="club-body"><div class="empty">Cargando…</div></div>`;
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.club(c); });
     const body = c.querySelector('#club-body');
-    if (tab === 'socios') renderSocios(body);
+    if (tab === 'mostrador') renderMostrador(body, c);
+    else if (tab === 'socios') renderSocios(body);
     else if (tab === 'premios') renderPremios(body);
     else renderCanjes(body);
   };
+
+  /* ---------------- MOSTRADOR (check-ins por QR) ----------------
+     El socio escanea el QR único → se crea una /visitas 'pendiente'. Acá el
+     cajero la ve en vivo y le carga los puntos de la compra. Los puntos los
+     pone SIEMPRE el personal (el QR no lleva monto). */
+  function renderMostrador(box, c) {
+    subs.push(db().collection('visitas').where('estado', '==', 'pendiente').onSnapshot((snap) => {
+      const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
+      arr.sort((a, b) => ((a.ts && a.ts.toMillis ? a.ts.toMillis() : 0) - (b.ts && b.ts.toMillis ? b.ts.toMillis() : 0)));
+      const badge = c && c.querySelector('#mb-badge');
+      if (badge) badge.innerHTML = arr.length ? `<span style="background:#fff;color:#F58220;border-radius:10px;padding:1px 7px;font-weight:900;font-size:12px">${arr.length}</span>` : '';
+      if (!arr.length) { box.innerHTML = '<div class="empty">Nadie escaneó el QR todavía.<br><span class="small muted">Cuando un socio escanee el código del mostrador, va a aparecer acá para cargarle los puntos.</span></div>'; return; }
+      box.innerHTML =
+        `<table><thead><tr><th>N°</th><th>Socio</th><th>Escaneó</th><th></th></tr></thead><tbody>` +
+        arr.map((v) => `<tr>
+          <td><b>${padNro(v.nroSocio)}</b></td>
+          <td>${esc(v.nombre || 'Socio')}</td>
+          <td class="small">${horaCorta(v.ts)}</td>
+          <td class="t-actions"><button class="btn btn-sm" data-at="${esc(v._id)}">＋ Cargar puntos</button> <button class="btn btn-ghost btn-sm" data-desc="${esc(v._id)}" title="Descartar">✕</button></td>
+        </tr>`).join('') + `</tbody></table>`;
+      box.querySelectorAll('[data-at]').forEach((b) => b.onclick = () => atenderVisita(arr.find((x) => x._id === b.dataset.at)));
+      box.querySelectorAll('[data-desc]').forEach((b) => b.onclick = () => {
+        const v = arr.find((x) => x._id === b.dataset.desc);
+        confirmDlg('¿Descartar este check-in? No se cargan puntos.', () => {
+          db().collection('visitas').doc(v._id).update({ estado: 'descartado', por: staffUid(), cierreTs: FV().serverTimestamp() })
+            .then(() => toast('Check-in descartado.')).catch(() => toast('Error.', 'error'));
+        }, 'Descartar');
+      });
+    }, () => { box.innerHTML = '<div class="empty">No se pudieron cargar los check-ins.</div>'; }));
+  }
+
+  // Trae el saldo fresco del socio y abre el modal de carga, ligado a la visita.
+  function atenderVisita(v) {
+    if (!v) return;
+    db().collection('clientes').doc(v.clienteUid).get().then((d) => {
+      if (!d.exists) { toast('No se encontró el socio.', 'error'); return; }
+      const s = d.data(); s._id = d.id;
+      cargarPuntos(s, v._id);
+    }).catch(() => toast('No se pudo abrir. Reintentá.', 'error'));
+  }
 
   /* ---------------- SOCIOS ---------------- */
   function renderSocios(box) {
@@ -60,7 +107,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
 
   // Carga MANUAL de puntos (compra en el local). Transacción atómica.
-  function cargarPuntos(socio) {
+  // visitaId (opcional): si viene de un check-in del QR, lo marca atendido.
+  function cargarPuntos(socio, visitaId) {
     if (!socio) return;
     modal({
       title: `Cargar puntos · ${socio.nombre || 'Socio'} (N° ${padNro(socio.nroSocio)})`, width: 440,
@@ -79,7 +127,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (!pts || pts <= 0) { toast('Poné una cantidad válida de puntos.', 'error'); return; }
           const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Sumando…';
           acreditar(socio._id, pts, mot, null)
-            .then(() => { toast('✓ ' + fmt(pts) + ' puntos cargados.'); close(); })
+            .then(() => {
+              if (visitaId) {
+                db().collection('visitas').doc(visitaId).update({ estado: 'atendido', puntos: pts, por: staffUid(), cierreTs: FV().serverTimestamp() }).catch(() => {});
+              }
+              toast('✓ ' + fmt(pts) + ' puntos cargados.'); close();
+            })
             .catch(() => { toast('No se pudo cargar. Reintentá.', 'error'); btn.disabled = false; btn.textContent = 'Sumar puntos'; });
         };
       },

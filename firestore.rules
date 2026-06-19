@@ -124,6 +124,29 @@ service cloud.firestore {
       allow update, delete: if isStaff();
     }
 
+    // Check-in del mostrador: el socio escanea el QR único y "levanta la mano".
+    // NO suma puntos (eso lo hace SIEMPRE el personal). El socio crea el suyo en
+    // estado 'pendiente'; el personal lo ve, carga los puntos y lo marca atendido.
+    // Doc id = uid del socio: una sola visita "viva" por socio (sin duplicados ni
+    // índices compuestos). El socio crea/reactiva la suya SIEMPRE en 'pendiente'
+    // (re-escanear); NO puede marcarla atendida ni tocar puntos (eso es del staff).
+    match /visitas/{id} {
+      allow get:  if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
+      allow list: if isStaff();
+      allow create: if isStaff() || (
+                       request.auth != null
+                       && request.resource.data.clienteUid == request.auth.uid
+                       && request.resource.data.estado == 'pendiente'
+                    );
+      allow update: if isStaff() || (
+                       request.auth != null
+                       && resource.data.clienteUid == request.auth.uid
+                       && request.resource.data.clienteUid == request.auth.uid
+                       && request.resource.data.estado == 'pendiente'
+                    );
+      allow delete: if isStaff();
+    }
+
     // Auditoría de movimientos de puntos: INMUTABLE, solo personal.
     match /puntos_log/{id} {
       allow read:   if isStaff();
