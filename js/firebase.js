@@ -38,6 +38,11 @@ window.GDO = window.GDO || {};
 
   try {
     FB.app = firebase.initializeApp(cfg);
+    // App Check (reCAPTCHA v3 invisible): certifica que las llamadas a Firestore/
+    // Auth vienen de nuestra app real, no de un bot/otro sitio. Por ahora SIN
+    // bloqueo (enforcement apagado en Firebase): no afecta nada; protege cuando
+    // se active. Si el SDK de App Check no cargó, el try lo ignora.
+    try { if (firebase.appCheck) firebase.appCheck().activate('6LcFdCctAAAAAELE8bLAVjrYLFgVFHH_JO0oKOxw', true); } catch (e) {}
     FB.db = firebase.firestore();
     FB.auth = firebase.auth();
     // Persistencia local (IndexedDB): la cache sobrevive recargas y cortes de red.
