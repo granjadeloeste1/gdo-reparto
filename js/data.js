@@ -7,7 +7,23 @@ window.GDO = window.GDO || {};
 (function () {
   const KEY = 'gdo_reparto_db_v5';
   const INBOX = 'gdo_reparto_inbox'; // cola de pedidos entrantes desde la tienda online
-  const uid = (p) => p + '_' + Math.random().toString(36).slice(2, 9);
+  // ID imposible de adivinar: 128 bits de azar CRIPTOGRÁFICO. Es importante
+  // porque /pedidos y /rutas tienen lectura por-id pública (link de seguimiento
+  // del cliente), así que el id ES la "contraseña" del documento. Math.random
+  // (lo que había antes) era corto y predecible: se podía adivinar/enumerar y
+  // robar datos del cliente. Caemos a Math.random combinado solo en navegadores
+  // muy viejos sin crypto. Mismo criterio que ya usa la tienda.
+  const uid = (p) => {
+    try {
+      const a = new Uint8Array(16);
+      (self.crypto || window.crypto).getRandomValues(a);
+      let s = '';
+      for (let i = 0; i < a.length; i++) s += a[i].toString(16).padStart(2, '0');
+      return p + '_' + s;
+    } catch (e) {
+      return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+    }
+  };
 
   // ----- puente con Firestore (datos compartidos entre dispositivos) -----
   // Si Firebase está activo escribimos cada cambio a Firestore; los listeners
