@@ -4,6 +4,29 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const { Store, Route } = GDO;
   const { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur } = GDO.UI;
   const go = (hash) => { location.hash = hash; };
+  const fmtN = (n) => Number(n || 0).toLocaleString('es-AR');
+
+  /* ---- GDO CLUB: acreditar Puntos GDO al socio en la entrega ----
+     Online y directo a Firestore (no usa la cache local): transacción atómica
+     sobre /clientes + /puntos_log (auditoría) y, si vino de un escaneo del QR,
+     marca la /visitas como atendida. Los puntos los mueve SIEMPRE el personal
+     (el chofer es staff); ver firestore.rules. */
+  const clubDB = () => (GDO.FB && GDO.FB.enabled && GDO.FB.db && window.firebase) ? GDO.FB.db : null;
+  function acreditarSocio(clienteUid, delta, motivo, pedidoId, visitaId) {
+    const fdb = clubDB();
+    if (!fdb || !clienteUid || !(delta > 0)) return Promise.reject(new Error('sin db'));
+    const cref = fdb.collection('clientes').doc(clienteUid);
+    const lref = fdb.collection('puntos_log').doc();
+    const FV = firebase.firestore.FieldValue;
+    const por = (GDO.FB && GDO.FB.uid) || null;
+    return fdb.runTransaction((tx) => tx.get(cref).then((cd) => {
+      if (!cd.exists) throw new Error('socio inexistente');
+      const nuevo = (cd.data().puntos || 0) + delta;
+      tx.update(cref, { puntos: nuevo });
+      tx.set(lref, { clienteUid: clienteUid, delta: delta, motivo: motivo || '', saldo: nuevo, pedidoId: pedidoId || null, por: por, ts: FV.serverTimestamp() });
+      if (visitaId) tx.update(fdb.collection('visitas').doc(visitaId), { estado: 'atendido', puntos: delta, por: por, cierreTs: FV.serverTimestamp() });
+    }));
+  }
 
   /* ---------- GPS del chofer EN VIVO ----------
      Mientras el chofer está repartiendo (ruta aceptada/en curso), publicamos su
@@ -288,6 +311,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             ${badge}</div>
           <div class="eta">${done ? '' : '⏱ Llegada estimada ' + fmtHora(etaMostrar(p)) + ' · '}${(p.items||[]).map((x)=>x.cantidad+'× '+x.producto).join(', ')}</div>
           ${p.especificaciones ? `<div class="spec">📌 ${esc(p.especificaciones)}</div>` : ''}
+          ${p.puntos > 0 ? `<div class="spec">⭐ ${p.puntosAcreditados ? 'Puntos GDO acreditados (' + fmtN(p.puntos) + ')' : fmtN(p.puntos) + ' Puntos GDO al entregar'}</div>` : ''}
           ${aceptada && ruta.estado !== 'finalizada' && !done ? `<div class="acts">
               <a class="btn btn-dark full" data-nav="${p.id}" href="${(p.direccion || p.lat != null) ? Route.navStop(p) : '#'}" target="_blank"${!(p.direccion || p.lat != null) ? ' style="opacity:.5;pointer-events:none"' : ''}>🧭 Navegar a esta parada</a>
               ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(etaMostrar(p)), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
@@ -296,6 +320,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <button class="btn btn-amarillo full" data-skip="${p.id}">↷ Saltear parada</button>
             </div>` : ''}
           ${aceptada && ruta.estado !== 'finalizada' && done ? `<div class="acts">
+              ${(st === 'entregado' && p.puntos > 0 && !p.puntosAcreditados && clubDB()) ? `<button class="btn btn-verde full" data-pts="${p.id}">⭐ Sumar ${fmtN(p.puntos)} Puntos GDO</button>` : ''}
               <button class="btn btn-ghost full" data-undo="${p.id}">↩ Corregir · volver a marcar</button>
             </div>` : ''}
         </div>`;
@@ -326,6 +351,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (pod) p.pod = pod;
           setEstado(p, 'entregado', 'Entregado', pod && pod.receptor ? 'Recibió: ' + pod.receptor : '');
           toast('Entrega confirmada', 'ok');
+          // ¿El pedido suma Puntos GDO? Ofrecemos cargarlos al socio (QR en la puerta).
+          if (p.puntos > 0 && !p.puntosAcreditados) creditarEntrega(p);
         });
       });
       box.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => {
@@ -337,6 +364,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         confirmDlg(`Saltear "${p.cliente}". Pasás a la próxima entrega y esta queda PENDIENTE en el recorrido. Se avisa a quien cargó el pedido y a administración. ¿Confirmás?`, () => {
           ruta.estado='en_curso'; setEstado(p, 'salteado', 'Parada salteada (queda pendiente)'); toast('Parada salteada · vuelve como pendiente', '');
         }, 'Saltear');
+      });
+      // sumar puntos a posteriori (volvió la señal, o el cliente escaneó tarde)
+      box.querySelectorAll('[data-pts]').forEach((b) => b.onclick = () => {
+        const p = Store.pedido(b.dataset.pts); if (p) creditarEntrega(p);
       });
       // corregir: reabre una parada ya marcada (error del chofer) para volver a marcarla
       box.querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => {
@@ -454,6 +485,45 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         bodyHTML: `<div class="field"><label>Detalle (opcional)</label><textarea id="mot" placeholder="Ej: local cerrado, cliente ausente, rechazó mercadería…"></textarea></div>`,
         footHTML: `<button class="btn btn-ghost" data-c>Cancelar</button><button class="btn btn-primary" data-ok>Confirmar</button>`,
         onMount(node, close) { node.querySelector('[data-c]').onclick = close; node.querySelector('[data-ok]').onclick = () => { close(); onOk(node.querySelector('#mot').value.trim()); }; },
+      });
+    }
+
+    // Acreditar los Puntos GDO de la entrega: el cliente escanea el QR del Club
+    // en la puerta → aparece su check-in en vivo → el chofer toca su nombre y se
+    // le suman los puntos que cargó el admin en el pedido. A prueba de doble
+    // carga (p.puntosAcreditados) y de fraude (el monto NO viaja en el QR).
+    function creditarEntrega(p) {
+      if (!p || !(p.puntos > 0) || p.puntosAcreditados) return;
+      const fdb = clubDB();
+      if (!fdb) { toast('Sin conexión: los Puntos GDO se cargan cuando vuelva la señal (botón ⭐).', ''); return; }
+      let subV = null, hecho = false;
+      modal({
+        title: '⭐ Sumar ' + fmtN(p.puntos) + ' Puntos GDO',
+        width: 460,
+        bodyHTML: `
+          <div class="note">Pedile al cliente que escanee el <b>QR del GDO CLUB</b> en la puerta. Cuando escanee, aparece acá abajo y tocás su nombre.</div>
+          <div id="ce-list" style="margin-top:10px"><div class="empty">Esperando que el cliente escanee el QR…</div></div>`,
+        footHTML: `<button class="btn btn-ghost" data-c>El cliente no es socio</button>`,
+        onMount(node, close) {
+          const list = node.querySelector('#ce-list');
+          node.querySelector('[data-c]').onclick = () => { if (subV) { try { subV(); } catch (e) {} } close(); };
+          subV = fdb.collection('visitas').where('estado', '==', 'pendiente').onSnapshot((snap) => {
+            const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
+            arr.sort((a, b) => ((b.ts && b.ts.toMillis ? b.ts.toMillis() : 0) - (a.ts && a.ts.toMillis ? a.ts.toMillis() : 0)));
+            if (!arr.length) { list.innerHTML = '<div class="empty">Esperando que el cliente escanee el QR…</div>'; return; }
+            list.innerHTML = arr.map((v) => `<button class="btn btn-verde btn-block" data-v="${esc(v._id)}" data-u="${esc(v.clienteUid)}" style="margin-bottom:8px;text-align:left">➕ ${esc(v.nombre || 'Socio')} · N° ${('0000' + (v.nroSocio || 0)).slice(-4)}</button>`).join('');
+            list.querySelectorAll('[data-v]').forEach((b) => b.onclick = () => {
+              if (hecho) return; hecho = true; b.disabled = true; b.textContent = 'Sumando…';
+              acreditarSocio(b.dataset.u, p.puntos, 'Entrega a domicilio', p.id, b.dataset.v)
+                .then(() => {
+                  Store.upsertPedido({ id: p.id, clienteUid: b.dataset.u, puntosAcreditados: true });
+                  if (subV) { try { subV(); } catch (e) {} }
+                  close(); toast('🎁 ' + fmtN(p.puntos) + ' Puntos GDO acreditados', 'ok'); render();
+                })
+                .catch(() => { hecho = false; b.disabled = false; toast('No se pudo acreditar. Reintentá.', 'err'); });
+            });
+          }, () => { list.innerHTML = '<div class="empty">No se pudieron leer los check-ins. Revisá la conexión.</div>'; });
+        },
       });
     }
 

@@ -565,6 +565,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <option value="Transferencia previo a la entrega"${(p?p.formaPago:pf.formaPago)==='Transferencia previo a la entrega'?' selected':''}>Transferencia previo a la entrega</option>
               <option value="QR al momento de la entrega"${(p?p.formaPago:pf.formaPago)==='QR al momento de la entrega'?' selected':''}>QR al momento de la entrega</option>
             </select></div>
+          <div class="field"><label>⭐ Puntos GDO (al entregar)</label>
+            <input id="f-pts" type="number" min="0" inputmode="numeric" value="${esc(p && p.puntos != null ? p.puntos : (pf.puntos || ''))}" placeholder="Ej: 12000"/>
+            <span class="help">Puntos que suma el socio del Club cuando el chofer confirma la entrega (el cliente escanea el QR en la puerta). Vacío = no suma.</span></div>
           <div class="field"><label>Ubicación (coordenadas o link de Google Maps)</label>
             <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
             <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>
@@ -659,6 +662,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             ventana: node.querySelector('#f-vent').value.trim(),
             prioridad: node.querySelector('#f-prio').value,
             formaPago: node.querySelector('#f-pago').value,
+            puntos: parseInt(node.querySelector('#f-pts').value, 10) || 0,
             especificaciones: node.querySelector('#f-esp').value.trim(),
             items: clean, lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
             creadoPor: p ? p.creadoPor : Store.current().id,
