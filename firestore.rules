@@ -2,17 +2,32 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // "Personal" = sesión iniciada con email + contraseña (Firebase Auth).
-    // El login anónimo (tienda / seguimiento de clientes) NO es personal.
+    // ╔══════════════════════════════════════════════════════════════════════╗
+    // ║  ⚠️  NO PUBLICAR ESTAS REGLAS HASTA SEMBRAR LA LISTA /staff (abajo).   ║
+    // ║  isStaff() ahora exige que el UID esté en /staff/{uid}. Si se publican ║
+    // ║  ANTES de cargar los UID del personal, TODO el personal pierde acceso  ║
+    // ║  (admin y choferes). Orden correcto:                                   ║
+    // ║   1) Crear en la consola Firestore la colección 'staff' con un doc por  ║
+    // ║      cada empleado, ID = su UID de Firebase Auth (Authentication→Users).║
+    // ║   2) Verificar que admin/chofer siguen entrando.                        ║
+    // ║   3) Recién entonces publicar estas reglas.                             ║
+    // ╚══════════════════════════════════════════════════════════════════════╝
+
+    // ───────── Identidad ─────────
+    // PERSONAL (staff): su UID de Firebase Auth figura en la lista blanca /staff.
+    // Antes "staff" = cualquiera no-anónimo; YA NO alcanza, porque los SOCIOS del
+    // Club GDO también entran con email+contraseña. Sin esta lista, un cliente
+    // tendría permisos de administrador. ← clave anti-estafa.
     function isStaff() {
       return request.auth != null
-        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid));
     }
+    // Dueño de un documento identificado por UID.
+    function isOwner(uid) { return request.auth != null && request.auth.uid == uid; }
 
-    // Validación de un pedido creado por la tienda (sesión anónima). Limita lo
-    // que un anónimo puede escribir: campos obligatorios, estado/origen fijos,
-    // tamaños acotados (anti-spam y anti-forjado). NO puede llegar ya asignado a
-    // una ruta ni marcado como entregado, ni traer historia/creadoPor falsos.
+    // Validación de un pedido creado por la tienda (sesión anónima o socio
+    // logueado). Limita lo que un no-staff puede escribir. Si trae clienteUid,
+    // debe ser el del propio usuario (para acreditar puntos a quien corresponde).
     function pedidoTiendaValido() {
       let d = request.resource.data;
       return d.origen == 'tienda'
@@ -24,36 +39,96 @@ service cloud.firestore {
         && d.direccion is string && d.direccion.size() <= 300
         && d.especificaciones is string && d.especificaciones.size() <= 2000
         && d.items is list && d.items.size() > 0 && d.items.size() <= 100
-        && (!('historia' in d) || (d.historia is list && d.historia.size() == 0));
+        && (!('historia' in d) || (d.historia is list && d.historia.size() == 0))
+        && (!('clienteUid' in d) || d.clienteUid == null || d.clienteUid == request.auth.uid);
     }
 
-    // ----- Datos internos: SOLO personal -----
+    // ───────── Lista blanca de personal ─────────
+    // BOOTSTRAP: el primer doc se crea desde la consola (las escrituras de consola
+    // saltean las reglas). Después, el personal existente puede sumar más personal.
+    match /staff/{uid} {
+      allow read: if isStaff();
+      allow create, update, delete: if isStaff();
+    }
+
+    // ───────── Datos internos: SOLO personal ─────────
     match /users/{id}          { allow read, write: if isStaff(); }
     match /vehiculos/{id}       { allow read, write: if isStaff(); }
     match /notificaciones/{id}  { allow read, write: if isStaff(); }
     match /meta/{id}            { allow read, write: if isStaff(); }
 
-    // ----- Pedidos -----
-    // get   : el cliente final ve SU pedido por el link de seguimiento (id). El
-    //         id es largo y aleatorio (128 bits): no se puede adivinar ni listar.
-    // create: el PERSONAL (logueado) puede cargar pedidos a mano o por importar
-    //         (cualquier origen); además la tienda online (sesión anónima) puede
-    //         crear un pedido, pero SOLO si pasa la validación (anti-spam / forjado).
-    // resto : listar/editar/borrar, solo personal.
+    // ───────── Pedidos ─────────
+    // get: el cliente final ve SU pedido por el link de seguimiento (id de 128
+    //      bits, no adivinable). create: personal (cualquier origen) o tienda
+    //      (anónimo/socio) si pasa la validación. resto: solo personal.
     match /pedidos/{id} {
       allow get: if true;
       allow create: if isStaff() || (request.auth != null && pedidoTiendaValido());
       allow list, update, delete: if isStaff();
     }
 
-    // ----- Rutas -----
-    // get : el seguimiento público lee una ruta por id (para mostrar avance y
-    //       calcular el ETA). La ruta NO contiene datos personales de clientes:
-    //       solo coordenadas (ruta.coords) y el progreso de entrega.
-    // resto: solo personal.
+    // ───────── Rutas ─────────
     match /rutas/{id} {
       allow get: if true;
       allow list, create, update, delete: if isStaff();
+    }
+
+    // ═══════════════════════ CLUB GDO ═══════════════════════
+    // Regla de oro anti-estafa: el SOCIO nunca escribe sus puntos. Solo MIRA su
+    // saldo y PIDE canjes. Sumar/restar puntos = SOLO personal (acreditación por
+    // entrega o carga manual), y queda registrado en /puntos_log.
+
+    // Perfil + saldo del socio (doc ID = UID de Firebase Auth del socio).
+    match /clientes/{uid} {
+      allow get:    if isOwner(uid) || isStaff();
+      allow list:   if isStaff();
+      // Alta: el propio socio, arrancando SIEMPRE en 0 puntos. O el personal.
+      allow create: if isStaff() || (isOwner(uid) && request.resource.data.puntos == 0);
+      // Update por el socio: puede tocar sus datos PERO no 'puntos' ni 'nroSocio'.
+      // Personal: todo.
+      allow update: if isStaff() || (isOwner(uid)
+                        && request.resource.data.puntos == resource.data.puntos
+                        && request.resource.data.nroSocio == resource.data.nroSocio);
+      allow delete: if isStaff();
+    }
+
+    // Contador del NÚMERO DE SOCIO (cosmético, NO es dinero). El alta de un socio
+    // toma el siguiente número en una transacción (incrementa de a 1). Doc:
+    // club_config/contador { n: <int> }. App Check + login limitan el abuso.
+    match /club_config/{id} {
+      allow read:   if request.auth != null;
+      allow create: if isStaff() || (request.auth != null && request.resource.data.n == 1);
+      allow update: if isStaff() || (request.auth != null && request.resource.data.n == resource.data.n + 1);
+      allow delete: if isStaff();
+    }
+
+    // Catálogo de premios: lo VE cualquiera logueado; lo administra el personal.
+    match /premios/{id} {
+      allow read:  if request.auth != null;
+      allow write: if isStaff();
+    }
+
+    // Canjes: el socio crea una SOLICITUD ('solicitado') por sus puntos y solo si
+    // le alcanza el saldo. Aprobar/rechazar/entregar + el descuento real = personal.
+    match /canjes/{id} {
+      allow get:  if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
+      allow list: if isStaff();
+      allow create: if isStaff() || (
+                       request.auth != null
+                       && request.resource.data.clienteUid == request.auth.uid
+                       && request.resource.data.estado == 'solicitado'
+                       && request.resource.data.puntos is int
+                       && request.resource.data.puntos > 0
+                       && get(/databases/$(database)/documents/clientes/$(request.auth.uid)).data.puntos >= request.resource.data.puntos
+                    );
+      allow update, delete: if isStaff();
+    }
+
+    // Auditoría de movimientos de puntos: INMUTABLE, solo personal.
+    match /puntos_log/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if false;
     }
   }
 }
