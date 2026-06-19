@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v57';
+  const VERSION = 'v58';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -16,6 +16,7 @@ window.GDO = window.GDO || {};
       { hash: '#/panel', ic: '📊', t: 'Tablero' },
       { hash: '#/pedidos', ic: '📦', t: 'Pedidos' },
       { hash: '#/rutas', ic: '🗺️', t: 'Rutas' },
+      { hash: '#/club', ic: '⭐', t: 'GDO Club' },
       { hash: '#/usuarios', ic: '👥', t: 'Usuarios y roles' },
       { hash: '#/vehiculos', ic: '🚚', t: 'Vehículos' },
     ],
@@ -72,6 +73,7 @@ window.GDO = window.GDO || {};
       case '#/panel': return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);
       case '#/pedidos': return V.pedidos(c);
       case '#/rutas': return V.rutas(c);
+      case '#/club': return rol === 'admin' ? V.club(c) : V.pedidos(c);
       case '#/usuarios': return rol === 'admin' ? V.usuarios(c) : V.pedidos(c);
       case '#/vehiculos': return rol === 'admin' ? V.vehiculos(c) : V.pedidos(c);
       default: return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);
@@ -125,7 +127,7 @@ window.GDO = window.GDO || {};
 
   function titleFor(hash, rol) {
     if (hash.startsWith('#/rutas/')) return 'Armador de ruta';
-    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
+    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/club': 'GDO Club', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
     return map[hash] || 'Granja del Oeste';
   }
 
