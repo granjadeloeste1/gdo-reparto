@@ -18,9 +18,12 @@ service cloud.firestore {
     // Antes "staff" = cualquiera no-anónimo; YA NO alcanza, porque los SOCIOS del
     // Club GDO también entran con email+contraseña. Sin esta lista, un cliente
     // tendría permisos de administrador. ← clave anti-estafa.
+    // OJO: la colección en Firestore se llama "Staff" con S MAYÚSCULA (así se creó
+    // en la consola, y Firestore distingue mayúsculas). Si sumás personal, creá el
+    // doc dentro de "Staff" (no "staff"), ID = el UID de Auth del empleado.
     function isStaff() {
       return request.auth != null
-        && exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+        && exists(/databases/$(database)/documents/Staff/$(request.auth.uid));
     }
     // Dueño de un documento identificado por UID.
     function isOwner(uid) { return request.auth != null && request.auth.uid == uid; }
@@ -50,7 +53,8 @@ service cloud.firestore {
     // ───────── Lista blanca de personal ─────────
     // BOOTSTRAP: el primer doc se crea desde la consola (las escrituras de consola
     // saltean las reglas). Después, el personal existente puede sumar más personal.
-    match /staff/{uid} {
+    // Colección "Staff" con S MAYÚSCULA (ver nota en isStaff()).
+    match /Staff/{uid} {
       allow read: if isStaff();
       allow create, update, delete: if isStaff();
     }
