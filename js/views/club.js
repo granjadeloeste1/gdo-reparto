@@ -277,8 +277,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button>`,
       onMount(m, close) {
         const msg = m.querySelector('#qr-msg');
-        const stopCam = () => { if (h5) { try { h5.stop().then(() => h5.clear()).catch(() => {}); } catch (e) {} h5 = null; } };
+        const stopCam = () => { if (h5) { const x = h5; h5 = null; try { x.stop().then(() => { try { x.clear(); } catch (e) {} }).catch(() => {}); } catch (e) {} } };
         const cerrar = () => { stopCam(); close(); };
+        // Vigía: apaga la cámara pase lo que pase (cerrar con la ✕, tocando el
+        // fondo, Escape o el botón). Sacar el div NO corta el stream: hay que
+        // llamar stop(). Sin esto la cámara queda grabando.
+        const _obs = new MutationObserver(() => { if (!document.body.contains(m)) { stopCam(); _obs.disconnect(); } });
+        _obs.observe(document.body, { childList: true, subtree: true });
         const procesar = (canjeId) => usarVoucher(canjeId)
           .then((x) => { cerrar(); resultadoOk(x); })
           .catch((e) => {
