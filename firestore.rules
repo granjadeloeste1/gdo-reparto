@@ -92,11 +92,14 @@ service cloud.firestore {
       allow list:   if isStaff();
       // Alta: el propio socio, arrancando SIEMPRE en 0 puntos. O el personal.
       allow create: if isStaff() || (isOwner(uid) && request.resource.data.puntos == 0);
-      // Update por el socio: puede tocar sus datos PERO no 'puntos' ni 'nroSocio'.
-      // Personal: todo.
+      // Update por el socio: puede tocar sus datos y BAJAR puntos (para canjear),
+      // NUNCA subirlos (sumar = solo personal) ni cambiar 'nroSocio'. La baja real
+      // queda atada a un voucher válido por la regla de /canjes (getAfter).
       allow update: if isStaff() || (isOwner(uid)
-                        && request.resource.data.puntos == resource.data.puntos
-                        && request.resource.data.nroSocio == resource.data.nroSocio);
+                        && request.resource.data.nroSocio == resource.data.nroSocio
+                        && request.resource.data.puntos is int
+                        && request.resource.data.puntos >= 0
+                        && request.resource.data.puntos <= resource.data.puntos);
       allow delete: if isStaff();
     }
 
@@ -116,20 +119,28 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
-    // Canjes: el socio crea una SOLICITUD ('solicitado') por sus puntos y solo si
-    // le alcanza el saldo. Aprobar/rechazar/entregar + el descuento real = personal.
+    // Canjes = VOUCHERS automáticos. El socio emite el voucher ('emitido') y, en el
+    // MISMO commit, sus puntos bajan EXACTAMENTE el costo del premio (getAfter). Sin
+    // esa baja NO se puede crear → no hay voucher gratis ni dos con el mismo saldo.
+    // Anti-estafa: el costo debe coincidir con el del premio real.
     match /canjes/{id} {
       allow get:  if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
       allow list: if isStaff();
       allow create: if isStaff() || (
                        request.auth != null
                        && request.resource.data.clienteUid == request.auth.uid
-                       && request.resource.data.estado == 'solicitado'
-                       && request.resource.data.puntos is int
-                       && request.resource.data.puntos > 0
-                       && get(/databases/$(database)/documents/clientes/$(request.auth.uid)).data.puntos >= request.resource.data.puntos
+                       && request.resource.data.estado == 'emitido'
+                       && request.resource.data.usado == false
+                       && request.resource.data.costo is int
+                       && request.resource.data.costo > 0
+                       && request.resource.data.premioId is string
+                       && request.resource.data.costo == get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.costo
+                       && getAfter(/databases/$(database)/documents/clientes/$(request.auth.uid)).data.puntos == get(/databases/$(database)/documents/clientes/$(request.auth.uid)).data.puntos - request.resource.data.costo
                     );
-      allow update, delete: if isStaff();
+      // Marcar USADO en el mostrador: SOLO personal y SOLO una vez (single-use).
+      // Una fotocopia comparte el mismo voucher: el primer escaneo lo anula para todos.
+      allow update: if isStaff() && resource.data.usado == false && request.resource.data.usado == true;
+      allow delete: if isStaff();
     }
 
     // Check-in del mostrador: el socio escanea el QR único y "levanta la mano".

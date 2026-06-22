@@ -213,56 +213,98 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
 
-  /* ---------------- CANJES ---------------- */
+  /* ---------------- CANJES / VOUCHERS ----------------
+     El canje es AUTOMÁTICO: el socio ya descontó sus puntos y tiene el voucher.
+     Acá el personal lo ESCANEA en el mostrador y lo marca USADO (single-use). */
   function renderCanjes(box) {
     subs.push(db().collection('canjes').onSnapshot((snap) => {
       const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
-      const orden = { solicitado: 0, aprobado: 1, entregado: 2, rechazado: 3 };
-      arr.sort((a, b) => ((orden[a.estado] || 9) - (orden[b.estado] || 9)) ||
+      arr.sort((a, b) => (Number(!!a.usado) - Number(!!b.usado)) ||
         ((b.ts && b.ts.toMillis ? b.ts.toMillis() : 0) - (a.ts && a.ts.toMillis ? a.ts.toMillis() : 0)));
-      if (!arr.length) { box.innerHTML = '<div class="empty">No hay canjes solicitados.</div>'; return; }
-      const chip = { solicitado: '<span class="chip chip-pend">⏳ Solicitado</span>', aprobado: '<span class="chip chip-asig">✅ Aprobado</span>', entregado: '<span class="chip chip-entreg">🎁 Entregado</span>', rechazado: '<span class="chip chip-no">❌ Rechazado</span>' };
-      box.innerHTML = `<table><thead><tr><th>Fecha</th><th>Premio</th><th>Puntos</th><th>Socio</th><th>Estado</th><th></th></tr></thead><tbody>` +
-        arr.map((cj) => `<tr>
-          <td class="small">${fechaCorta(cj.ts)}</td>
-          <td>${esc(cj.premioNombre || '')}</td>
-          <td><b style="color:#F58220">${fmt(cj.puntos)}</b></td>
-          <td class="small" title="${esc(cj.clienteUid || '')}">${esc((cj.clienteUid || '').slice(0, 8))}…</td>
-          <td>${chip[cj.estado] || cj.estado}</td>
-          <td class="t-actions">${cj.estado === 'solicitado'
-            ? `<button class="btn btn-sm" data-ap="${esc(cj._id)}">Aprobar</button> <button class="btn btn-ghost btn-sm" data-rj="${esc(cj._id)}">Rechazar</button>`
-            : (cj.estado === 'aprobado' ? `<button class="btn btn-ghost btn-sm" data-eg="${esc(cj._id)}">Marcar entregado</button>` : '')}</td>
-        </tr>`).join('') + `</tbody></table>`;
-      box.querySelectorAll('[data-ap]').forEach((b) => b.onclick = () => aprobarCanje(arr.find((x) => x._id === b.dataset.ap)));
-      box.querySelectorAll('[data-rj]').forEach((b) => b.onclick = () => {
-        const cj = arr.find((x) => x._id === b.dataset.rj);
-        confirmDlg('¿Rechazar este canje? No se descuentan puntos.', () => {
-          db().collection('canjes').doc(cj._id).update({ estado: 'rechazado' }).then(() => toast('Canje rechazado.')).catch(() => toast('Error.', 'error'));
-        }, 'Rechazar');
-      });
-      box.querySelectorAll('[data-eg]').forEach((b) => b.onclick = () => {
-        const cj = arr.find((x) => x._id === b.dataset.eg);
-        db().collection('canjes').doc(cj._id).update({ estado: 'entregado' }).then(() => toast('Marcado como entregado.')).catch(() => toast('Error.', 'error'));
-      });
+      box.innerHTML =
+        `<div style="margin-bottom:12px"><button class="btn" id="cj-scan">📷 Escanear voucher</button></div>` +
+        (arr.length
+          ? `<table><thead><tr><th>Premio</th><th>Socio</th><th>Código</th><th>Estado</th></tr></thead><tbody>` +
+            arr.map((c) => `<tr>
+              <td>${c.premioIco || '🎁'} ${esc(c.premioNombre || '')}</td>
+              <td class="small">${esc(c.socioNombre || '')}<br><span class="muted">N° ${padNro(c.socioNro)}</span></td>
+              <td class="small" style="font-family:monospace">${esc(c.codigo || '')}</td>
+              <td>${c.usado ? '<span class="chip chip-entreg">✔ Usado</span>' : '<span class="chip chip-pend">🎟️ Vigente</span>'}</td>
+            </tr>`).join('') + `</tbody></table>`
+          : '<div class="empty">Todavía no hay canjes. Cuando un socio canjee un premio, su voucher aparece acá.</div>');
+      box.querySelector('#cj-scan').onclick = escanearVoucher;
     }, () => { box.innerHTML = '<div class="empty">No se pudieron cargar los canjes.</div>'; }));
   }
 
-  // Aprobar canje: descuenta los puntos del socio (transacción) y marca el canje.
-  function aprobarCanje(cj) {
-    if (!cj) return;
-    confirmDlg(`¿Aprobar el canje de "${cj.premioNombre}" por ${fmt(cj.puntos)} puntos? Se descuentan del socio.`, () => {
-      const cref = db().collection('clientes').doc(cj.clienteUid);
-      const jref = db().collection('canjes').doc(cj._id);
-      const lref = db().collection('puntos_log').doc();
-      db().runTransaction((tx) => tx.get(cref).then((cd) => {
-        if (!cd.exists) throw new Error('socio inexistente');
-        const actual = cd.data().puntos || 0;
-        if (actual < (cj.puntos || 0)) throw new Error('saldo insuficiente');
-        tx.update(cref, { puntos: actual - cj.puntos });
-        tx.update(jref, { estado: 'aprobado', aprobadoPor: staffUid(), aprobadoTs: FV().serverTimestamp() });
-        tx.set(lref, { clienteUid: cj.clienteUid, delta: -cj.puntos, motivo: 'Canje: ' + (cj.premioNombre || ''), saldo: actual - cj.puntos, canjeId: cj._id, por: staffUid(), ts: FV().serverTimestamp() });
-      })).then(() => toast('✓ Canje aprobado y puntos descontados.'))
-        .catch((e) => toast(String((e && e.message) || '').indexOf('insuficiente') >= 0 ? 'El socio no tiene puntos suficientes.' : 'No se pudo aprobar.', 'error'));
-    }, 'Aprobar', 'btn');
+  // Marca el voucher USADO en transacción (single-use). Si ya estaba usado falla:
+  // no se puede canjear dos veces (ni con fotocopias del mismo código).
+  function usarVoucher(canjeId) {
+    const ref = db().collection('canjes').doc(canjeId);
+    return db().runTransaction((tx) => tx.get(ref).then((cd) => {
+      if (!cd.exists) throw new Error('inexistente');
+      const x = cd.data();
+      if (x.usado) throw new Error('usado');
+      tx.update(ref, { usado: true, estado: 'usado', usadoPor: staffUid(), usadoTs: FV().serverTimestamp() });
+      x._id = cd.id; return x;
+    }));
+  }
+
+  function resultadoOk(x) {
+    modal({
+      title: '✅ Voucher válido', width: 380,
+      bodyHTML: `<div style="text-align:center">
+        <div style="font-size:42px">${x.premioIco || '🎁'}</div>
+        <div style="font-weight:800;font-size:17px;margin-top:4px">${esc(x.premioNombre || '')}</div>
+        <div class="small muted" style="margin-top:6px">Entregar a <b>${esc(x.socioNombre || '')}</b> · N° ${padNro(x.socioNro)}</div>
+        <div style="margin-top:12px"><span class="chip chip-entreg">Marcado como USADO ✔</span></div></div>`,
+      footHTML: `<button class="btn btn-verde" data-yes>Listo</button>`,
+      onMount(m, close) { m.querySelector('[data-yes]').onclick = close; },
+    });
+  }
+
+  // Escáner del mostrador: cámara (QR del voucher) + ingreso manual del código.
+  function escanearVoucher() {
+    let h5 = null, done = false;
+    modal({
+      title: '📷 Escanear voucher', width: 440,
+      bodyHTML:
+        `<div id="qr-reader" style="width:100%;min-height:240px;background:#000;border-radius:10px;overflow:hidden"></div>` +
+        `<div id="qr-msg" class="small muted" style="margin-top:8px;text-align:center">Apuntá la cámara al QR del voucher del socio.</div>` +
+        `<div style="margin-top:10px;border-top:1px solid #e6e8eb;padding-top:10px">` +
+          `<label style="font-size:12px;color:#5b6470;font-weight:600">¿No lee? Ingresá el código a mano</label>` +
+          `<div style="display:flex;gap:6px;margin-top:4px"><input id="qr-cod" placeholder="GDO-XXXX-XXXX-XXXX" style="flex:1;padding:9px;border:1px solid #cfd4da;border-radius:8px;font-family:monospace;text-transform:uppercase"/><button class="btn btn-sm" id="qr-buscar">Validar</button></div>` +
+        `</div>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button>`,
+      onMount(m, close) {
+        const msg = m.querySelector('#qr-msg');
+        const stopCam = () => { if (h5) { try { h5.stop().then(() => h5.clear()).catch(() => {}); } catch (e) {} h5 = null; } };
+        const cerrar = () => { stopCam(); close(); };
+        const procesar = (canjeId) => usarVoucher(canjeId)
+          .then((x) => { cerrar(); resultadoOk(x); })
+          .catch((e) => {
+            const mm = (e && e.message) || '';
+            msg.innerHTML = mm === 'usado' ? '<b style="color:#c0392b">❌ Este voucher YA fue usado.</b>'
+              : mm === 'inexistente' ? '<b style="color:#c0392b">❌ Voucher inexistente.</b>'
+              : '<b style="color:#c0392b">❌ No se pudo validar. Reintentá.</b>';
+            done = false; // permite reintentar
+          });
+        m.querySelector('[data-no]').onclick = cerrar;
+        m.querySelector('#qr-buscar').onclick = () => {
+          const cod = (m.querySelector('#qr-cod').value || '').trim().toUpperCase();
+          if (!cod) return;
+          db().collection('canjes').where('codigo', '==', cod).limit(1).get()
+            .then((s) => { if (s.empty) { msg.innerHTML = 'No se encontró ese código.'; return; } procesar(s.docs[0].id); })
+            .catch(() => { msg.innerHTML = 'Error al buscar el código.'; });
+        };
+        if (typeof Html5Qrcode === 'undefined') { msg.innerHTML = 'La cámara no está disponible acá. Usá el código a mano.'; return; }
+        h5 = new Html5Qrcode('qr-reader');
+        h5.start({ facingMode: 'environment' }, { fps: 10, qrbox: 220 }, (text) => {
+          if (done) return;
+          let id = text || '';
+          if (id.indexOf('GDOCANJE:') !== 0) { msg.innerHTML = 'Ese QR no es un voucher GDO.'; return; }
+          id = id.slice(9); done = true; procesar(id);
+        }, () => {}).catch(() => { msg.innerHTML = 'No se pudo abrir la cámara. Usá el código a mano.'; });
+      },
+    });
   }
 })();
