@@ -566,8 +566,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <option value="QR al momento de la entrega"${(p?p.formaPago:pf.formaPago)==='QR al momento de la entrega'?' selected':''}>QR al momento de la entrega</option>
             </select></div>
           <div class="field"><label>⭐ Puntos GDO (al entregar)</label>
-            <input id="f-pts" type="number" min="0" inputmode="numeric" value="${esc(p && p.puntos != null ? p.puntos : (pf.puntos || ''))}" placeholder="Ej: 12000"/>
-            <span class="help">Puntos que suma el socio del Club cuando el chofer confirma la entrega (el cliente escanea el QR en la puerta). Vacío = no suma.</span></div>
+            <input id="f-pts" type="number" min="0" inputmode="numeric" value="${esc(p && p.puntos ? p.puntos : (p && p.totalEstimado ? p.totalEstimado : (pf.puntos || '')))}" placeholder="Ej: 12000"/>
+            ${(p && p.clienteUid) ? '<span class="help" style="color:#1e8449">🛒 Pedido de un <b>socio del GDO CLUB</b> logueado' + (p.totalEstimado ? ' · total estimado $' + Number(p.totalEstimado).toLocaleString('es-AR') : '') + '. Al entregar se le acreditan estos puntos automáticamente (sin escanear).</span>' : '<span class="help">Puntos que suma el socio del Club al confirmar la entrega (el cliente escanea el QR en la puerta). Vacío = no suma.</span>'}</div>
           <div class="field"><label>Ubicación (coordenadas o link de Google Maps)</label>
             <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
             <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>

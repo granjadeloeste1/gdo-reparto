@@ -40,7 +40,11 @@ service cloud.firestore {
         && d.especificaciones is string && d.especificaciones.size() <= 2000
         && d.items is list && d.items.size() > 0 && d.items.size() <= 100
         && (!('historia' in d) || (d.historia is list && d.historia.size() == 0))
-        && (!('clienteUid' in d) || d.clienteUid == null || d.clienteUid == request.auth.uid);
+        && (!('clienteUid' in d) || d.clienteUid == null || d.clienteUid == request.auth.uid)
+        // Anti-estafa: el cliente NUNCA fija el monto de puntos a acreditar (lo
+        // confirma el personal). totalEstimado es solo informativo.
+        && (!('puntos' in d) || d.puntos == 0)
+        && (!('puntosAcreditados' in d) || d.puntosAcreditados == false);
     }
 
     // ───────── Lista blanca de personal ─────────

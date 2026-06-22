@@ -496,6 +496,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (!p || !(p.puntos > 0) || p.puntosAcreditados) return;
       const fdb = clubDB();
       if (!fdb) { toast('Sin conexión: los Puntos GDO se cargan cuando vuelva la señal (botón ⭐).', ''); return; }
+      // Pedido online YA vinculado a un socio (se logueó en la tienda): su identidad
+      // quedó probada al loguearse, así que acreditamos directo, sin escanear.
+      if (p.clienteUid) {
+        fdb.collection('clientes').doc(p.clienteUid).get().then((d) => {
+          const nom = esc((d.exists && d.data().nombre) ? d.data().nombre : 'el socio');
+          confirmDlg('Sumar ' + fmtN(p.puntos) + ' Puntos GDO a ' + nom + '?', () => {
+            acreditarSocio(p.clienteUid, p.puntos, 'Entrega a domicilio (pedido online)', p.id, null)
+              .then(() => { Store.upsertPedido({ id: p.id, puntosAcreditados: true }); toast('🎁 ' + fmtN(p.puntos) + ' Puntos GDO acreditados', 'ok'); render(); })
+              .catch(() => toast('No se pudo acreditar. Reintentá.', 'err'));
+          }, 'Sumar puntos', 'btn-verde');
+        }).catch(() => toast('No se pudo leer el socio. Reintentá.', 'err'));
+        return;
+      }
       let subV = null, hecho = false;
       modal({
         title: '⭐ Sumar ' + fmtN(p.puntos) + ' Puntos GDO',
