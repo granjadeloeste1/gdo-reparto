@@ -222,8 +222,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       arr.sort((a, b) => (Number(!!a.usado) - Number(!!b.usado)) ||
         ((b.ts && b.ts.toMillis ? b.ts.toMillis() : 0) - (a.ts && a.ts.toMillis ? a.ts.toMillis() : 0)));
       box.innerHTML =
-        `<div style="margin-bottom:6px"><button class="btn" id="cj-scan">🎟️ Validar voucher por código</button></div>
-         <div class="small muted" style="margin-bottom:12px">💡 El cajero también puede <b>escanear el QR del voucher con la cámara del celular</b>: abre un link y lo valida solo (no hace falta este botón).</div>` +
+        `<div style="margin-bottom:12px"><button class="btn" id="cj-scan">📷 Escanear voucher</button></div>` +
         (arr.length
           ? `<table><thead><tr><th>Premio</th><th>Socio</th><th>Código</th><th>Estado</th></tr></thead><tbody>` +
             arr.map((c) => `<tr>
@@ -233,31 +232,79 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <td>${c.usado ? '<span class="chip chip-entreg">✔ Usado</span>' : '<span class="chip chip-pend">🎟️ Vigente</span>'}</td>
             </tr>`).join('') + `</tbody></table>`
           : '<div class="empty">Todavía no hay canjes. Cuando un socio canjee un premio, su voucher aparece acá.</div>');
-      box.querySelector('#cj-scan').onclick = validarPorCodigo;
+      box.querySelector('#cj-scan').onclick = escanearVoucher;
     }, () => { box.innerHTML = '<div class="empty">No se pudieron cargar los canjes.</div>'; }));
   }
 
-  // Fallback manual: el cajero tipea el código del voucher. Reusa la misma
-  // pantalla de validación que el escaneo (vía hash #/v/<id>).
-  function validarPorCodigo() {
+  // Escáner EN LA APP: abre la cámara, lee el QR del voucher y valida SOLO (sin
+  // tocar links). Apenas lee, apaga la cámara (como una foto) y marca usado.
+  // Acepta el QR como link (.../#/v/<id>) o el código a mano. Vigía MutationObserver:
+  // la cámara se corta sí o sí al cerrar (✕, fondo, Escape, botón) — sin esto queda
+  // grabando porque sacar el div NO frena el stream.
+  function escanearVoucher() {
+    let h5 = null, done = false;
     modal({
-      title: 'Validar voucher por código', width: 420,
+      title: '📷 Escanear voucher', width: 440,
       bodyHTML:
-        `<label style="font-size:13px;color:#5b6470;font-weight:600">Código del voucher</label>` +
-        `<input id="vc-cod" placeholder="GDO-XXXX-XXXX-XXXX" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-family:monospace;text-transform:uppercase;font-size:15px"/>` +
-        `<div id="vc-msg" class="small muted" style="margin-top:8px"></div>`,
-      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button><button class="btn" data-yes>Buscar</button>`,
+        `<div id="qr-reader" style="width:100%;min-height:240px;background:#000;border-radius:10px;overflow:hidden"></div>` +
+        `<div id="qr-msg" class="small muted" style="margin-top:8px;text-align:center">Apuntá la cámara al QR del voucher. Se valida solo y la cámara se apaga al leer.</div>` +
+        `<div style="margin-top:10px;border-top:1px solid #e6e8eb;padding-top:10px">` +
+          `<label style="font-size:12px;color:#5b6470;font-weight:600">¿No lee? Ingresá el código a mano</label>` +
+          `<div style="display:flex;gap:6px;margin-top:4px"><input id="qr-cod" placeholder="GDO-XXXX-XXXX-XXXX" style="flex:1;padding:9px;border:1px solid #cfd4da;border-radius:8px;font-family:monospace;text-transform:uppercase"/><button class="btn btn-sm" id="qr-buscar">Validar</button></div>` +
+        `</div>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button>`,
       onMount(m, close) {
-        const msg = m.querySelector('#vc-msg');
-        m.querySelector('[data-no]').onclick = close;
-        m.querySelector('[data-yes]').onclick = () => {
-          const cod = (m.querySelector('#vc-cod').value || '').trim().toUpperCase();
+        const msg = m.querySelector('#qr-msg');
+        const stopCam = () => { if (h5) { const x = h5; h5 = null; try { x.stop().then(() => { try { x.clear(); } catch (e) {} }).catch(() => {}); } catch (e) {} } };
+        const cerrar = () => { stopCam(); close(); };
+        const _obs = new MutationObserver(() => { if (!document.body.contains(m)) { stopCam(); _obs.disconnect(); } });
+        _obs.observe(document.body, { childList: true, subtree: true });
+        const procesar = (canjeId) => usarVoucher(canjeId)
+          .then((x) => { cerrar(); resultadoOk(x); })
+          .catch((e) => {
+            const mm = (e && e.message) || '';
+            msg.innerHTML = mm === 'usado' ? '<b style="color:#c0392b">❌ Este voucher YA fue usado.</b>'
+              : mm === 'inexistente' ? '<b style="color:#c0392b">❌ Voucher inexistente.</b>'
+              : '<b style="color:#c0392b">❌ No se pudo validar. Reintentá.</b>';
+            done = false; // permite reintentar sin cerrar
+          });
+        const idDe = (text) => {
+          const t = String(text || '');
+          const m2 = t.match(/\/v\/([^/?#\s]+)/);          // link .../#/v/<id>
+          if (m2) return m2[1];
+          if (t.indexOf('GDOCANJE:') === 0) return t.slice(9);  // compat
+          return null;
+        };
+        m.querySelector('[data-no]').onclick = cerrar;
+        m.querySelector('#qr-buscar').onclick = () => {
+          const cod = (m.querySelector('#qr-cod').value || '').trim().toUpperCase();
           if (!cod) return;
           db().collection('canjes').where('codigo', '==', cod).limit(1).get()
-            .then((s) => { if (s.empty) { msg.textContent = 'No se encontró ese código.'; return; } close(); location.hash = '#/v/' + s.docs[0].id; })
-            .catch(() => { msg.textContent = 'Error al buscar. Reintentá.'; });
+            .then((s) => { if (s.empty) { msg.innerHTML = 'No se encontró ese código.'; return; } procesar(s.docs[0].id); })
+            .catch(() => { msg.innerHTML = 'Error al buscar el código.'; });
         };
+        if (typeof Html5Qrcode === 'undefined') { msg.innerHTML = 'La cámara no está disponible acá. Usá el código a mano.'; return; }
+        h5 = new Html5Qrcode('qr-reader');
+        h5.start({ facingMode: 'environment' }, { fps: 10, qrbox: 220 }, (text) => {
+          if (done) return;
+          const id = idDe(text);
+          if (!id) { msg.innerHTML = 'Ese QR no es un voucher GDO.'; return; }
+          done = true; procesar(id);   // procesar OK → cerrar() apaga la cámara
+        }, () => {}).catch(() => { msg.innerHTML = 'No se pudo abrir la cámara. Usá el código a mano.'; });
       },
+    });
+  }
+
+  function resultadoOk(x) {
+    modal({
+      title: '✅ Voucher válido', width: 380,
+      bodyHTML: `<div style="text-align:center">
+        <div style="font-size:42px">${x.premioIco || '🎁'}</div>
+        <div style="font-weight:800;font-size:17px;margin-top:4px">${esc(x.premioNombre || '')}</div>
+        <div class="small muted" style="margin-top:6px">Entregar a <b>${esc(x.socioNombre || '')}</b> · N° ${padNro(x.socioNro)}</div>
+        <div style="margin-top:12px"><span class="chip chip-entreg">Marcado como USADO ✔</span></div></div>`,
+      footHTML: `<button class="btn btn-verde" data-yes>Listo</button>`,
+      onMount(m, close) { m.querySelector('[data-yes]').onclick = close; },
     });
   }
 
