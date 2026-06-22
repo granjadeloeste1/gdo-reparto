@@ -38,11 +38,20 @@ window.GDO = window.GDO || {};
   };
   GDO.App = App;
 
+  let _pendingHash = null;   // ruta a retomar después del login (p. ej. validar voucher)
+
   function render() {
     const u = Store.current();
     const hash = location.hash || (u ? '#/inicio' : '#/login');
 
-    if (!u) { V.login(root(), () => { afterLogin(); }); return; }
+    if (!u) {
+      if (hash.indexOf('#/v/') === 0) _pendingHash = hash;  // venía a validar un voucher
+      V.login(root(), () => { afterLogin(); }); return;
+    }
+
+    // Validar voucher por link (QR del voucher = link a esta ruta). Pantalla propia,
+    // sirve para cualquier rol del personal (las reglas exigen staff igual).
+    if (hash.indexOf('#/v/') === 0 && V.validarVoucher) { return V.validarVoucher(root(), hash.split('/')[2]); }
 
     const rol = Store.rolActivo();
 
@@ -62,6 +71,7 @@ window.GDO = window.GDO || {};
     const u = Store.current();
     const rol = Store.rolActivo();
     if (GDO.Notify) { GDO.Notify.rebaseline(); GDO.Notify.request(); }
+    if (_pendingHash) { const h = _pendingHash; _pendingHash = null; go(h); render(); return; }
     go(rol === 'repartidor' ? '#/mis-rutas' : (rol === 'vendedor' ? '#/pedidos' : '#/panel'));
     render();
   }
