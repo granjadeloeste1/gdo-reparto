@@ -135,6 +135,10 @@ service cloud.firestore {
                        && request.resource.data.costo > 0
                        && request.resource.data.premioId is string
                        && request.resource.data.costo == get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.costo
+                       // Anti-fraude: el NOMBRE del voucher debe ser el del premio real.
+                       // (Sin esto, un socio podía canjear un premio barato pero poner
+                       //  el nombre de uno caro y reclamarlo en el mostrador.)
+                       && request.resource.data.premioNombre == get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.nombre
                        && getAfter(/databases/$(database)/documents/clientes/$(request.auth.uid)).data.puntos == get(/databases/$(database)/documents/clientes/$(request.auth.uid)).data.puntos - request.resource.data.costo
                     );
       // Marcar USADO en el mostrador: SOLO personal y SOLO una vez (single-use).
