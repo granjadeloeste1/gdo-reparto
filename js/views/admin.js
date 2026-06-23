@@ -528,7 +528,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         ta.oninput = refresh;
         refresh();
         node.querySelector('[data-cancel]').onclick = close;
-        send.onclick = () => { toast('WhatsApp abierto con el mensaje', 'ok'); setTimeout(close, 300); };
+        send.onclick = () => {
+          // Avisar "salió / en camino" o "está por llegar" → el pedido pasa a EN CAMINO
+          // y el cliente lo ve en vivo en el seguimiento.
+          if ((sel.value === 'salio' || sel.value === 'cerca') && p.estado !== 'entregado' && p.estado !== 'no_entregado') {
+            p.enCamino = true;
+            GDO.Store.upsertPedido({ id: p.id, enCamino: true, enCaminoTs: Date.now() });
+          }
+          toast('WhatsApp abierto con el mensaje', 'ok'); setTimeout(close, 300);
+        };
       },
     });
   }
