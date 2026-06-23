@@ -282,6 +282,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         p.rutaId = saved.id; p.fechaEntrega = ruta.fecha;
         const resuelto = ['entregado', 'no_entregado'].includes(ruta.progreso[id]);
         if (estadoPed && !resuelto) p.estado = estadoPed;
+        Store.upsertPedido(p); // escribe a Firestore → el cliente ve "asignado" EN VIVO (antes era solo Store.save local)
       });
       Store.save();
       return saved;

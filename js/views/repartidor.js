@@ -342,7 +342,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         ruta.estado = 'aceptada';
         // No congelamos la salida: con "salir ahora" los horarios siguen siendo
         // en vivo (hora actual) tanto para el chofer como para el cliente.
-        Store.upsertRuta(ruta); ruta.pedidoIds.forEach((id)=>{const p=Store.pedido(id); if(p)p.estado='en_ruta';}); Store.save(); toast('Ruta aceptada. ¡Buen reparto!', 'ok'); render();
+        Store.upsertRuta(ruta); ruta.pedidoIds.forEach((id)=>{const p=Store.pedido(id); if(p && p.estado!=='entregado' && p.estado!=='no_entregado'){ p.estado='en_ruta'; Store.upsertPedido(p); }}); Store.save(); toast('Ruta aceptada. ¡Buen reparto!', 'ok'); render();
       };
       box.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => {
         const p = Store.pedido(b.dataset.ok);
@@ -377,7 +377,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           p.estado = 'en_ruta'; p.salteado = false;
           p.historia = p.historia || [];
           p.historia.push({ ts: Date.now(), est: 'reabierto', detalle: 'Corrección del chofer', por: me.id });
-          Store.upsertRuta(ruta); Store.save();
+          Store.upsertRuta(ruta); Store.upsertPedido(p); Store.save();
           avisar(p, 'Entrega reabierta para corrección');
           toast('Entrega reabierta · podés volver a marcarla', '');
           render();
@@ -385,7 +385,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       });
       const finalizar = (msg) => confirmDlg(msg, () => {
         ruta.estado = 'finalizada';
-        orden().forEach((p) => { const st = ruta.progreso[p.id]; if (st !== 'entregado' && st !== 'no_entregado') { p.estado = 'pendiente'; p.rutaId = null; } });
+        orden().forEach((p) => { const st = ruta.progreso[p.id]; if (st !== 'entregado' && st !== 'no_entregado') { p.estado = 'pendiente'; p.rutaId = null; Store.upsertPedido(p); } });
         pararGPSChofer(); // ruta finalizada: dejamos de publicar el GPS
         Store.upsertRuta(ruta); Store.save();
         Store.admins().forEach((a) => Store.pushNotif(a.id, `Ruta "${ruta.nombre}" finalizada por ${me.nombre.split(' ')[0]}.`, { tipo: 'ruta', rutaId: ruta.id }));
