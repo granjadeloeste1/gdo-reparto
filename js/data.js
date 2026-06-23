@@ -276,7 +276,7 @@ window.GDO = window.GDO || {};
           }
           persist(db);
           scheduleRender();
-        }, (err) => console.warn('[GDO] onSnapshot ' + c, err && err.code));
+        }, (err) => { console.warn('[GDO] onSnapshot ' + c, err && err.code); if (c === 'users' && _usersResolve) { _usersResolve(); _usersResolve = null; } });
       });
     });
   }
@@ -304,33 +304,37 @@ window.GDO = window.GDO || {};
         return u || null;
       };
       if (GDO.FB && GDO.FB.enabled) {
-        return GDO.FB.login(mail, pass)
-          .then(() => usersReady) // espera a que carguen los perfiles
-          .then(() => {
+        return GDO.FB.login(mail, pass).then(() => {
+          const fbu = GDO.FB.user;
+          if (!fbu) return setSession(null);
+          const esAdmin = ADMIN_EMAILS.indexOf(mail) >= 0;
+          const dbf = (GDO.FB && GDO.FB.db) ? GDO.FB.db : null;
+          // Camino STAFF: espera los perfiles (users) y busca/crea el suyo.
+          const staffPath = () => usersReady.then(() => {
             let u = db.users.find((x) => (x.email || '').toLowerCase() === mail && x.activo);
-            // Auto-aprovisionamiento: la persona ya validó su contraseña contra
-            // Firebase Auth (cuenta creada por la empresa en la consola; la app
-            // NO permite auto-registro). Si todavía no tiene perfil en la base,
-            // se lo creamos solo, así entra sin pasos extra. Los emails de
-            // ADMIN_EMAILS entran como administradores; el resto como repartidor
-            // (el admin puede cambiar el rol después desde el panel de usuarios).
-            if (!u && GDO.FB.user) {
-              const fbu = GDO.FB.user;
-              const esAdmin = ADMIN_EMAILS.indexOf(mail) >= 0;
-              u = {
-                id: fbu.uid,
-                nombre: fbu.displayName || mail.split('@')[0],
-                email: mail,
-                roles: esAdmin ? ['admin', 'vendedor'] : ['repartidor'],
-                activo: true,
-              };
-              db.users.push(u);
-              fsSet('users', u); // queda guardado en Firestore para la próxima
-            }
-            if (!u) { try { GDO.FB.logout(); } catch (e) {} } // autenticó pero no se pudo crear perfil
+            if (u) return setSession(u);
+            u = { id: fbu.uid, nombre: fbu.displayName || mail.split('@')[0], email: mail,
+                  roles: esAdmin ? ['admin', 'vendedor'] : ['repartidor'], activo: true };
+            db.users.push(u); fsSet('users', u);
             return setSession(u);
-          })
-          .catch((e) => { console.warn('[GDO] login', e && e.code); return null; });
+          });
+          // El admin SIEMPRE es staff. Si no es admin, primero vemos si es SOCIO del
+          // club (lee SOLO su propio doc clientes → no necesita la colección users,
+          // así no se cuelga ni cae en la vista de chofer). Socio → sesión 'socio'.
+          if (esAdmin || !dbf) return staffPath();
+          return dbf.collection('clientes').doc(fbu.uid).get().then((snap) => {
+            if (snap && snap.exists) {
+              const s = snap.data() || {};
+              db.session = { userId: fbu.uid, rolActivo: 'socio', socio: {
+                uid: fbu.uid, nombre: s.nombre || fbu.displayName || mail.split('@')[0],
+                nroSocio: s.nroSocio || 0, puntos: s.puntos || 0,
+              } };
+              persist(db);
+              return { id: fbu.uid, nombre: db.session.socio.nombre, roles: ['socio'], activo: true, socio: db.session.socio };
+            }
+            return staffPath();                          // ni staff ni socio → chofer (legacy)
+          }).catch(() => staffPath());
+        }).catch((e) => { console.warn('[GDO] login', e && e.code); return null; });
       }
       // Sin Firebase (SDK no cargó / sin internet en el PRIMER arranque): NO
       // autenticamos. Antes se entraba solo con el email (sin contraseña), lo que
@@ -349,7 +353,10 @@ window.GDO = window.GDO || {};
       db.session = null; persist(db);
       if (GDO.FB && GDO.FB.enabled && GDO.FB.logout) { try { GDO.FB.logout(); } catch (e) {} }
     },
-    current() { return db.session ? db.users.find((u) => u.id === db.session.userId) : null; },
+    current() {
+      if (db.session && db.session.rolActivo === 'socio') return { id: db.session.userId, nombre: db.session.socio.nombre, roles: ['socio'], socio: db.session.socio };
+      return db.session ? db.users.find((u) => u.id === db.session.userId) : null;
+    },
     setRolActivo(r) { if (db.session) { db.session.rolActivo = r; persist(db); } },
     rolActivo() { return db.session ? db.session.rolActivo : null; },
 

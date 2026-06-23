@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v58';
+  const VERSION = 'v59';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -55,6 +55,9 @@ window.GDO = window.GDO || {};
 
     const rol = Store.rolActivo();
 
+    // ---- socio del GDO CLUB (no es personal): su tarjeta + puntos + aviso ----
+    if (rol === 'socio') return renderSocio(u && u.socio);
+
     // ---- experiencia repartidor (mobile, sin sidebar) ----
     if (rol === 'repartidor') {
       if (hash.startsWith('#/ruta/')) return V.rutaChofer(root(), hash.split('/')[2]);
@@ -72,7 +75,7 @@ window.GDO = window.GDO || {};
     const rol = Store.rolActivo();
     if (GDO.Notify) { GDO.Notify.rebaseline(); GDO.Notify.request(); }
     if (_pendingHash) { const h = _pendingHash; _pendingHash = null; go(h); render(); return; }
-    go(rol === 'repartidor' ? '#/mis-rutas' : (rol === 'vendedor' ? '#/pedidos' : '#/panel'));
+    go(rol === 'socio' ? '#/socio' : (rol === 'repartidor' ? '#/mis-rutas' : (rol === 'vendedor' ? '#/pedidos' : '#/panel')));
     render();
   }
 
@@ -176,7 +179,42 @@ window.GDO = window.GDO || {};
     const u = Store.current();
     if (!u) return '#/login';
     const rol = Store.rolActivo();
-    return rol === 'repartidor' ? '#/mis-rutas' : (rol === 'vendedor' ? '#/pedidos' : '#/panel');
+    return rol === 'socio' ? '#/socio' : (rol === 'repartidor' ? '#/mis-rutas' : (rol === 'vendedor' ? '#/pedidos' : '#/panel'));
+  }
+
+  // Vista del SOCIO del club cuando entra al sistema de reparto (su cuenta es de
+  // socio, no de personal): le mostramos su tarjeta + puntos y avisamos que el
+  // club está por ahora fuera de servicio.
+  function renderSocio(s) {
+    s = s || {};
+    const nro = ('0000' + (s.nroSocio || 0)).slice(-4);
+    const pts = Number(s.puntos || 0).toLocaleString('es-AR');
+    root().className = '';
+    root().innerHTML = `
+      <div style="min-height:100vh;background:#0f0f0f;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:16px">
+        <div style="width:100%;max-width:400px">
+          <div style="background:linear-gradient(135deg,#1f1f22,#000);border:1px solid #333;border-radius:18px;padding:22px;color:#fff;box-shadow:0 14px 44px rgba(0,0,0,.55)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+              <span style="width:40px;height:40px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 0 2px rgba(245,130,32,.6)"><img src="assets/isotipo-color.svg" alt="GDO" style="width:27px;height:27px"/></span>
+              <div style="font-family:'Zilla Slab',serif;font-weight:800;font-size:18px;letter-spacing:.5px">GDO <span style="color:#F58220">CLUB</span></div>
+            </div>
+            <div style="font-size:12px;color:#9a9a9d;text-transform:uppercase;letter-spacing:.5px">Socio</div>
+            <div style="font-size:21px;font-weight:800;line-height:1.15">${esc(s.nombre || 'Socio')}</div>
+            <div style="font-size:12.5px;color:#8a8a8d;margin-top:3px">N° ${nro}</div>
+            <div style="margin-top:18px;display:flex;align-items:baseline;gap:9px;border-top:1px solid #2a2a2d;padding-top:14px">
+              <span style="font-size:13px;color:#9a9a9d">Tus puntos</span>
+              <span style="font-size:32px;font-weight:900;color:#F58220;font-family:'Zilla Slab',serif">${pts}</span>
+            </div>
+          </div>
+          <div style="background:#15110a;border:1px solid #3a2a12;border-left:4px solid #F58220;color:#e8d4b0;border-radius:12px;padding:14px 16px;margin-top:16px;text-align:center;font-size:14px;line-height:1.55">
+            🛠️ El <b>GDO CLUB</b> está por el momento <b>fuera de servicio</b>.<br>¡Muy pronto vas a tener novedades!
+          </div>
+          <button class="btn btn-ghost btn-block" id="socio-logout" style="margin-top:16px;color:#fff;border-color:#3a3a3d">Cerrar sesión</button>
+        </div>
+        ${GDO.footHTML()}
+      </div>`;
+    const lo = root().querySelector('#socio-logout');
+    if (lo) lo.onclick = () => App.logout();
   }
 
   // Cambios llegados desde Firestore (otro dispositivo): re-render del contenido
