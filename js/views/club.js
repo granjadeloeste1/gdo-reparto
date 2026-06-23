@@ -93,8 +93,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       arr.sort((a, b) => (a.nroSocio || 0) - (b.nroSocio || 0));
       if (!arr.length) { box.innerHTML = '<div class="empty">Todavía no hay socios registrados.</div>'; return; }
       box.innerHTML =
+        `<div class="small muted" style="margin-bottom:8px">Tocá un socio para ver sus datos (DNI, dirección, teléfono, email).</div>` +
         `<table><thead><tr><th>N°</th><th>Socio</th><th>Email</th><th>Puntos</th><th>Desde</th><th></th></tr></thead><tbody>` +
-        arr.map((s) => `<tr>
+        arr.map((s) => `<tr data-ver="${esc(s._id)}" style="cursor:pointer">
           <td><b>${padNro(s.nroSocio)}</b></td>
           <td>${esc(s.nombre || '')}</td>
           <td class="small">${esc(s.email || '')}</td>
@@ -102,8 +103,38 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${fechaCorta(s.creado)}</td>
           <td class="t-actions"><button class="btn btn-ghost btn-sm" data-pts="${esc(s._id)}" title="Cargar puntos">＋ puntos</button></td>
         </tr>`).join('') + `</tbody></table>`;
-      box.querySelectorAll('[data-pts]').forEach((b) => b.onclick = () => cargarPuntos(arr.find((x) => x._id === b.dataset.pts)));
+      box.querySelectorAll('[data-ver]').forEach((tr) => tr.onclick = () => verSocio(arr.find((x) => x._id === tr.dataset.ver)));
+      box.querySelectorAll('[data-pts]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); cargarPuntos(arr.find((x) => x._id === b.dataset.pts)); });
     }, () => { box.innerHTML = '<div class="empty">No se pudieron cargar los socios.</div>'; }));
+  }
+
+  // Detalle del socio: muestra los datos que cargó al registrarse.
+  function filaDato(label, val) {
+    return `<div style="padding:9px 0;border-bottom:1px solid #eee">
+      <div style="font-size:11.5px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.3px">${label}</div>
+      <div style="font-size:15px;margin-top:2px">${esc(val || '—')}</div></div>`;
+  }
+  function verSocio(s) {
+    if (!s) return;
+    modal({
+      title: `Socio N° ${padNro(s.nroSocio)}`, width: 440,
+      bodyHTML:
+        `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <div style="font-size:13px;color:#6b7280">Puntos</div>
+          <div style="font-weight:900;color:#F58220;font-size:20px">${fmt(s.puntos)}</div>
+        </div>` +
+        filaDato('Nombre y apellido', s.nombre) +
+        filaDato('DNI', s.dni) +
+        filaDato('Teléfono / WhatsApp', s.telefono) +
+        filaDato('Email', s.email) +
+        filaDato('Dirección', s.direccion) +
+        filaDato('Socio desde', fechaCorta(s.creado)),
+      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button><button class="btn" data-pts>＋ Cargar puntos</button>`,
+      onMount(m, close) {
+        m.querySelector('[data-no]').onclick = close;
+        m.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
+      },
+    });
   }
 
   // Carga MANUAL de puntos (compra en el local). Transacción atómica.

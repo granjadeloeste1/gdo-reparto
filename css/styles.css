@@ -254,6 +254,10 @@ textarea{resize:vertical;min-height:74px}
   .tb-logout{display:inline-flex;align-items:center;justify-content:center}
   .tb-user{display:inline-flex;align-items:center;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;font-size:13px;color:var(--negro);background:var(--gris-cl);border-radius:999px;padding:7px 12px}
   .panel-b.flush{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* Cualquier tabla suelta (p.ej. las del CLUB en #club-body) también debe poder
+     correr en horizontal en el celular, para no quedar recortada (sin girar). */
+  #club-body,.tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  #club-body table{min-width:520px}
   table{font-size:13px}
   th,td{padding:10px 12px;white-space:nowrap}
 }
