@@ -134,6 +134,8 @@ service cloud.firestore {
                        && request.resource.data.costo is int
                        && request.resource.data.costo > 0
                        && request.resource.data.premioId is string
+                       // El premio tiene que existir y estar ACTIVO (no se canjea uno dado de baja).
+                       && get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.activo == true
                        && request.resource.data.costo == get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.costo
                        // Anti-fraude: el NOMBRE del voucher debe ser el del premio real.
                        // (Sin esto, un socio podía canjear un premio barato pero poner
