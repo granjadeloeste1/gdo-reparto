@@ -31,6 +31,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     clearSubs();
     if (!db()) { c.innerHTML = '<div class="empty">Sin conexión con la base. Reintentá en un momento.</div>'; return; }
     c.innerHTML = `
+      <div id="club-onoff" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="club-dot" style="width:11px;height:11px;border-radius:50%;background:#bbb;flex-shrink:0"></span>
+          <div><b>GDO CLUB</b><div class="small muted" id="club-estado">Consultando estado…</div></div>
+        </div>
+        <button class="btn btn-sm btn-ghost" id="club-toggle" disabled>…</button>
+      </div>
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-sm ${tab === 'mostrador' ? '' : 'btn-ghost'}" data-tab="mostrador">📍 Mostrador <span id="mb-badge"></span></button>
         <button class="btn btn-sm ${tab === 'socios' ? '' : 'btn-ghost'}" data-tab="socios">👥 Socios</button>
@@ -38,6 +45,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-sm ${tab === 'canjes' ? '' : 'btn-ghost'}" data-tab="canjes">📋 Canjes</button>
       </div>
       <div id="club-body"><div class="empty">Cargando…</div></div>`;
+    renderOnOff(c);
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.club(c); });
     const body = c.querySelector('#club-body');
     if (tab === 'mostrador') renderMostrador(body, c);
@@ -45,6 +53,38 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     else if (tab === 'premios') renderPremios(body);
     else renderCanjes(body);
   };
+
+  /* ---------------- ON / OFF del club ----------------
+     Doc club_config/flags { activo }. Si está apagado, el club NO aparece en la
+     tienda (lista mayorista/minorista) ni en la web (lo leen esas superficies). */
+  function renderOnOff(c) {
+    const dot = c.querySelector('#club-dot'), est = c.querySelector('#club-estado'), btn = c.querySelector('#club-toggle');
+    let actual = false;
+    function pintar(activo) {
+      actual = !!activo;
+      if (dot) dot.style.background = activo ? '#2e9e5b' : '#c0392b';
+      if (est) est.textContent = activo ? 'Activado · visible para los clientes' : 'Desactivado · oculto en la tienda y la web';
+      if (btn) { btn.disabled = false; btn.textContent = activo ? '⏸ Desactivar club' : '▶ Activar club'; btn.className = 'btn btn-sm ' + (activo ? 'btn-ghost' : ''); }
+      return activo;
+    }
+    db().collection('club_config').doc('flags').get()
+      .then((d) => pintar(d.exists && d.data().activo === true))
+      .catch(() => pintar(false));
+    if (btn) btn.onclick = () => {
+      const nuevo = !actual;
+      confirmDlg(
+        nuevo ? '¿Activar el GDO CLUB? Va a aparecer en la tienda y la web para los clientes.'
+              : '¿Desactivar el GDO CLUB? Se va a ocultar en la tienda y la web (los clientes no lo verán).',
+        () => {
+          btn.disabled = true; btn.textContent = 'Guardando…';
+          db().collection('club_config').doc('flags').set({ activo: nuevo, por: staffUid(), ts: FV().serverTimestamp() }, { merge: true })
+            .then(() => { pintar(nuevo); toast(nuevo ? '✓ Club ACTIVADO.' : '✓ Club DESACTIVADO.'); })
+            .catch(() => { pintar(actual); toast('No se pudo cambiar el estado.', 'error'); });
+        },
+        nuevo ? 'Activar' : 'Desactivar'
+      );
+    };
+  }
 
   /* ---------------- MOSTRADOR (check-ins por QR) ----------------
      El socio escanea el QR único → se crea una /visitas 'pendiente'. Acá el
