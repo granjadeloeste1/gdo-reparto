@@ -314,7 +314,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           ${p.puntos > 0 ? `<div class="spec">⭐ ${p.puntosAcreditados ? 'Puntos GDO acreditados (' + fmtN(p.puntos) + ')' : fmtN(p.puntos) + ' Puntos GDO al entregar'}</div>` : ''}
           ${aceptada && ruta.estado !== 'finalizada' && !done ? `<div class="acts">
               <a class="btn btn-dark full" data-nav="${p.id}" href="${(p.direccion || p.lat != null) ? Route.navStop(p) : '#'}" target="_blank"${!(p.direccion || p.lat != null) ? ' style="opacity:.5;pointer-events:none"' : ''}>🧭 Navegar a esta parada</a>
-              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(etaMostrar(p)), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
+              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" data-cerca="${p.id}" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(etaMostrar(p)), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
               <button class="btn btn-verde" data-ok="${p.id}">✓ Entregado</button>
               <button class="btn btn-rojo" data-no="${p.id}">✕ No entregado</button>
               <button class="btn btn-amarillo full" data-skip="${p.id}">↷ Saltear parada</button>
@@ -355,6 +355,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (p.puntos > 0 && !p.puntosAcreditados) creditarEntrega(p);
         });
       });
+      // "Avisar al cliente (está por llegar)": además de abrir WhatsApp, marca el
+      // pedido como EN CAMINO y lo sincroniza → el cliente ve "En camino" en vivo.
+      box.querySelectorAll('[data-cerca]').forEach((a) => a.addEventListener('click', () => {
+        const p = Store.pedido(a.dataset.cerca);
+        if (p && !p.enCamino && p.estado !== 'entregado' && p.estado !== 'no_entregado') {
+          p.enCamino = true; p.enCaminoTs = Date.now(); Store.upsertPedido(p);
+        }
+      }));
       box.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => {
         const p = Store.pedido(b.dataset.no);
         motivoModal('Motivo de no entrega', (mot) => { ruta.estado='en_curso'; setEstado(p, 'no_entregado', 'No entregado', mot); toast('Marcado como no entregado · aviso enviado', 'err'); });
