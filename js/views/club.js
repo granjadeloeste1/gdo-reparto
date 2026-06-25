@@ -210,12 +210,30 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         filaDato('Email', s.email) +
         filaDato('Dirección', s.direccion) +
         filaDato('Socio desde', fechaCorta(s.creado)),
-      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button><button class="btn" data-pts>＋ Cargar puntos</button>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button><button class="btn btn-ghost" data-del style="color:#c0392b">🗑 Eliminar</button><button class="btn" data-pts>＋ Cargar puntos</button>`,
       onMount(m, close) {
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
+        m.querySelector('[data-del]').onclick = () => { close(); eliminarSocioAdmin(s); };
       },
     });
+  }
+
+  // Eliminar socio desde el panel: borra su PERFIL y PUNTOS (datos personales).
+  // OJO: el login por email NO se puede borrar sin Admin SDK (servidor). Si la
+  // persona vuelve a entrar, se le crea un perfil nuevo en 0.
+  function eliminarSocioAdmin(s) {
+    if (!s) return;
+    confirmDlg(
+      '¿Eliminar al socio "' + (s.nombre || '') + '" (N° ' + padNro(s.nroSocio) + ')? Se borran sus datos y sus puntos. ' +
+      'El acceso por email NO se borra desde acá: si vuelve a entrar, se le crea un perfil nuevo en 0. No se puede deshacer.',
+      () => {
+        db().collection('clientes').doc(s._id).delete()
+          .then(() => toast('Socio eliminado.'))
+          .catch(() => toast('No se pudo eliminar.', 'error'));
+      },
+      'Eliminar'
+    );
   }
 
   // Carga MANUAL de puntos (compra en el local). Transacción atómica.

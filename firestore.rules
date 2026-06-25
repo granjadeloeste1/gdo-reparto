@@ -100,7 +100,8 @@ service cloud.firestore {
                         && request.resource.data.puntos is int
                         && request.resource.data.puntos >= 0
                         && request.resource.data.puntos <= resource.data.puntos);
-      allow delete: if isStaff();
+      // Borrar la cuenta: el personal, o el PROPIO socio (autoservicio, baja de datos).
+      allow delete: if isStaff() || isOwner(uid);
     }
 
     // ── Candado "1 canje de cada premio por MES CALENDARIO" (anti cambio de fecha) ──
