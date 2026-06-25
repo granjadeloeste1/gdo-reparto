@@ -103,6 +103,20 @@ service cloud.firestore {
       allow delete: if isStaff();
     }
 
+    // ── Candado "1 canje de cada premio por MES CALENDARIO" (anti cambio de fecha) ──
+    // El mes lo decide el SERVIDOR (request.time), NUNCA el reloj del cliente: cambiar
+    // la fecha de la PC no sirve. Doc id = premioId; guarda ts = serverTimestamp.
+    // Solo se puede (re)escribir si el mes GUARDADO es DISTINTO al mes actual del
+    // servidor → no se repite el mismo premio dentro del mismo mes calendario.
+    match /clientes/{uid}/canje_meses/{premioId} {
+      allow read:   if isOwner(uid) || isStaff();
+      allow create: if isOwner(uid) && request.resource.data.ts == request.time;
+      allow update: if isOwner(uid) && request.resource.data.ts == request.time
+                       && (resource.data.ts.year() != request.time.year()
+                           || resource.data.ts.month() != request.time.month());
+      allow delete: if isStaff();
+    }
+
     // Contador del NÚMERO DE SOCIO (cosmético, NO es dinero). El alta de un socio
     // toma el siguiente número en una transacción (incrementa de a 1). Doc:
     // club_config/contador { n: <int> }. App Check + login limitan el abuso.
@@ -134,6 +148,11 @@ service cloud.firestore {
                        && request.resource.data.costo is int
                        && request.resource.data.costo > 0
                        && request.resource.data.premioId is string
+                       // Vencimiento del voucher: máx ~30 días (con margen de reloj). El cliente
+                       // NO puede fabricarse uno que "no vence" (el tope usa request.time del servidor).
+                       && request.resource.data.venceMs is number
+                       && request.resource.data.venceMs > request.time.toMillis()
+                       && request.resource.data.venceMs <= request.time.toMillis() + 2764800000
                        // El premio tiene que existir y estar ACTIVO (no se canjea uno dado de baja).
                        && get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.activo == true
                        && request.resource.data.costo == get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.costo
@@ -141,11 +160,23 @@ service cloud.firestore {
                        // (Sin esto, un socio podía canjear un premio barato pero poner
                        //  el nombre de uno caro y reclamarlo en el mostrador.)
                        && request.resource.data.premioNombre == get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.nombre
+                       // SEGURIDAD "modo intriga": el CANJE solo se permite si el personal lo
+                       // habilitó (club_config/flags.canjeActivo == true). Sin esto, un usuario
+                       // avanzado podía saltear el "muy pronto" del front y canjear por API directa.
+                       && get(/databases/$(database)/documents/club_config/flags).data.get('canjeActivo', false) == true
                        && getAfter(/databases/$(database)/documents/clientes/$(request.auth.uid)).data.puntos == get(/databases/$(database)/documents/clientes/$(request.auth.uid)).data.puntos - request.resource.data.costo
+                       // CANDADO MENSUAL: obliga a (re)escribir el lock del premio a ESTE
+                       // mes del servidor en el MISMO commit. Si ya hubo un canje de este
+                       // premio en el mes actual, el update del lock se rechaza (regla de
+                       // /canje_meses) → toda la transacción falla. El mes = request.time.
+                       && getAfter(/databases/$(database)/documents/clientes/$(request.auth.uid)/canje_meses/$(request.resource.data.premioId)).data.ts == request.time
                     );
       // Marcar USADO en el mostrador: SOLO personal y SOLO una vez (single-use).
       // Una fotocopia comparte el mismo voucher: el primer escaneo lo anula para todos.
-      allow update: if isStaff() && resource.data.usado == false && request.resource.data.usado == true;
+      // Solo se puede marcar usado si NO está vencido (tiempo del SERVIDOR). Un voucher
+      // de más de 30 días ya no se acepta en el mostrador.
+      allow update: if isStaff() && resource.data.usado == false && request.resource.data.usado == true
+                       && resource.data.venceMs > request.time.toMillis();
       allow delete: if isStaff();
     }
 
@@ -177,6 +208,16 @@ service cloud.firestore {
       allow read:   if isStaff();
       allow create: if isStaff();
       allow update, delete: if false;
+    }
+
+    // Tickets cargados (id = N° de ticket). ANTI-DUPLICADO: el mismo N° no se puede
+    // cargar dos veces (la creación falla si ya existe). Solo personal. No se edita;
+    // el staff puede borrar para corregir un error de carga.
+    match /tickets/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff();
+      allow update: if false;
+      allow delete: if isStaff();
     }
   }
 }

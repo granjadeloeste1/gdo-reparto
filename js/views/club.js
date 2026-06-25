@@ -38,6 +38,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>
         <button class="btn btn-sm btn-ghost" id="club-toggle" disabled>…</button>
       </div>
+      <div id="canje-onoff" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="canje-dot" style="width:11px;height:11px;border-radius:50%;background:#bbb;flex-shrink:0"></span>
+          <div><b>Canje de premios</b><div class="small muted" id="canje-estado">Consultando estado…</div></div>
+        </div>
+        <button class="btn btn-sm btn-ghost" id="canje-toggle" disabled>…</button>
+      </div>
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-sm ${tab === 'mostrador' ? '' : 'btn-ghost'}" data-tab="mostrador">📍 Mostrador <span id="mb-badge"></span></button>
         <button class="btn btn-sm ${tab === 'socios' ? '' : 'btn-ghost'}" data-tab="socios">👥 Socios</button>
@@ -46,6 +53,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </div>
       <div id="club-body"><div class="empty">Cargando…</div></div>`;
     renderOnOff(c);
+    renderCanjeToggle(c);
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.club(c); });
     const body = c.querySelector('#club-body');
     if (tab === 'mostrador') renderMostrador(body, c);
@@ -82,6 +90,39 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             .catch(() => { pintar(actual); toast('No se pudo cambiar el estado.', 'error'); });
         },
         nuevo ? 'Activar' : 'Desactivar'
+      );
+    };
+  }
+
+  /* ---------------- ON / OFF del CANJE (modo intriga) ----------------
+     El club puede estar ACTIVO (la gente se asocia y suma puntos) pero con el CANJE
+     en pausa → en club.html los premios muestran "muy pronto". Doc
+     club_config/flags { canjeActivo }. Sin el campo = canje EN PAUSA (default). */
+  function renderCanjeToggle(c) {
+    const dot = c.querySelector('#canje-dot'), est = c.querySelector('#canje-estado'), btn = c.querySelector('#canje-toggle');
+    let actual = false;
+    function pintar(activo) {
+      actual = !!activo;
+      if (dot) dot.style.background = activo ? '#2e9e5b' : '#e08a1e';
+      if (est) est.textContent = activo ? 'Activado · los socios pueden canjear premios' : 'En pausa (modo intriga) · se asocian y suman, pero todavía no canjean';
+      if (btn) { btn.disabled = false; btn.textContent = activo ? '⏸ Pausar canje' : '▶ Activar canje'; btn.className = 'btn btn-sm ' + (activo ? 'btn-ghost' : ''); }
+      return activo;
+    }
+    db().collection('club_config').doc('flags').get()
+      .then((d) => pintar(d.exists && d.data().canjeActivo === true))
+      .catch(() => pintar(false));
+    if (btn) btn.onclick = () => {
+      const nuevo = !actual;
+      confirmDlg(
+        nuevo ? '¿Activar el CANJE de premios? Los socios van a poder canjear sus puntos.'
+              : '¿Pausar el canje? Los socios se asocian y suman puntos, pero al ir a canjear verán "muy pronto".',
+        () => {
+          btn.disabled = true; btn.textContent = 'Guardando…';
+          db().collection('club_config').doc('flags').set({ canjeActivo: nuevo, canjePor: staffUid(), canjeTs: FV().serverTimestamp() }, { merge: true })
+            .then(() => { pintar(nuevo); toast(nuevo ? '✓ Canje ACTIVADO.' : '✓ Canje EN PAUSA.'); })
+            .catch(() => { pintar(actual); toast('No se pudo cambiar el canje.', 'error'); });
+        },
+        nuevo ? 'Activar canje' : 'Pausar canje'
       );
     };
   }
@@ -185,29 +226,128 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       title: `Cargar puntos · ${socio.nombre || 'Socio'} (N° ${padNro(socio.nroSocio)})`, width: 440,
       bodyHTML:
         `<p class="small muted" style="margin:0 0 10px">Saldo actual: <b style="color:#F58220">${fmt(socio.puntos)}</b> puntos</p>` +
-        `<label style="font-size:13px;color:#5b6470;font-weight:600">Puntos a sumar</label>` +
-        `<input id="cp-pts" type="number" inputmode="numeric" min="1" placeholder="ej: 5000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+        `<button class="btn btn-sm" id="cp-foto" type="button" style="width:100%;margin-bottom:6px">📷 Leer ticket (foto)</button>` +
+        `<input id="cp-file" type="file" accept="image/*" capture="environment" style="display:none"/>` +
+        `<div id="cp-tmsg" class="small" style="margin:0 0 8px;text-align:center;display:none"></div>` +
+        `<label style="font-size:13px;color:#5b6470;font-weight:600">Monto de la compra ($)</label>` +
+        `<input id="cp-monto" type="number" inputmode="numeric" min="1" placeholder="ej: 15000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+        `<div id="cp-prev" style="margin-top:8px;font-size:13px;color:#5b6470">= <b style="color:#F58220">0</b> Puntos GDO <span class="muted">(1 punto cada $100)</span></div>` +
+        `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <span style="font-weight:400;color:#8a93a0">(opcional · evita cargar 2 veces el mismo)</span></label>` +
+        `<input id="cp-nro" type="text" inputmode="numeric" placeholder="ej: 10080" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
         `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Motivo (opcional)</label>` +
         `<input id="cp-mot" type="text" placeholder="ej: compra en el local" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>`,
       footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Sumar puntos</button>`,
       onMount(m, close) {
+        const ptsDe = (monto) => Math.floor((parseInt(monto, 10) || 0) / 100);   // $100 = 1 punto
+        const inp = m.querySelector('#cp-monto');
+        const prev = m.querySelector('#cp-prev');
+        const refreshPrev = () => { prev.innerHTML = '= <b style="color:#F58220">' + fmt(ptsDe(inp.value)) + '</b> Puntos GDO <span class="muted">(1 punto cada $100)</span>'; };
+        inp.oninput = refreshPrev;
+        let ticketFecha = '';
+        // Leer ticket por FOTO: código de barras (N° exacto) + OCR (sugiere total y fecha).
+        // Best-effort: lo que no lee, lo completa el cajero a mano.
+        const fileInp = m.querySelector('#cp-file'), tmsg = m.querySelector('#cp-tmsg');
+        m.querySelector('#cp-foto').onclick = () => fileInp.click();
+        fileInp.onchange = () => {
+          const f = fileInp.files && fileInp.files[0]; if (!f) return;
+          tmsg.style.display = 'block'; tmsg.style.color = '#5b6470'; tmsg.textContent = 'Leyendo el ticket…';
+          leerTicket(f, (s) => { tmsg.textContent = s; }).then((r) => {
+            if (r.monto) { inp.value = r.monto; refreshPrev(); }
+            if (r.nro) m.querySelector('#cp-nro').value = r.nro;
+            ticketFecha = r.fecha || '';
+            tmsg.innerHTML = (r.monto || r.nro)
+              ? '✓ Leí ' + (r.monto ? '<b>$' + fmt(r.monto) + '</b>' : '') + (r.nro ? ' · N° ' + esc(r.nro) : '') + ' — <b style="color:#b9770e">verificá el total antes de cargar.</b>'
+              : 'No pude leer el ticket. Cargalo a mano 👇';
+          }).catch(() => { tmsg.textContent = 'No se pudo leer la foto. Cargalo a mano.'; });
+          fileInp.value = '';
+        };
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-yes]').onclick = () => {
-          const pts = parseInt(m.querySelector('#cp-pts').value, 10);
-          const mot = (m.querySelector('#cp-mot').value || '').trim() || 'Carga manual';
-          if (!pts || pts <= 0) { toast('Poné una cantidad válida de puntos.', 'error'); return; }
+          const monto = parseInt(inp.value, 10);
+          const pts = ptsDe(monto);
+          const nro = (m.querySelector('#cp-nro').value || '').replace(/\D/g, '');
+          const mot = (m.querySelector('#cp-mot').value || '').trim() || (nro ? ('Ticket ' + nro) : ('Compra $' + fmt(monto)));
+          if (!monto || monto <= 0) { toast('Poné el monto de la compra.', 'error'); return; }
+          if (!pts || pts <= 0) { toast('El monto es muy chico para sumar puntos (mínimo $100).', 'error'); return; }
           const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Sumando…';
-          acreditar(socio._id, pts, mot, null)
-            .then(() => {
+          const op = nro ? acreditarPorTicket(socio._id, nro, ticketFecha, monto) : acreditar(socio._id, pts, mot, null);
+          op.then(() => {
               if (visitaId) {
                 db().collection('visitas').doc(visitaId).update({ estado: 'atendido', puntos: pts, por: staffUid(), cierreTs: FV().serverTimestamp() }).catch(() => {});
               }
               toast('✓ ' + fmt(pts) + ' puntos cargados.'); close();
             })
-            .catch(() => { toast('No se pudo cargar. Reintentá.', 'error'); btn.disabled = false; btn.textContent = 'Sumar puntos'; });
+            .catch((e) => {
+              const mm = (e && e.message) || '';
+              toast(mm === 'duplicado' ? ('Ese ticket (N° ' + nro + ') ya fue cargado antes.') : 'No se pudo cargar. Reintentá.', 'error');
+              btn.disabled = false; btn.textContent = 'Sumar puntos';
+            });
         };
       },
     });
+  }
+
+  // ---- Lector de ticket (foto): barcode → N° ; OCR → total/fecha. Todo best-effort. ----
+  function tkSoloDig(s){ return String(s == null ? '' : s).replace(/\D/g, ''); }
+  function tkTotal(txt){
+    // Busca "Total" y el número que lo sigue. Formato del remito: $93,700.00 (coma=miles).
+    const m = /total[^0-9]{0,14}\$?\s*([0-9][0-9.,]*)/i.exec(txt || '');
+    if (!m) return 0;
+    let s = m[1].replace(/[.,]\s*\d{2}\s*$/, '');   // saca centavos finales (.00)
+    s = s.replace(/[.,\s]/g, '');                   // saca separadores de miles
+    const n = parseInt(s, 10); return isNaN(n) ? 0 : n;
+  }
+  function tkFecha(txt){ const m = /(\d{4}-\d{2}-\d{2})/.exec(txt || '') || /(\d{2}\/\d{2}\/\d{4})/.exec(txt || ''); return m ? m[1] : ''; }
+  function tkNro(txt){ const m = /n[°ºo:\.\s]{0,4}\s*([0-9]{3,})/i.exec(txt || ''); return m ? m[1] : ''; }
+  function leerTicket(file, prog){
+    const out = { nro: '', fecha: '', monto: 0 };
+    const pBar = new Promise((res) => {
+      if (typeof Html5Qrcode === 'undefined' || typeof Html5QrcodeSupportedFormats === 'undefined') return res();
+      let el = document.createElement('div'); el.id = 'tk-scan-' + Math.floor(Math.random() * 1e9);
+      el.style.cssText = 'position:fixed;left:-99999px;top:0;width:320px;height:320px';
+      document.body.appendChild(el);
+      try {
+        const fmts = [Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_93, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.ITF];
+        const tmp = new Html5Qrcode(el.id, { formatsToSupport: fmts, verbose: false });
+        tmp.scanFile(file, false)
+          .then((t) => { out.nro = tkSoloDig(t); })
+          .catch(() => {})
+          .finally(() => { try { tmp.clear(); } catch (e) {} try { el.remove(); } catch (e) {} res(); });
+      } catch (e) { try { el.remove(); } catch (e2) {} res(); }
+    });
+    const pOcr = new Promise((res) => {
+      if (typeof Tesseract === 'undefined') return res();
+      if (prog) prog('Reconociendo el texto del ticket…');
+      try {
+        Tesseract.recognize(file, 'eng').then((r) => {
+          const txt = (r && r.data && r.data.text) || '';
+          out.monto = tkTotal(txt); out.fecha = tkFecha(txt);
+          if (!out.nro) out.nro = tkNro(txt);
+        }).catch(() => {}).finally(res);
+      } catch (e) { res(); }
+    });
+    return Promise.all([pBar, pOcr]).then(() => out);
+  }
+
+  // Acredita puntos a partir de un TICKET, en transacción, con anti-duplicado por N°.
+  // Guarda el ticket en /tickets (id = N°): si ya existe, NO vuelve a cargar.
+  function acreditarPorTicket(clienteUid, nro, fecha, monto){
+    const mn = parseInt(monto, 10) || 0;
+    const pts = Math.floor(mn / 100);
+    const cref = db().collection('clientes').doc(clienteUid);
+    const tref = db().collection('tickets').doc(String(nro));
+    const lref = db().collection('puntos_log').doc();
+    return db().runTransaction((tx) => tx.get(tref).then((td) => {
+      if (td.exists) throw new Error('duplicado');
+      return tx.get(cref).then((cd) => {
+        if (!cd.exists) throw new Error('socio');
+        const nuevo = (cd.data().puntos || 0) + pts;
+        tx.update(cref, { puntos: nuevo });
+        tx.set(tref, { nro: String(nro), fecha: String(fecha || ''), monto: mn, puntos: pts, clienteUid: clienteUid, por: staffUid(), ts: FV().serverTimestamp() });
+        tx.set(lref, { clienteUid: clienteUid, delta: pts, motivo: 'Ticket ' + nro, saldo: nuevo, ticketNro: String(nro), por: staffUid(), ts: FV().serverTimestamp() });
+        return nuevo;
+      });
+    }));
   }
 
   // Suma/resta puntos en transacción + log de auditoría. delta>0 acredita.
@@ -262,20 +402,27 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         `<input id="pm-ico" type="text" maxlength="2" value="${ed ? esc(p.ico || '') : '🎁'}" style="width:80px;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:18px;text-align:center"/>` +
         `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Nombre del premio</label>` +
         `<input id="pm-nom" type="text" value="${ed ? esc(p.nombre || '') : ''}" placeholder="ej: 1 kg de hamburguesas de pollo" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+        `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Valor del premio $ <span style="font-weight:400;color:#8a93a0">(precio de venta del producto, o monto del voucher)</span></label>` +
+        `<input id="pm-valor" type="number" inputmode="numeric" min="1" value="${ed ? (p.valorPesos || '') : ''}" placeholder="ej: 7000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+        `<div class="small muted" style="margin-top:4px">Puntos sugeridos = valor ÷ 2 (devolvés ~2% del valor). Lo podés ajustar abajo.</div>` +
         `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Costo en Puntos GDO</label>` +
-        `<input id="pm-costo" type="number" inputmode="numeric" min="1" value="${ed ? (p.costo || '') : ''}" placeholder="ej: 500000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+        `<input id="pm-costo" type="number" inputmode="numeric" min="1" value="${ed ? (p.costo || '') : ''}" placeholder="ej: 3500" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
         `<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer"><input id="pm-act" type="checkbox" ${(!ed || p.activo) ? 'checked' : ''}/> Activo (visible para los socios)</label>`,
       footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Guardar</button>`,
       onMount(m, close) {
+        // Al escribir el VALOR en $, sugiere los puntos (valor ÷ 2 = 2% de devolución).
+        const cp = m.querySelector('#pm-valor'), cpts = m.querySelector('#pm-costo');
+        cp.oninput = () => { const v = parseInt(cp.value, 10) || 0; if (v > 0) cpts.value = Math.round(v / 2); };
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-yes]').onclick = () => {
           const ico = (m.querySelector('#pm-ico').value || '🎁').trim() || '🎁';
           const nom = (m.querySelector('#pm-nom').value || '').trim();
-          const costo = parseInt(m.querySelector('#pm-costo').value, 10);
+          const valorPesos = parseInt(cp.value, 10) || 0;
+          const costo = parseInt(cpts.value, 10);
           const activo = m.querySelector('#pm-act').checked;
           if (!nom) { toast('Poné el nombre del premio.', 'error'); return; }
           if (!costo || costo <= 0) { toast('Poné el costo en puntos.', 'error'); return; }
-          const data = { ico: ico, nombre: nom, costo: costo, activo: activo };
+          const data = { ico: ico, nombre: nom, costo: costo, valorPesos: valorPesos, activo: activo };
           const ref = ed ? db().collection('premios').doc(p._id) : db().collection('premios').doc();
           const op = ed ? ref.update(data) : ref.set(data);
           op.then(() => { toast('Premio guardado.'); close(); }).catch(() => toast('No se pudo guardar.', 'error'));
