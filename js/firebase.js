@@ -45,6 +45,10 @@ window.GDO = window.GDO || {};
     try { if (firebase.appCheck) firebase.appCheck().activate('6LcFdCctAAAAAELE8bLAVjrYLFgVFHH_JO0oKOxw', true); } catch (e) {}
     FB.db = firebase.firestore();
     FB.auth = firebase.auth();
+    // SESIÓN POR PESTAÑA: la sesión del personal se CIERRA al cerrar la app/pestaña
+    // (antes sobrevivía). Así el próximo que entra —sobre todo el chofer— NO queda
+    // con la sesión del usuario anterior. Sobrevive recargas, NO el cierre.
+    try { FB.auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(function () {}); } catch (e) {}
     // Persistencia local (IndexedDB): la cache sobrevive recargas y cortes de red.
     try { FB.db.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
   } catch (e) {

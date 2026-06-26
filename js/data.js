@@ -6,6 +6,9 @@ window.GDO = window.GDO || {};
 
 (function () {
   const KEY = 'gdo_reparto_db_v5';
+  // La SESIÓN va en sessionStorage (por pestaña): se borra al cerrar la app → hay que
+  // loguearse de nuevo, y nunca queda sesión/caché vieja de otro usuario (p. ej. el chofer).
+  const SKEY = 'gdo_reparto_session';
   const INBOX = 'gdo_reparto_inbox'; // cola de pedidos entrantes desde la tienda online
   // ID imposible de adivinar: 128 bits de azar CRIPTOGRÁFICO. Es importante
   // porque /pedidos y /rutas tienen lectura por-id pública (link de seguimiento
@@ -164,21 +167,26 @@ window.GDO = window.GDO || {};
   }
 
   function load() {
+    let d = null;
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const d = JSON.parse(raw);
-        // El depósito es fijo: lo re-sincronizamos con la constante para que las
-        // correcciones de coordenadas lleguen a bases ya guardadas en localStorage.
-        d.depot = DEPOT;
-        return d;
-      }
+      // El depósito es fijo: lo re-sincronizamos con la constante para que las
+      // correcciones de coordenadas lleguen a bases ya guardadas en localStorage.
+      if (raw) { d = JSON.parse(raw); d.depot = DEPOT; }
     } catch (e) {}
-    const db = seed();
-    persist(db);
-    return db;
+    if (!d) d = seed();
+    // La sesión NO sale del cache de datos: vive en sessionStorage (por pestaña). Al
+    // cerrar la app se borra → al reabrir, la app pide login (no queda sesión vieja).
+    d.session = null;
+    try { const s = sessionStorage.getItem(SKEY); if (s) d.session = JSON.parse(s); } catch (e) {}
+    persist(d);
+    return d;
   }
-  function persist(d) { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (e) {} }
+  function persist(d) {
+    // Los DATOS van a localStorage SIN la sesión; la SESIÓN va aparte, a sessionStorage.
+    try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, d, { session: null }))); } catch (e) {}
+    try { sessionStorage.setItem(SKEY, JSON.stringify((d && d.session) || null)); } catch (e) {}
+  }
 
   // Vuelca los pedidos cargados por la tienda online (cola INBOX) hacia la
   // base de la app. Devuelve true si entró algún pedido nuevo. En producción
@@ -253,6 +261,11 @@ window.GDO = window.GDO || {};
   // Escucha las colecciones: cada snapshot reemplaza la cache en memoria, la
   // guarda en localStorage (cache offline) y dispara el re-render.
   function startSync() {
+    // Arranque LIMPIO: borramos los datos cacheados del usuario anterior para que,
+    // hasta que llegue el primer snapshot de Firestore, nadie vea pedidos/rutas que
+    // no le tocan (clave para el chofer). El primer snapshot los repuebla al instante.
+    db.pedidos = []; db.rutas = []; db.notificaciones = [];
+    persist(db); scheduleRender();
     seedFirestore().then(() => {
       let pedidosVistos = null; // null = primer snapshot (no avisar de lo ya existente)
       FS_COLLS.forEach((c) => {
