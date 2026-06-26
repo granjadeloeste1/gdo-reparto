@@ -100,6 +100,7 @@ window.GDO = window.GDO || {};
     admin: '<span class="chip chip-rol">Administrador</span>',
     vendedor: '<span class="chip chip-rol vendedor">Vendedor</span>',
     repartidor: '<span class="chip chip-rol repartidor">Repartidor</span>',
+    cajero: '<span class="chip chip-rol cajero">Cajero</span>',
   };
 
   GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe, ESTADO_CHIP, ROL_CHIP };

@@ -23,6 +23,10 @@ window.GDO = window.GDO || {};
     vendedor: [
       { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
     ],
+    cajero: [
+      { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
+      { hash: '#/club', ic: '⭐', t: 'GDO Club' },
+    ],
   };
 
   function rolesDisponibles(u) { return u.roles; }
@@ -86,7 +90,7 @@ window.GDO = window.GDO || {};
       case '#/panel': return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);
       case '#/pedidos': return V.pedidos(c);
       case '#/rutas': return V.rutas(c);
-      case '#/club': return rol === 'admin' ? V.club(c) : V.pedidos(c);
+      case '#/club': return (rol === 'admin' || rol === 'cajero') ? V.club(c) : V.pedidos(c);
       case '#/usuarios': return rol === 'admin' ? V.usuarios(c) : V.pedidos(c);
       case '#/vehiculos': return rol === 'admin' ? V.vehiculos(c) : V.pedidos(c);
       default: return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);

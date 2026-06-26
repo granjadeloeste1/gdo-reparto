@@ -11,6 +11,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const db = () => (GDO.FB && GDO.FB.enabled && GDO.FB.db) ? GDO.FB.db : null;
   const FV = () => firebase.firestore.FieldValue;
   const staffUid = () => (GDO.FB && GDO.FB.uid) ? GDO.FB.uid : null;
+  // El CAJERO solo carga puntos y escanea vouchers: sin premios, sin toggles, sin eliminar.
+  const esCajero = () => !!(GDO.Store && GDO.Store.rolActivo && GDO.Store.rolActivo() === 'cajero');
   const padNro = (n) => ('0000' + (n || 0)).slice(-4);
   function fechaCorta(ts) {
     try { const d = ts && ts.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
@@ -30,8 +32,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   GDO.Views.club = function (c) {
     clearSubs();
     if (!db()) { c.innerHTML = '<div class="empty">Sin conexión con la base. Reintentá en un momento.</div>'; return; }
+    const cajero = esCajero();
+    if (cajero && tab === 'premios') tab = 'mostrador';   // el cajero no administra premios
     c.innerHTML = `
-      <div id="club-onoff" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      ${cajero ? '' : `<div id="club-onoff" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 16px;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:10px">
           <span id="club-dot" style="width:11px;height:11px;border-radius:50%;background:#bbb;flex-shrink:0"></span>
           <div><b>GDO CLUB</b><div class="small muted" id="club-estado">Consultando estado…</div></div>
@@ -44,21 +48,20 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div><b>Canje de premios</b><div class="small muted" id="canje-estado">Consultando estado…</div></div>
         </div>
         <button class="btn btn-sm btn-ghost" id="canje-toggle" disabled>…</button>
-      </div>
+      </div>`}
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-sm ${tab === 'mostrador' ? '' : 'btn-ghost'}" data-tab="mostrador">📍 Mostrador <span id="mb-badge"></span></button>
         <button class="btn btn-sm ${tab === 'socios' ? '' : 'btn-ghost'}" data-tab="socios">👥 Socios</button>
-        <button class="btn btn-sm ${tab === 'premios' ? '' : 'btn-ghost'}" data-tab="premios">🎁 Premios</button>
+        ${cajero ? '' : `<button class="btn btn-sm ${tab === 'premios' ? '' : 'btn-ghost'}" data-tab="premios">🎁 Premios</button>`}
         <button class="btn btn-sm ${tab === 'canjes' ? '' : 'btn-ghost'}" data-tab="canjes">📋 Canjes</button>
       </div>
       <div id="club-body"><div class="empty">Cargando…</div></div>`;
-    renderOnOff(c);
-    renderCanjeToggle(c);
+    if (!cajero) { renderOnOff(c); renderCanjeToggle(c); }
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.club(c); });
     const body = c.querySelector('#club-body');
     if (tab === 'mostrador') renderMostrador(body, c);
     else if (tab === 'socios') renderSocios(body);
-    else if (tab === 'premios') renderPremios(body);
+    else if (tab === 'premios' && !cajero) renderPremios(body);
     else renderCanjes(body);
   };
 
@@ -210,11 +213,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         filaDato('Email', s.email) +
         filaDato('Dirección', s.direccion) +
         filaDato('Socio desde', fechaCorta(s.creado)),
-      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button><button class="btn btn-ghost" data-del style="color:#c0392b">🗑 Eliminar</button><button class="btn" data-pts>＋ Cargar puntos</button>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button>${esCajero() ? '' : '<button class="btn btn-ghost" data-del style="color:#c0392b">🗑 Eliminar</button>'}<button class="btn" data-pts>＋ Cargar puntos</button>`,
       onMount(m, close) {
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
-        m.querySelector('[data-del]').onclick = () => { close(); eliminarSocioAdmin(s); };
+        const delB = m.querySelector('[data-del]'); if (delB) delB.onclick = () => { close(); eliminarSocioAdmin(s); };
       },
     });
   }
@@ -250,7 +253,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         `<label style="font-size:13px;color:#5b6470;font-weight:600">Monto de la compra ($)</label>` +
         `<input id="cp-monto" type="number" inputmode="numeric" min="1" placeholder="ej: 15000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
         `<div id="cp-prev" style="margin-top:8px;font-size:13px;color:#5b6470">= <b style="color:#F58220">0</b> Puntos GDO <span class="muted">(1 punto cada $100)</span></div>` +
-        `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <span style="font-weight:400;color:#8a93a0">(opcional · evita cargar 2 veces el mismo)</span></label>` +
+        `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <span style="font-weight:400;color:#8a93a0">${esCajero() ? '(<b style=\"color:#c0392b\">obligatorio</b> · escaneá la foto o ponelo a mano)' : '(opcional · evita cargar 2 veces el mismo)'}</span></label>` +
         `<input id="cp-nro" type="text" inputmode="numeric" placeholder="ej: 10080" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
         `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Motivo (opcional)</label>` +
         `<input id="cp-mot" type="text" placeholder="ej: compra en el local" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>`,
@@ -287,6 +290,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const mot = (m.querySelector('#cp-mot').value || '').trim() || (nro ? ('Ticket ' + nro) : ('Compra $' + fmt(monto)));
           if (!monto || monto <= 0) { toast('Poné el monto de la compra.', 'error'); return; }
           if (!pts || pts <= 0) { toast('El monto es muy chico para sumar puntos (mínimo $100).', 'error'); return; }
+          // Para el CAJERO el ticket es OBLIGATORIO (escaneo o manual): evita carga sin respaldo.
+          if (esCajero() && !nro) { toast('Cargá el N° de ticket (escaneá la foto o ponelo a mano). Es obligatorio.', 'error'); return; }
           const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Sumando…';
           const op = nro ? acreditarPorTicket(socio._id, nro, ticketFecha, monto) : acreditar(socio._id, pts, mot, null);
           op.then(() => {
@@ -486,15 +491,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
       arr.sort((a, b) => (Number(!!a.usado) - Number(!!b.usado)) ||
         ((b.ts && b.ts.toMillis ? b.ts.toMillis() : 0) - (a.ts && a.ts.toMillis ? a.ts.toMillis() : 0)));
+      const puedeBorrar = !esCajero();   // el cajero escanea pero NO elimina vouchers
       box.innerHTML =
         `<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">` +
           `<button class="btn" id="cj-scan">📷 Escanear voucher</button>` +
-          (arr.length ? `<button class="btn btn-ghost" id="cj-delsel" style="color:#c0392b">🗑 Eliminar seleccionados</button>` : '') +
+          (arr.length && puedeBorrar ? `<button class="btn btn-ghost" id="cj-delsel" style="color:#c0392b">🗑 Eliminar seleccionados</button>` : '') +
         `</div>` +
         (arr.length
-          ? `<table><thead><tr><th style="width:34px"><input type="checkbox" id="cj-all" title="Seleccionar todos"/></th><th>Premio</th><th>Socio</th><th>Código</th><th>Estado</th></tr></thead><tbody>` +
+          ? `<table><thead><tr>${puedeBorrar ? '<th style="width:34px"><input type="checkbox" id="cj-all" title="Seleccionar todos"/></th>' : ''}<th>Premio</th><th>Socio</th><th>Código</th><th>Estado</th></tr></thead><tbody>` +
             arr.map((c) => `<tr>
-              <td><input type="checkbox" data-selc="${esc(c._id)}"/></td>
+              ${puedeBorrar ? `<td><input type="checkbox" data-selc="${esc(c._id)}"/></td>` : ''}
               <td>${c.premioIco || '🎁'} ${esc(c.premioNombre || '')}</td>
               <td class="small">${esc(c.socioNombre || '')}<br><span class="muted">N° ${padNro(c.socioNro)}</span></td>
               <td class="small" style="font-family:monospace">${esc(c.codigo || '')}</td>
@@ -502,7 +508,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             </tr>`).join('') + `</tbody></table>`
           : '<div class="empty">Todavía no hay canjes. Cuando un socio canjee un premio, su voucher aparece acá.</div>');
       box.querySelector('#cj-scan').onclick = escanearVoucher;
-      if (arr.length) {
+      if (arr.length && puedeBorrar) {
         // Limpieza de vouchers (p. ej. los de prueba viejos): casillero arriba (todos)
         // + uno por voucher; "Eliminar seleccionados" borra los tildados en un batch.
         const all = box.querySelector('#cj-all');
