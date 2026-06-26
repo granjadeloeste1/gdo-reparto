@@ -55,6 +55,23 @@ window.GDO = window.GDO || {};
     const d = new Date(iso + 'T00:00:00');
     return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
   }
+  const DIAS_SEMANA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const DIA_IDX = { domingo: 0, lunes: 1, martes: 2, miercoles: 3, 'miércoles': 3, jueves: 4, viernes: 5, sabado: 6, 'sábado': 6 };
+  // Fecha ISO (YYYY-MM-DD) del PRÓXIMO día de la semana ("Jueves"). Regla: si hoy ya es
+  // ese día, devuelve el de la semana que viene (nunca hoy). 'desde' opcional (Date).
+  function proximoDiaFecha(nombreDia, desde) {
+    const di = DIA_IDX[String(nombreDia == null ? '' : nombreDia).trim().toLowerCase()];
+    if (di == null) return '';
+    const b = desde ? new Date(desde) : new Date(); b.setHours(0, 0, 0, 0);
+    let diff = (di - b.getDay() + 7) % 7; if (diff === 0) diff = 7;
+    b.setDate(b.getDate() + diff);
+    return b.getFullYear() + '-' + String(b.getMonth() + 1).padStart(2, '0') + '-' + String(b.getDate()).padStart(2, '0');
+  }
+  // Nombre del día de la semana de una fecha ISO ("Jueves").
+  function diaSemanaDe(iso) {
+    if (!iso) return '';
+    return DIAS_SEMANA[new Date(iso + 'T00:00:00').getDay()] || '';
+  }
   function fmtHora(min) { // minutos desde 00:00 -> "HH:MM"
     const h = Math.floor(min / 60) % 24, m = Math.round(min % 60);
     return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
@@ -85,5 +102,5 @@ window.GDO = window.GDO || {};
     repartidor: '<span class="chip chip-rol repartidor">Repartidor</span>',
   };
 
-  GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, ESTADO_CHIP, ROL_CHIP };
+  GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe, ESTADO_CHIP, ROL_CHIP };
 })();

@@ -2,7 +2,7 @@
 window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 (function () {
   const { Store } = GDO;
-  const { esc, h, toast, modal, confirmDlg, fmtFecha, ESTADO_CHIP, ROL_CHIP } = GDO.UI;
+  const { esc, h, toast, modal, confirmDlg, fmtFecha, proximoDiaFecha, diaSemanaDe, ESTADO_CHIP, ROL_CHIP } = GDO.UI;
   const go = (hash) => { location.hash = hash; };
 
   /* ---------------- Tablero ---------------- */
@@ -64,7 +64,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const draw = () => {
       const q = c.querySelector('#p-q').value.toLowerCase();
       const est = c.querySelector('#p-est').value;
-      let list = Store.pedidos().slice().reverse();
+      let list = Store.pedidos().slice();
+      // Orden por fecha de entrega: la más cercana arriba, la más lejana abajo; los que
+      // no tienen fecha quedan al fondo; a igualdad de fecha, el más nuevo primero.
+      list.sort((a, b) => {
+        const fa = efFechaEntrega(a), fb = efFechaEntrega(b);
+        if (fa && fb) { if (fa !== fb) return fa < fb ? -1 : 1; }
+        else if (fa) return -1;
+        else if (fb) return 1;
+        return (b.ts || 0) - (a.ts || 0);
+      });
       if (soyVend) list = list.filter((p) => p.creadoPor === Store.current().id);
       if (q) list = list.filter((p) => (p.cliente + ' ' + p.direccion + ' ' + (p.localidad || '')).toLowerCase().includes(q));
       if (est === 'activos') list = list.filter((p) => p.estado !== 'entregado');
@@ -374,6 +383,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
   GDO.Views.ocrPedidoModal = ocrPedidoModal;
 
+  // Fecha de entrega EFECTIVA: la cargada, o la derivada del día elegido en la tienda
+  // (próximo ese día). Permite ordenar y mostrar aunque falte la fecha exacta.
+  function efFechaEntrega(p) { return (p && p.fechaEntrega) || (p && p.diaEntrega ? proximoDiaFecha(p.diaEntrega) : ''); }
+  // Celda "Entrega": día de la semana (resaltado) + fecha, para armar rutas ordenado.
+  function celdaEntrega(p) {
+    const f = efFechaEntrega(p);
+    if (!f) return '<span class="chip chip-pend" style="font-size:10px">A asignar</span>';
+    return '<b>' + esc(diaSemanaDe(f)) + '</b><div class="small muted">' + fmtFecha(f) + '</div>';
+  }
   function renderPedidosTabla(box, list, opts) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }
     const sel = opts && opts.sel;            // Set de ids tildados (si la vista lo pide)
@@ -390,7 +408,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : ''}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${esc(resumenItems(p.items))}${p.formaPago ? `<div class="small muted" style="margin-top:2px">💳 ${esc(p.formaPago)}</div>` : ''}</td>
-          <td class="small">${p.fechaEntrega ? fmtFecha(p.fechaEntrega) : '<span class="chip chip-pend" style="font-size:10px">A asignar</span>'}</td>
+          <td class="small">${celdaEntrega(p)}</td>
           <td>${ESTADO_CHIP[p.estado] || p.estado}${asignacionInfo(p)}</td>
           <td class="t-actions">
             ${p.estado === 'no_entregado' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
@@ -552,8 +570,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : (pf.localidad || ''))}" placeholder="Se completa al elegir la dirección"/></div>
           <div class="field"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : (pf.entrecalles || ''))}" placeholder="Calle A y Calle B"/></div>
           <div class="field"><label>Teléfono</label><input id="f-tel" value="${esc(p ? p.telefono : (pf.telefono || ''))}" placeholder="11 5555-5555"/></div>
-          <div class="field"><label>Fecha de entrega</label><input id="f-fec" type="date" value="${esc(p ? p.fechaEntrega : '')}"/>
-            <span class="help">Opcional. Se asigna sola al armar la ruta.</span></div>
+          <div class="field"><label>Fecha de entrega</label><input id="f-fec" type="date" value="${esc(p ? efFechaEntrega(p) : '')}"/>
+            <span class="help">${p && p.diaEntrega ? 'El cliente eligió <b>' + esc(p.diaEntrega) + '</b> · agendada al próximo. ' : ''}Podés cambiarla a mano.</span></div>
           <div class="field"><label>Ventana horaria</label><input id="f-vent" value="${esc(p ? p.ventana : '')}" placeholder="Ej: 8 a 11 hs"/></div>
           <div class="field"><label>Prioridad</label>
             <select id="f-prio">
