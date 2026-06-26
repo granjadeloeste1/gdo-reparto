@@ -388,19 +388,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     subs.push(db().collection('premios').onSnapshot((snap) => {
       const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
       arr.sort((a, b) => (a.costo || 0) - (b.costo || 0));
-      // ¿Están TODOS activos? define si el botón masivo activa o desactiva.
-      const allActive = arr.length > 0 && arr.every((p) => p.activo);
       box.innerHTML =
-        `<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px">` +
+        `<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">` +
           `<button class="btn" id="pr-add">＋ Nuevo premio</button>` +
           (arr.length
-            ? `<button class="btn btn-ghost" id="pr-all">${allActive ? '🚫 Desactivar todos' : '✅ Activar todos'}</button>` +
-              `<button class="btn btn-ghost" id="pr-delall" style="color:#c0392b">🗑 Eliminar todos</button>`
+            ? `<button class="btn btn-ghost" id="pr-act">✅ Activar seleccionados</button>` +
+              `<button class="btn btn-ghost" id="pr-des">🚫 Desactivar seleccionados</button>` +
+              `<button class="btn btn-ghost" id="pr-delsel" style="color:#c0392b">🗑 Eliminar seleccionados</button>`
             : '') +
         `</div>` +
         (arr.length
-          ? `<table><thead><tr><th></th><th>Premio</th><th>Costo</th><th>Estado</th><th></th></tr></thead><tbody>` +
+          ? `<table><thead><tr><th style="width:34px"><input type="checkbox" id="pr-all" title="Seleccionar todos"/></th><th></th><th>Premio</th><th>Costo</th><th>Estado</th><th></th></tr></thead><tbody>` +
             arr.map((p) => `<tr>
+              <td><input type="checkbox" data-selp="${esc(p._id)}"/></td>
               <td style="font-size:22px">${p.ico || '🎁'}</td>
               <td>${esc(p.nombre || '')}</td>
               <td><b style="color:#F58220">${fmt(p.costo)}</b> pts</td>
@@ -410,23 +410,25 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           : '<div class="empty">No hay premios cargados. Agregá el primero.</div>');
       box.querySelector('#pr-add').onclick = () => premioModal(null);
       if (arr.length) {
-        // Activar/Desactivar TODOS de una (batch atómico).
-        box.querySelector('#pr-all').onclick = () => {
-          const target = !allActive;
-          confirmDlg('¿' + (target ? 'Activar' : 'Desactivar') + ' los ' + arr.length + ' premios juntos?', () => {
+        // Casillero "todos" (arriba): tilda/destilda todos. Cada premio tiene el suyo,
+        // así podés excluir alguno antes de activar/desactivar/eliminar.
+        const all = box.querySelector('#pr-all');
+        all.onchange = () => box.querySelectorAll('[data-selp]').forEach((cb) => { cb.checked = all.checked; });
+        // Ids de los premios TILDADOS ahora mismo (lectura directa del DOM).
+        const seleccion = () => Array.prototype.map.call(box.querySelectorAll('[data-selp]:checked'), (cb) => cb.dataset.selp);
+        // Aplica una operación de batch sobre los tildados, con confirmación.
+        const sobreSel = (verbo, fn, hecho) => {
+          const ids = seleccion();
+          if (!ids.length) { toast('Tildá al menos un premio.', 'error'); return; }
+          confirmDlg('¿' + verbo + ' ' + ids.length + ' premio(s) seleccionado(s)?', () => {
             const batch = db().batch();
-            arr.forEach((p) => batch.update(db().collection('premios').doc(p._id), { activo: target }));
-            batch.commit().then(() => toast(arr.length + ' premios ' + (target ? 'activados' : 'desactivados') + '.')).catch(() => toast('No se pudo.', 'error'));
+            ids.forEach((id) => fn(batch, db().collection('premios').doc(id)));
+            batch.commit().then(() => toast(ids.length + ' premio(s) ' + hecho + '.')).catch(() => toast('No se pudo.', 'error'));
           });
         };
-        // Eliminar TODOS de una (con aviso fuerte: no se puede deshacer).
-        box.querySelector('#pr-delall').onclick = () => {
-          confirmDlg('⚠️ ¿ELIMINAR los ' + arr.length + ' premios? Esto NO se puede deshacer.', () => {
-            const batch = db().batch();
-            arr.forEach((p) => batch.delete(db().collection('premios').doc(p._id)));
-            batch.commit().then(() => toast('Se eliminaron ' + arr.length + ' premios.')).catch(() => toast('No se pudieron eliminar.', 'error'));
-          });
-        };
+        box.querySelector('#pr-act').onclick = () => sobreSel('Activar', (b, ref) => b.update(ref, { activo: true }), 'activado(s)');
+        box.querySelector('#pr-des').onclick = () => sobreSel('Desactivar', (b, ref) => b.update(ref, { activo: false }), 'desactivado(s)');
+        box.querySelector('#pr-delsel').onclick = () => sobreSel('⚠️ ELIMINAR (no se puede deshacer)', (b, ref) => b.delete(ref), 'eliminado(s)');
       }
       box.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => premioModal(arr.find((x) => x._id === b.dataset.edit)));
       box.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {

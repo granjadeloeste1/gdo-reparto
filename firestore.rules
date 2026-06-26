@@ -140,7 +140,10 @@ service cloud.firestore {
     // Anti-estafa: el costo debe coincidir con el del premio real.
     match /canjes/{id} {
       allow get:  if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
-      allow list: if isStaff();
+      // El socio LISTA sus PROPIOS canjes (consulta filtrada por clienteUid) para verlos
+      // en "Mis canjes". La condición obliga a que la query esté acotada a su uid: no
+      // puede listar los de otro. El personal ve todos.
+      allow list: if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
       allow create: if isStaff() || (
                        request.auth != null
                        && request.resource.data.clienteUid == request.auth.uid
