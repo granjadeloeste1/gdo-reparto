@@ -487,10 +487,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       arr.sort((a, b) => (Number(!!a.usado) - Number(!!b.usado)) ||
         ((b.ts && b.ts.toMillis ? b.ts.toMillis() : 0) - (a.ts && a.ts.toMillis ? a.ts.toMillis() : 0)));
       box.innerHTML =
-        `<div style="margin-bottom:12px"><button class="btn" id="cj-scan">📷 Escanear voucher</button></div>` +
+        `<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">` +
+          `<button class="btn" id="cj-scan">📷 Escanear voucher</button>` +
+          (arr.length ? `<button class="btn btn-ghost" id="cj-delsel" style="color:#c0392b">🗑 Eliminar seleccionados</button>` : '') +
+        `</div>` +
         (arr.length
-          ? `<table><thead><tr><th>Premio</th><th>Socio</th><th>Código</th><th>Estado</th></tr></thead><tbody>` +
+          ? `<table><thead><tr><th style="width:34px"><input type="checkbox" id="cj-all" title="Seleccionar todos"/></th><th>Premio</th><th>Socio</th><th>Código</th><th>Estado</th></tr></thead><tbody>` +
             arr.map((c) => `<tr>
+              <td><input type="checkbox" data-selc="${esc(c._id)}"/></td>
               <td>${c.premioIco || '🎁'} ${esc(c.premioNombre || '')}</td>
               <td class="small">${esc(c.socioNombre || '')}<br><span class="muted">N° ${padNro(c.socioNro)}</span></td>
               <td class="small" style="font-family:monospace">${esc(c.codigo || '')}</td>
@@ -498,6 +502,21 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             </tr>`).join('') + `</tbody></table>`
           : '<div class="empty">Todavía no hay canjes. Cuando un socio canjee un premio, su voucher aparece acá.</div>');
       box.querySelector('#cj-scan').onclick = escanearVoucher;
+      if (arr.length) {
+        // Limpieza de vouchers (p. ej. los de prueba viejos): casillero arriba (todos)
+        // + uno por voucher; "Eliminar seleccionados" borra los tildados en un batch.
+        const all = box.querySelector('#cj-all');
+        all.onchange = () => box.querySelectorAll('[data-selc]').forEach((cb) => { cb.checked = all.checked; });
+        box.querySelector('#cj-delsel').onclick = () => {
+          const ids = Array.prototype.map.call(box.querySelectorAll('[data-selc]:checked'), (cb) => cb.dataset.selc);
+          if (!ids.length) { toast('Tildá al menos un voucher.', 'error'); return; }
+          confirmDlg('⚠️ ¿ELIMINAR ' + ids.length + ' voucher(s) seleccionado(s)? No se puede deshacer.', () => {
+            const batch = db().batch();
+            ids.forEach((id) => batch.delete(db().collection('canjes').doc(id)));
+            batch.commit().then(() => toast('Se eliminaron ' + ids.length + ' voucher(s).')).catch(() => toast('No se pudo.', 'error'));
+          });
+        };
+      }
     }, () => { box.innerHTML = '<div class="empty">No se pudieron cargar los canjes.</div>'; }));
   }
 
