@@ -178,7 +178,6 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const chips = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">`
         + chipBtn('', 'Todos')
         + dias.map((f) => chipBtn(f || 'sin', f ? (esc(diaSemanaDe(f)) + ' ' + fmtFecha(f)) : 'Sin fecha')).join('')
-        + (filtroDia ? `<button type="button" class="btn btn-sm" id="r-tildia" style="margin-left:auto">✓ Tildar todos los de este día</button>` : '')
         + `</div>`;
       const vis = filtroDia ? elegibles.filter((p) => (efFecha(p) || 'sin') === filtroDia) : elegibles;
       pedsBox.innerHTML = chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
@@ -189,9 +188,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
         </tr>`; }).join('')}</tbody></table>`;
       // Chips de día: filtran la lista. El botón tilda todos los del día elegido de una.
-      pedsBox.querySelectorAll('[data-dia]').forEach((b) => b.onclick = () => { filtroDia = b.dataset.dia; drawPeds(); });
-      const _tild = pedsBox.querySelector('#r-tildia');
-      if (_tild) _tild.onclick = () => { vis.forEach((p) => { if (!ruta.pedidoIds.includes(p.id)) ruta.pedidoIds.push(p.id); }); recompute(); drawPeds(); };
+      pedsBox.querySelectorAll('[data-dia]').forEach((b) => b.onclick = () => {
+        filtroDia = b.dataset.dia;
+        // Elegir un día concreto: le pone esa FECHA a la ruta y AGRUPA (tilda) todos sus pedidos.
+        if (filtroDia && filtroDia !== 'sin') {
+          const fec = $('#r-fec'); if (fec) fec.value = filtroDia;
+          ruta.fecha = filtroDia;
+          elegibles.forEach((p) => { if (efFecha(p) === filtroDia && !ruta.pedidoIds.includes(p.id)) ruta.pedidoIds.push(p.id); });
+          recompute();
+        }
+        drawPeds();
+      });
       pedsBox.querySelectorAll('[data-pid]').forEach((cb) => cb.onchange = () => {
         const id = cb.dataset.pid;
         if (cb.checked) { if (!ruta.pedidoIds.includes(id)) ruta.pedidoIds.push(id); }
