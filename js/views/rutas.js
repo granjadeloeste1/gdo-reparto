@@ -167,15 +167,31 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
     // lista de pedidos elegibles con checkbox
     const pedsBox = $('#r-peds');
+    let filtroDia = '';   // '' = todos los días; si no, una fecha ISO (YYYY-MM-DD) o 'sin'
     const drawPeds = () => {
       if (!elegibles.length) { pedsBox.innerHTML = `<div class="empty">No hay pedidos pendientes.</div>`; return; }
-      pedsBox.innerHTML = `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
-        ${elegibles.map((p) => { const f = efFecha(p); return `<tr>
+      // Días presentes en los pedidos disponibles (por fecha de entrega), del más cercano al más lejano.
+      const dias = []; const vistos = {};
+      elegibles.forEach((p) => { const k = efFecha(p) || 'sin'; if (!vistos[k]) { vistos[k] = true; dias.push(efFecha(p)); } });
+      dias.sort((a, b) => (a && b) ? (a < b ? -1 : (a > b ? 1 : 0)) : (a ? -1 : 1));
+      const chipBtn = (val, txt) => `<button type="button" class="btn btn-sm ${filtroDia === val ? '' : 'btn-ghost'}" data-dia="${val}">${txt}</button>`;
+      const chips = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">`
+        + chipBtn('', 'Todos')
+        + dias.map((f) => chipBtn(f || 'sin', f ? (esc(diaSemanaDe(f)) + ' ' + fmtFecha(f)) : 'Sin fecha')).join('')
+        + (filtroDia ? `<button type="button" class="btn btn-sm" id="r-tildia" style="margin-left:auto">✓ Tildar todos los de este día</button>` : '')
+        + `</div>`;
+      const vis = filtroDia ? elegibles.filter((p) => (efFecha(p) || 'sin') === filtroDia) : elegibles;
+      pedsBox.innerHTML = chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
+        ${vis.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${p.id}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
           <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b></td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
           <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}</td>
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
         </tr>`; }).join('')}</tbody></table>`;
+      // Chips de día: filtran la lista. El botón tilda todos los del día elegido de una.
+      pedsBox.querySelectorAll('[data-dia]').forEach((b) => b.onclick = () => { filtroDia = b.dataset.dia; drawPeds(); });
+      const _tild = pedsBox.querySelector('#r-tildia');
+      if (_tild) _tild.onclick = () => { vis.forEach((p) => { if (!ruta.pedidoIds.includes(p.id)) ruta.pedidoIds.push(p.id); }); recompute(); drawPeds(); };
       pedsBox.querySelectorAll('[data-pid]').forEach((cb) => cb.onchange = () => {
         const id = cb.dataset.pid;
         if (cb.checked) { if (!ruta.pedidoIds.includes(id)) ruta.pedidoIds.push(id); }
