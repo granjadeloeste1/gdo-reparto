@@ -2,7 +2,7 @@
 window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 (function () {
   const { Store, Route } = GDO;
-  const { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur } = GDO.UI;
+  const { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, proximoDiaFecha, diaSemanaDe } = GDO.UI;
   const go = (hash) => { location.hash = hash; };
 
   const ESTADO_RUTA = {
@@ -32,7 +32,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const box = c.querySelector('#r-tabla');
     const draw = () => {
       const f = c.querySelector('#r-filtro').value;
-      let list = Store.rutas().slice().reverse();
+      // Ordenadas por fecha: la próxima a entregar arriba (igual que Pedidos).
+      let list = Store.rutas().slice().sort((a, b) => {
+        const fa = a.fecha || '', fb = b.fecha || '';
+        if (fa && fb) return fa < fb ? -1 : (fa > fb ? 1 : 0);
+        return fa ? -1 : (fb ? 1 : 0);
+      });
       if (f === 'activas') list = list.filter((r) => r.estado !== 'finalizada');
       else if (f === 'finalizada') list = list.filter((r) => r.estado === 'finalizada');
       box.innerHTML = list.length ? `<table><thead><tr>
@@ -96,10 +101,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // IMPORTANTE: un pedido que ya pertenece a OTRA ruta NO aparece acá, así no
     // se asigna dos veces por error (rutas duplicadas). Solo vuelven a estar
     // disponibles si se elimina/edita esa ruta o se reabren con "↻ Reasignar".
+    // Fecha efectiva de entrega (la cargada o la del día elegido en la tienda).
+    const efFecha = (p) => (p && p.fechaEntrega) || (p && p.diaEntrega ? proximoDiaFecha(p.diaEntrega) : '');
     const elegibles = Store.pedidos().filter((p) =>
       ruta.pedidoIds.includes(p.id) ||
       (p.estado === 'pendiente' && (!p.rutaId || p.rutaId === ruta.id))
-    );
+    ).sort((a, b) => {
+      const fa = efFecha(a), fb = efFecha(b);
+      if (fa && fb) return fa < fb ? -1 : (fa > fb ? 1 : 0);
+      return fa ? -1 : (fb ? 1 : 0);
+    });
 
     c.innerHTML = `
       <div class="section-title">
@@ -158,19 +169,20 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const pedsBox = $('#r-peds');
     const drawPeds = () => {
       if (!elegibles.length) { pedsBox.innerHTML = `<div class="empty">No hay pedidos pendientes.</div>`; return; }
-      pedsBox.innerHTML = `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Pedido</th><th>Prioridad</th></tr></thead><tbody>
-        ${elegibles.map((p) => `<tr>
+      pedsBox.innerHTML = `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
+        ${elegibles.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${p.id}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
-          <td><b>${esc(p.cliente)}</b></td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
-          <td class="small">${(p.items||[]).map((i)=>i.cantidad+'× '+i.producto).join(', ')}</td>
+          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b></td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
+          <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}</td>
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
-        </tr>`).join('')}</tbody></table>`;
+        </tr>`; }).join('')}</tbody></table>`;
       pedsBox.querySelectorAll('[data-pid]').forEach((cb) => cb.onchange = () => {
         const id = cb.dataset.pid;
         if (cb.checked) { if (!ruta.pedidoIds.includes(id)) ruta.pedidoIds.push(id); }
         else { ruta.pedidoIds = ruta.pedidoIds.filter((x) => x !== id); delete ruta.demoraPorId[id]; }
         recompute();
       });
+      pedsBox.querySelectorAll('[data-ver]').forEach((b) => b.onclick = () => { if (GDO.pedidoModal) GDO.pedidoModal(b.dataset.ver); });
       $('#r-count').textContent = `${ruta.pedidoIds.length} seleccionados`;
     };
 

@@ -3,6 +3,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 (function () {
   const { Store } = GDO;
   const { esc, h, toast, modal, confirmDlg, fmtFecha, proximoDiaFecha, diaSemanaDe, ESTADO_CHIP, ROL_CHIP } = GDO.UI;
+  // Exponemos el detalle del pedido para poder abrirlo desde otras vistas (rutas) al tocar el pedido.
+  GDO.pedidoModal = function (id, after, prefill) { return pedidoModal(id, after, prefill); };
   const go = (hash) => { location.hash = hash; };
 
   /* ---------------- Tablero ---------------- */
@@ -400,14 +402,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const todos = checkable && list.every((p) => sel.has(p.id));
     box.innerHTML = `<table><thead><tr>
         ${checkable ? `<th style="width:34px"><input type="checkbox" id="p-all" ${todos ? 'checked' : ''} title="Seleccionar todos"/></th>` : ''}
-        <th>Cliente</th><th>Dirección</th><th>Localidad</th><th>Pedido</th><th>Entrega</th><th>Estado</th><th></th>
+        <th>Cliente</th><th>Dirección</th><th>Localidad</th><th>Entrega</th><th>Estado</th><th></th>
       </tr></thead><tbody>${list.map((p) => `
         <tr${checkable && sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
           ${checkable ? `<td><input type="checkbox" data-sel="${p.id}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
-          <td><b>${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
+          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
           <td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : ''}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
-          <td class="small">${esc(resumenItems(p.items))}${p.formaPago ? `<div class="small muted" style="margin-top:2px">💳 ${esc(p.formaPago)}</div>` : ''}</td>
           <td class="small">${celdaEntrega(p)}</td>
           <td>${ESTADO_CHIP[p.estado] || p.estado}${asignacionInfo(p)}</td>
           <td class="t-actions">
@@ -445,6 +446,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     box.querySelectorAll('[data-pod]').forEach((b) => b.onclick = () => podModal(Store.pedido(b.dataset.pod)));
     box.querySelectorAll('[data-wpp]').forEach((b) => b.onclick = () => wppModal(Store.pedido(b.dataset.wpp)));
     box.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => pedidoModal(b.dataset.edit, () => GDO.App.render()));
+    box.querySelectorAll('[data-ver]').forEach((b) => b.onclick = () => pedidoModal(b.dataset.ver, () => GDO.App.render()));
     box.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
       const p = Store.pedido(b.dataset.del);
       confirmDlg(`¿Eliminar el pedido de "${p.cliente}"?`, () => { Store.deletePedido(p.id); toast('Pedido eliminado', 'ok'); GDO.App.render(); });
