@@ -23,7 +23,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="panel-h"><h3>Pedidos recientes</h3><button class="btn btn-primary btn-sm" id="d-new">+ Nuevo pedido</button></div>
         <div class="panel-b flush"><div id="d-tabla"></div></div>
       </div>`;
-    renderPedidosTabla(c.querySelector('#d-tabla'), peds.slice(-6).reverse());
+    // Solo pedidos ACTIVOS (los entregados no ensucian el tablero; quedan guardados y se ven en Pedidos → "Entregado").
+    renderPedidosTabla(c.querySelector('#d-tabla'), peds.filter((p) => p.estado !== 'entregado').slice(-6).reverse());
     c.querySelector('#d-new').onclick = () => pedidoModal(null, () => GDO.App.render());
   };
 
