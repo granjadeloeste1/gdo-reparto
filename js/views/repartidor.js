@@ -17,15 +17,26 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (!fdb || !clienteUid || !(delta > 0)) return Promise.reject(new Error('sin db'));
     const cref = fdb.collection('clientes').doc(clienteUid);
     const lref = fdb.collection('puntos_log').doc();
+    const pref = pedidoId ? fdb.collection('pedidos').doc(pedidoId) : null;
     const FV = firebase.firestore.FieldValue;
     const por = (GDO.FB && GDO.FB.uid) || null;
-    return fdb.runTransaction((tx) => tx.get(cref).then((cd) => {
-      if (!cd.exists) throw new Error('socio inexistente');
-      const nuevo = (cd.data().puntos || 0) + delta;
-      tx.update(cref, { puntos: nuevo });
-      tx.set(lref, { clienteUid: clienteUid, delta: delta, motivo: motivo || '', saldo: nuevo, pedidoId: pedidoId || null, por: por, ts: FV.serverTimestamp() });
-      if (visitaId) tx.update(fdb.collection('visitas').doc(visitaId), { estado: 'atendido', puntos: delta, por: por, cierreTs: FV.serverTimestamp() });
-    }));
+    // Candado de idempotencia ATÓMICO: leemos el pedido dentro de la transacción
+    // y, si ya tiene puntosAcreditados, abortamos. El flag se setea en la MISMA
+    // transacción que suma los puntos, así dos dispositivos que acrediten a la vez
+    // no pueden duplicar (antes el flag se escribía en una operación aparte).
+    return fdb.runTransaction((tx) => {
+      return (pref ? tx.get(pref) : Promise.resolve(null)).then((pd) => {
+        if (pd && pd.exists && pd.data().puntosAcreditados) throw new Error('ya-acreditado');
+        return tx.get(cref).then((cd) => {
+          if (!cd.exists) throw new Error('socio inexistente');
+          const nuevo = (cd.data().puntos || 0) + delta;
+          tx.update(cref, { puntos: nuevo });
+          tx.set(lref, { clienteUid: clienteUid, delta: delta, motivo: motivo || '', saldo: nuevo, pedidoId: pedidoId || null, por: por, ts: FV.serverTimestamp() });
+          if (pref) tx.set(pref, { puntosAcreditados: true, clienteUid: clienteUid }, { merge: true });
+          if (visitaId) tx.update(fdb.collection('visitas').doc(visitaId), { estado: 'atendido', puntos: delta, por: por, cierreTs: FV.serverTimestamp() });
+        });
+      });
+    });
   }
 
   /* ---------- GPS del chofer EN VIVO ----------
@@ -512,7 +523,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           confirmDlg('Sumar ' + fmtN(p.puntos) + ' Puntos GDO a ' + nom + '?', () => {
             acreditarSocio(p.clienteUid, p.puntos, 'Entrega a domicilio (pedido online)', p.id, null)
               .then(() => { Store.upsertPedido({ id: p.id, puntosAcreditados: true }); toast('🎁 ' + fmtN(p.puntos) + ' Puntos GDO acreditados', 'ok'); render(); })
-              .catch(() => toast('No se pudo acreditar. Reintentá.', 'err'));
+              .catch((e) => { if (e && e.message === 'ya-acreditado') { Store.upsertPedido({ id: p.id, puntosAcreditados: true }); toast('Estos puntos ya estaban acreditados.', ''); render(); } else { toast('No se pudo acreditar. Reintentá.', 'err'); } });
           }, 'Sumar puntos', 'btn-verde');
         }).catch(() => toast('No se pudo leer el socio. Reintentá.', 'err'));
         return;
@@ -541,7 +552,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
                   if (subV) { try { subV(); } catch (e) {} }
                   close(); toast('🎁 ' + fmtN(p.puntos) + ' Puntos GDO acreditados', 'ok'); render();
                 })
-                .catch(() => { hecho = false; b.disabled = false; toast('No se pudo acreditar. Reintentá.', 'err'); });
+                .catch((e) => {
+                  if (e && e.message === 'ya-acreditado') { Store.upsertPedido({ id: p.id, clienteUid: b.dataset.u, puntosAcreditados: true }); if (subV) { try { subV(); } catch (er) {} } close(); toast('Estos puntos ya estaban acreditados.', ''); render(); return; }
+                  hecho = false; b.disabled = false; toast('No se pudo acreditar. Reintentá.', 'err');
+                });
             });
           }, () => { list.innerHTML = '<div class="empty">No se pudieron leer los check-ins. Revisá la conexión.</div>'; });
         },

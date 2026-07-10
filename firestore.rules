@@ -28,6 +28,18 @@ service cloud.firestore {
     // Dueño de un documento identificado por UID.
     function isOwner(uid) { return request.auth != null && request.auth.uid == uid; }
 
+    // ADMIN vs CAJERO/REPARTIDOR. Antes TODO el personal (isStaff) tenía permisos
+    // de admin en Firestore; la restricción del cajero era SOLO de interfaz. Ahora
+    // las operaciones peligrosas (borrar socios, editar el catálogo de premios,
+    // borrar canjes, prender/apagar el canje) exigen isAdmin().
+    // RETROCOMPATIBLE: un doc /Staff SIN campo 'rol' cuenta como 'admin' (así
+    // publicar estas reglas NO saca permisos a nadie). Para limitar a un cajero,
+    // agregá  rol: "cajero"  (o "repartidor") a su doc en /Staff.
+    function isAdmin() {
+      return isStaff()
+        && get(/databases/$(database)/documents/Staff/$(request.auth.uid)).data.get('rol', 'admin') == 'admin';
+    }
+
     // Validación de un pedido creado por la tienda (sesión anónima o socio
     // logueado). Limita lo que un no-staff puede escribir. Si trae clienteUid,
     // debe ser el del propio usuario (para acreditar puntos a quien corresponde).
@@ -100,8 +112,9 @@ service cloud.firestore {
                         && request.resource.data.puntos is int
                         && request.resource.data.puntos >= 0
                         && request.resource.data.puntos <= resource.data.puntos);
-      // Borrar la cuenta: el personal, o el PROPIO socio (autoservicio, baja de datos).
-      allow delete: if isStaff() || isOwner(uid);
+      // Borrar la cuenta: un ADMIN, o el PROPIO socio (autoservicio, baja de datos).
+      // Un cajero NO borra socios.
+      allow delete: if isAdmin() || isOwner(uid);
     }
 
     // ── Candado "1 canje de cada premio por MES CALENDARIO" (anti cambio de fecha) ──
@@ -123,15 +136,18 @@ service cloud.firestore {
     // club_config/contador { n: <int> }. App Check + login limitan el abuso.
     match /club_config/{id} {
       allow read:   if request.auth != null;
-      allow create: if isStaff() || (request.auth != null && request.resource.data.n == 1);
-      allow update: if isStaff() || (request.auth != null && request.resource.data.n == resource.data.n + 1);
-      allow delete: if isStaff();
+      // El branch de admin cubre el toggle de flags (ej. canjeActivo); el otro
+      // branch es el contador del nº de socio que incrementa en el alta (+1).
+      allow create: if isAdmin() || (request.auth != null && request.resource.data.n == 1);
+      allow update: if isAdmin() || (request.auth != null && request.resource.data.n == resource.data.n + 1);
+      allow delete: if isAdmin();
     }
 
-    // Catálogo de premios: lo VE cualquiera logueado; lo administra el personal.
+    // Catálogo de premios: lo VE cualquiera logueado (incluido el cajero, que ahora
+    // relee el premio real al validar el voucher); lo ADMINISTRA solo un admin.
     match /premios/{id} {
       allow read:  if request.auth != null;
-      allow write: if isStaff();
+      allow write: if isAdmin();
     }
 
     // Canjes = VOUCHERS automáticos. El socio emite el voucher ('emitido') y, en el
@@ -164,6 +180,13 @@ service cloud.firestore {
                        // (Sin esto, un socio podía canjear un premio barato pero poner
                        //  el nombre de uno caro y reclamarlo en el mostrador.)
                        && request.resource.data.premioNombre == get(/databases/$(database)/documents/premios/$(request.resource.data.premioId)).data.nombre
+                       // Endurecido: el ícono (que NO se valida contra el premio) va
+                       // acotado a pocos caracteres → sin lugar para inyectar HTML/JS
+                       // que se ejecute en el panel del personal. Nombre/nº de socio
+                       // limitados en tamaño (defensa; el panel además los escapa).
+                       && (!('premioIco' in request.resource.data) || (request.resource.data.premioIco is string && request.resource.data.premioIco.size() <= 8))
+                       && (!('socioNombre' in request.resource.data) || (request.resource.data.socioNombre is string && request.resource.data.socioNombre.size() <= 80))
+                       && (!('socioNro' in request.resource.data) || request.resource.data.socioNro is int)
                        // SEGURIDAD "modo intriga": el CANJE solo se permite si el personal lo
                        // habilitó (club_config/flags.canjeActivo == true). Sin esto, un usuario
                        // avanzado podía saltear el "muy pronto" del front y canjear por API directa.
@@ -181,7 +204,8 @@ service cloud.firestore {
       // de más de 30 días ya no se acepta en el mostrador.
       allow update: if isStaff() && resource.data.usado == false && request.resource.data.usado == true
                        && resource.data.venceMs > request.time.toMillis();
-      allow delete: if isStaff();
+      // Borrar un canje (registro de voucher) = solo admin. El cajero solo lo marca usado.
+      allow delete: if isAdmin();
     }
 
     // Check-in del mostrador: el socio escanea el QR único y "levanta la mano".

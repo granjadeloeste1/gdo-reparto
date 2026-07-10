@@ -501,7 +501,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           ? `<table><thead><tr>${puedeBorrar ? '<th style="width:34px"><input type="checkbox" id="cj-all" title="Seleccionar todos"/></th>' : ''}<th>Premio</th><th>Socio</th><th>Código</th><th>Estado</th></tr></thead><tbody>` +
             arr.map((c) => `<tr>
               ${puedeBorrar ? `<td><input type="checkbox" data-selc="${esc(c._id)}"/></td>` : ''}
-              <td>${c.premioIco || '🎁'} ${esc(c.premioNombre || '')}</td>
+              <td>${esc(c.premioIco || '🎁')} ${esc(c.premioNombre || '')}</td>
               <td class="small">${esc(c.socioNombre || '')}<br><span class="muted">N° ${padNro(c.socioNro)}</span></td>
               <td class="small" style="font-family:monospace">${esc(c.codigo || '')}</td>
               <td>${c.usado ? '<span class="chip chip-entreg">✔ Usado</span>' : '<span class="chip chip-pend">🎟️ Vigente</span>'}</td>
@@ -589,7 +589,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     modal({
       title: '✅ Voucher válido', width: 380,
       bodyHTML: `<div style="text-align:center">
-        <div style="font-size:42px">${x.premioIco || '🎁'}</div>
+        <div style="font-size:42px">${esc(x.premioIco || '🎁')}</div>
         <div style="font-weight:800;font-size:17px;margin-top:4px">${esc(x.premioNombre || '')}</div>
         <div class="small muted" style="margin-top:6px">Entregar a <b>${esc(x.socioNombre || '')}</b> · N° ${padNro(x.socioNro)}</div>
         <div style="margin-top:12px"><span class="chip chip-entreg">Marcado como USADO ✔</span></div></div>`,
@@ -606,8 +606,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (!cd.exists) throw new Error('inexistente');
       const x = cd.data();
       if (x.usado) throw new Error('usado');
-      tx.update(ref, { usado: true, estado: 'usado', usadoPor: staffUid(), usadoTs: FV().serverTimestamp() });
-      x._id = cd.id; return x;
+      // Defensa en profundidad: nombre/ico/costo del voucher los escribió el cliente.
+      // Re-leemos el premio real y mostramos SIEMPRE esos valores, no los del canje.
+      const pref = x.premioId ? db().collection('premios').doc(x.premioId) : null;
+      return (pref ? tx.get(pref) : Promise.resolve(null)).then((pd) => {
+        if (pd && pd.exists) { const p = pd.data(); x.premioNombre = p.nombre; x.premioIco = p.ico; x.costo = p.costo; }
+        tx.update(ref, { usado: true, estado: 'usado', usadoPor: staffUid(), usadoTs: FV().serverTimestamp() });
+        x._id = cd.id; return x;
+      });
     }));
   }
 
@@ -622,7 +628,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
   function vvDetalle(x) {
     return `<div style="background:#111;color:#fff;border-radius:14px;padding:18px;text-align:center;margin-bottom:10px">
-      <div style="font-size:38px">${x.premioIco || '🎁'}</div>
+      <div style="font-size:38px">${esc(x.premioIco || '🎁')}</div>
       <div style="font-weight:800;font-size:18px">${esc(x.premioNombre || '')}</div>
       <div class="small" style="color:#bbb;margin-top:4px">Socio ${esc(x.socioNombre || '')} · N° ${padNro(x.socioNro)}</div>
       <div class="small" style="color:#F58220;font-family:monospace;margin-top:6px">${esc(x.codigo || '')}</div></div>`;
@@ -646,7 +652,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       mount.querySelector('#vv-ok').onclick = () => {
         const b = mount.querySelector('#vv-ok'); b.disabled = true; b.textContent = 'Validando…';
         usarVoucher(canjeId).then((y) => {
-          mount.innerHTML = wrap(vvCard('✅', 'Voucher válido', 'Entregá <b>' + (y.premioIco || '🎁') + ' ' + esc(y.premioNombre || '') + '</b> a <b>' + esc(y.socioNombre || '') + '</b> (N° ' + padNro(y.socioNro) + ').', '#1e8449')); wireBack();
+          mount.innerHTML = wrap(vvCard('✅', 'Voucher válido', 'Entregá <b>' + esc(y.premioIco || '🎁') + ' ' + esc(y.premioNombre || '') + '</b> a <b>' + esc(y.socioNombre || '') + '</b> (N° ' + padNro(y.socioNro) + ').', '#1e8449')); wireBack();
         }).catch((e) => {
           const mm = (e && e.message) || ''; b.disabled = false; b.textContent = '✓ Validar y entregar';
           toast(mm === 'usado' ? 'Recién se usó este voucher.' : 'No se pudo validar (¿iniciaste sesión como personal?).', 'error');

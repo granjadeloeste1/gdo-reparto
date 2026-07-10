@@ -908,7 +908,17 @@ window.GDO = window.GDO || {};
 <script>
 (function(){
   var INBOX='gdo_reparto_inbox';
-  function nid(){ return 'p_'+Math.random().toString(36).slice(2,9); }
+  // ID imposible de adivinar: 128 bits de azar CRIPTOGRÁFICO. /pedidos tiene
+  // lectura por-id pública (link de seguimiento), así que el id ES la "contraseña"
+  // del documento. Math.random (lo de antes) era corto y predecible. Fallback a
+  // Math.random solo en navegadores muy viejos sin crypto.
+  function nid(){
+    try{
+      var a=new Uint8Array(16); (self.crypto||window.crypto).getRandomValues(a);
+      var s=''; for(var i=0;i<a.length;i++) s+=a[i].toString(16).padStart(2,'0');
+      return 'p_'+s;
+    }catch(e){ return 'p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,12)+Math.random().toString(36).slice(2,12); }
+  }
   function val2(id){ var e=document.getElementById(id); return e?e.value:''; }
   var picked=null, gpsCoord=null;
 

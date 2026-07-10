@@ -3,7 +3,7 @@
    último (así los cambios publicados aparecen al toque), y si no hay señal usa
    lo guardado. Solo cachea archivos del propio sitio; CDNs/Firebase pasan
    directo (necesitan red). Subí CACHE de versión cuando quieras forzar limpieza. */
-const CACHE = 'gdo-reparto-v87';
+const CACHE = 'gdo-reparto-v88';
 const CORE = [
   './',
   'index.html',
@@ -40,8 +40,12 @@ self.addEventListener('fetch', (e) => {
   // caemos a lo guardado en caché.
   e.respondWith(
     fetch(req, { cache: 'reload' }).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+      // Solo cacheamos respuestas OK: un 404/redirección no debe quedar guardado
+      // y servirse offline como si fuera la página buena.
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+      }
       return res;
     }).catch(() => caches.match(req).then((r) => r || caches.match('index.html')))
   );
