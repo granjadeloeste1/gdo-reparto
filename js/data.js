@@ -417,7 +417,10 @@ window.GDO = window.GDO || {};
       }
       return p;
     },
-    deletePedido(id) { db.pedidos = db.pedidos.filter((p) => p.id !== id); persist(db); fsDel('pedidos', id); },
+    // Borra UN pedido. Delegamos en deletePedidos para que también lo desenganche
+    // de cualquier ruta que lo tuviera (antes el borrado individual dejaba el id
+    // colgado en pedidoIds/coords de la ruta → contaba paradas fantasma).
+    deletePedido(id) { return Store.deletePedidos([id]); },
     // Borrado masivo: saca de la base (y de Firestore) todos los pedidos cuyos
     // ids vengan en la lista, en una sola pasada. Además los desengancha de
     // cualquier ruta que los tuviera (para no dejar paradas fantasma). Devuelve

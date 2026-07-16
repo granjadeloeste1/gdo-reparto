@@ -404,7 +404,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       });
       const finalizar = (msg) => confirmDlg(msg, () => {
         ruta.estado = 'finalizada';
-        orden().forEach((p) => { const st = ruta.progreso[p.id]; if (st !== 'entregado' && st !== 'no_entregado') { p.estado = 'pendiente'; p.rutaId = null; Store.upsertPedido(p); } });
+        orden().forEach((p) => { const st = ruta.progreso[p.id]; if (st !== 'entregado' && st !== 'no_entregado') { p.estado = 'pendiente'; p.rutaId = null; p.salteado = false; Store.upsertPedido(p); } });
         pararGPSChofer(); // ruta finalizada: dejamos de publicar el GPS
         Store.upsertRuta(ruta); Store.save();
         Store.admins().forEach((a) => Store.pushNotif(a.id, `Ruta "${ruta.nombre}" finalizada por ${me.nombre.split(' ')[0]}.`, { tipo: 'ruta', rutaId: ruta.id }));

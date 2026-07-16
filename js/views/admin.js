@@ -413,7 +413,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${celdaEntrega(p)}</td>
           <td>${ESTADO_CHIP[p.estado] || p.estado}${asignacionInfo(p)}</td>
           <td class="t-actions">
-            ${p.estado === 'no_entregado' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
+            ${p.estado === 'no_entregado' || p.estado === 'salteado' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
             ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${p.id}" title="Ver comprobante de entrega">🧾</button>` : ''}
             ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
             <button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
