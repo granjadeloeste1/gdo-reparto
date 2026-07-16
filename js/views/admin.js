@@ -667,6 +667,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const dir = node.querySelector('#f-dir').value.trim();
           if (!cli || !dir) { toast('Completá cliente y dirección', 'err'); return; }
           let coord = coordFromInput();
+          // Si se EDITÓ la dirección pero las coordenadas siguen siendo las de antes
+          // (el cliente/vendedor tipeó otra dirección sin elegir una sugerencia del
+          // autocompletado, o no esperó a que cargue), las coords viejas quedarían
+          // pegadas a la dirección nueva y la ruta seguiría apuntando al lugar viejo.
+          // En ese caso forzamos re-geocodificar. Si el usuario fijó coords a mano
+          // (GPS o pegadas), NO coinciden con las viejas y se respetan.
+          if (p && coord && p.lat != null && p.lng != null
+              && dir.toLowerCase() !== String(p.direccion || '').toLowerCase()
+              && Math.abs(coord.lat - p.lat) < 1e-6 && Math.abs(coord.lng - p.lng) < 1e-6) {
+            coord = null;
+            node.querySelector('#f-coord').value = '';
+          }
           if (!coord && GDO.Geo) {
             const btn = node.querySelector('[data-save]');
             const prev = btn.textContent;

@@ -402,7 +402,20 @@ window.GDO = window.GDO || {};
       let full;
       if (p.id) { full = Object.assign(db.pedidos.find((x) => x.id === p.id), p); }
       else { p.id = uid('p'); p.estado = p.estado || 'pendiente'; p.historia = []; db.pedidos.push(p); full = p; }
-      persist(db); fsSet('pedidos', full); return p;
+      persist(db); fsSet('pedidos', full);
+      // Si el pedido está en una ruta, mantené sincronizadas las coordenadas que la
+      // ruta lleva embebidas (las usa el seguimiento del cliente y el ETA). Sin
+      // esto, editar la dirección dejaba la ruta apuntando a la ubicación anterior.
+      if (full && full.rutaId) {
+        const r = db.rutas.find((x) => x.id === full.rutaId);
+        if (r && (r.pedidoIds || []).includes(full.id)) {
+          r.coords = r.coords || {};
+          if (full.lat != null && full.lng != null) r.coords[full.id] = { lat: full.lat, lng: full.lng };
+          else delete r.coords[full.id];
+          fsSet('rutas', r);
+        }
+      }
+      return p;
     },
     deletePedido(id) { db.pedidos = db.pedidos.filter((p) => p.id !== id); persist(db); fsDel('pedidos', id); },
     // Borrado masivo: saca de la base (y de Firestore) todos los pedidos cuyos
@@ -486,7 +499,19 @@ window.GDO = window.GDO || {};
     },
     deleteRuta(id) {
       const r = db.rutas.find((x) => x.id === id);
-      if (r) r.pedidoIds.forEach((pid) => { const p = Store.pedido(pid); if (p) { p.estado = 'pendiente'; p.rutaId = null; fsSet('pedidos', p); } });
+      const enLista = new Set(r ? (r.pedidoIds || []) : []);
+      const prog = (r && r.progreso) || {};
+      // Desvincular TODOS los pedidos de esta ruta: los que están en pedidoIds Y
+      // cualquiera que haya quedado apuntando a ella (rutaId) sin estar en la lista
+      // (huérfano). Sin esto, un pedido podía quedar "asignado" a una ruta borrada
+      // y no se lo podía volver a asignar. Los ya resueltos conservan su estado.
+      db.pedidos.forEach((p) => {
+        if (!p || (p.rutaId !== id && !enLista.has(p.id))) return;
+        const resuelto = ['entregado', 'no_entregado'].includes(prog[p.id]) || ['entregado', 'no_entregado'].includes(p.estado);
+        p.rutaId = null; p.salteado = false;
+        if (!resuelto) p.estado = 'pendiente';
+        fsSet('pedidos', p);
+      });
       db.rutas = db.rutas.filter((x) => x.id !== id); persist(db); fsDel('rutas', id);
     },
     rutasDe: (userId) => db.rutas.filter((r) => r.repartidorId === userId),

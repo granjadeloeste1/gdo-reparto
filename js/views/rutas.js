@@ -105,7 +105,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const efFecha = (p) => (p && p.fechaEntrega) || (p && p.diaEntrega ? proximoDiaFecha(p.diaEntrega) : '');
     const elegibles = Store.pedidos().filter((p) =>
       ruta.pedidoIds.includes(p.id) ||
-      (p.estado === 'pendiente' && (!p.rutaId || p.rutaId === ruta.id))
+      (p.estado === 'pendiente' && (!p.rutaId || p.rutaId === ruta.id)) ||
+      // Red de seguridad: pedido que quedó apuntando a una ruta que YA NO existe
+      // (huérfano). Lo mostramos disponible para poder recuperarlo sin trucos.
+      (p.rutaId && !Store.ruta(p.rutaId) && !['entregado', 'no_entregado'].includes(p.estado))
     ).sort((a, b) => {
       const fa = efFecha(a), fb = efFecha(b);
       if (fa && fb) return fa < fb ? -1 : (fa > fb ? 1 : 0);
@@ -308,6 +311,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (estado) ruta.estado = estado;
       const saved = Store.upsertRuta(ruta);
       ruta.id = saved.id;
+      // Pedidos QUITADOS de la ruta (estaban al abrir el editor y ya no están):
+      // vuelven a "pendiente" y se desvinculan. Sin esto quedaban "asignados" a una
+      // ruta que ya no los incluye → huérfanos que no se podían reasignar.
+      idsOriginales.forEach((id) => {
+        if (ruta.pedidoIds.includes(id)) return;
+        const p = Store.pedido(id);
+        if (!p || p.rutaId !== saved.id) return;   // no tocar si ya lo agarró otra ruta
+        const resuelto = ['entregado', 'no_entregado'].includes(ruta.progreso[id]);
+        if (!resuelto) { p.estado = 'pendiente'; p.rutaId = null; p.salteado = false; Store.upsertPedido(p); }
+      });
       // Estado de los pedidos según el estado de la ruta. No pisamos los que el
       // chofer ya resolvió (entregado / no entregado).
       const estadoPed = ruta.estado === 'borrador' ? null
