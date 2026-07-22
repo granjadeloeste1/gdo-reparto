@@ -172,14 +172,27 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   /* ---------------- SOCIOS ---------------- */
   function renderSocios(box) {
-    subs.push(db().collection('clientes').onSnapshot((snap) => {
-      const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
-      arr.sort((a, b) => (a.nroSocio || 0) - (b.nroSocio || 0));
-      if (!arr.length) { box.innerHTML = '<div class="empty">Todavía no hay socios registrados.</div>'; return; }
-      box.innerHTML =
-        `<div class="small muted" style="margin-bottom:8px">Tocá un socio para ver sus datos (DNI, dirección, teléfono, email).</div>` +
+    // Input de búsqueda FIJO (se crea una vez): así no pierde foco ni el texto
+    // tipeado cuando llega una actualización en vivo (onSnapshot re-pinta la lista).
+    box.innerHTML =
+      `<input id="soc-q" type="search" placeholder="🔎 Buscar socio por nombre, N°, email o teléfono…" autocomplete="off"
+         style="width:100%;padding:10px 12px;border:1px solid #d0d4da;border-radius:9px;font-size:14px;margin-bottom:10px;font-family:inherit"/>` +
+      `<div id="soc-lista"></div>`;
+    const lista = box.querySelector('#soc-lista');
+    const inp = box.querySelector('#soc-q');
+    let socios = [];
+    const pintar = () => {
+      if (!socios.length) { lista.innerHTML = '<div class="empty">Todavía no hay socios registrados.</div>'; return; }
+      const q = (inp.value || '').trim().toLowerCase();
+      const vis = q ? socios.filter((s) => (
+        (s.nombre || '') + ' ' + padNro(s.nroSocio) + ' ' + (s.nroSocio || '') + ' ' +
+        (s.email || '') + ' ' + (s.telefono || '') + ' ' + (s.dni || '')
+      ).toLowerCase().includes(q)) : socios;
+      if (!vis.length) { lista.innerHTML = `<div class="empty">Ningún socio coincide con “${esc(inp.value)}”.</div>`; return; }
+      lista.innerHTML =
+        `<div class="small muted" style="margin-bottom:8px">${vis.length} de ${socios.length} socio${socios.length === 1 ? '' : 's'} · tocá uno para ver sus datos (DNI, dirección, teléfono, email).</div>` +
         `<table><thead><tr><th>N°</th><th>Socio</th><th>Email</th><th>Puntos</th><th>Desde</th><th></th></tr></thead><tbody>` +
-        arr.map((s) => `<tr data-ver="${esc(s._id)}" style="cursor:pointer">
+        vis.map((s) => `<tr data-ver="${esc(s._id)}" style="cursor:pointer">
           <td><b>${padNro(s.nroSocio)}</b></td>
           <td>${esc(s.nombre || '')}</td>
           <td class="small">${esc(s.email || '')}</td>
@@ -187,9 +200,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${fechaCorta(s.creado)}</td>
           <td class="t-actions"><button class="btn btn-ghost btn-sm" data-pts="${esc(s._id)}" title="Cargar puntos">＋ puntos</button></td>
         </tr>`).join('') + `</tbody></table>`;
-      box.querySelectorAll('[data-ver]').forEach((tr) => tr.onclick = () => verSocio(arr.find((x) => x._id === tr.dataset.ver)));
-      box.querySelectorAll('[data-pts]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); cargarPuntos(arr.find((x) => x._id === b.dataset.pts)); });
-    }, () => { box.innerHTML = '<div class="empty">No se pudieron cargar los socios.</div>'; }));
+      lista.querySelectorAll('[data-ver]').forEach((tr) => tr.onclick = () => verSocio(socios.find((x) => x._id === tr.dataset.ver)));
+      lista.querySelectorAll('[data-pts]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); cargarPuntos(socios.find((x) => x._id === b.dataset.pts)); });
+    };
+    inp.oninput = pintar;
+    subs.push(db().collection('clientes').onSnapshot((snap) => {
+      socios = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; socios.push(x); });
+      socios.sort((a, b) => (a.nroSocio || 0) - (b.nroSocio || 0));
+      pintar();
+    }, () => { lista.innerHTML = '<div class="empty">No se pudieron cargar los socios.</div>'; }));
   }
 
   // Detalle del socio: muestra los datos que cargó al registrarse.

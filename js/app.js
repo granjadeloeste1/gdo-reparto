@@ -187,8 +187,8 @@ window.GDO = window.GDO || {};
   }
 
   // Vista del SOCIO del club cuando entra al sistema de reparto (su cuenta es de
-  // socio, no de personal): le mostramos su tarjeta + puntos y avisamos que el
-  // club está por ahora fuera de servicio.
+  // socio, no de personal): le mostramos su tarjeta + puntos y lo derivamos a la
+  // tienda (lista.granjadeloeste.com/club), que es donde el club funciona para socios.
   function renderSocio(s) {
     s = s || {};
     const nro = ('0000' + (s.nroSocio || 0)).slice(-4);
@@ -211,9 +211,10 @@ window.GDO = window.GDO || {};
             </div>
           </div>
           <div style="background:#15110a;border:1px solid #3a2a12;border-left:4px solid #F58220;color:#e8d4b0;border-radius:12px;padding:14px 16px;margin-top:16px;text-align:center;font-size:14px;line-height:1.55">
-            🛠️ El <b>GDO CLUB</b> está por el momento <b>fuera de servicio</b>.<br>¡Muy pronto vas a tener novedades!
+            🐔 Esta es la app del <b>equipo de reparto</b>.<br>Para ver tu tarjeta y <b>canjear tus Puntos GDO</b>, entrá al Club:
           </div>
-          <button class="btn btn-ghost btn-block" id="socio-logout" style="margin-top:16px;color:#fff;border-color:#3a3a3d">Cerrar sesión</button>
+          <a href="https://lista.granjadeloeste.com/club.html" style="display:block;margin-top:12px;padding:13px;background:#F58220;color:#111;border-radius:11px;text-align:center;text-decoration:none;font-weight:800">Ir al GDO CLUB →</a>
+          <button class="btn btn-ghost btn-block" id="socio-logout" style="margin-top:12px;color:#fff;border-color:#3a3a3d">Cerrar sesión</button>
         </div>
         ${GDO.footHTML()}
       </div>`;
