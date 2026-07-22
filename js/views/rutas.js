@@ -58,10 +58,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             })()}</td>
             <td class="t-actions">
               <button class="btn btn-ghost btn-sm" data-open="${r.id}">Abrir</button>
+              ${['asignada', 'aceptada', 'en_curso'].includes(r.estado) ? `<button class="btn btn-ghost btn-sm" data-fin="${r.id}" title="Cerrar/finalizar la ruta si el chofer no lo hizo">✓ Cerrar</button>` : ''}
               <button class="btn btn-ghost btn-sm" data-del="${r.id}">🗑</button>
             </td></tr>`;
         }).join('')}</tbody></table>` : `<div class="empty">No hay rutas para mostrar con este filtro.</div>`;
       box.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => go('#/rutas/' + b.dataset.open));
+      box.querySelectorAll('[data-fin]').forEach((b) => b.onclick = () => {
+        const r = Store.ruta(b.dataset.fin); if (!r) return;
+        confirmDlg(`¿Cerrar la ruta “${esc(r.nombre)}”? Las paradas sin marcar o salteadas vuelven a “pendiente” para reasignarlas; las entregadas quedan como están. Usalo si el chofer se olvidó de finalizarla.`, () => {
+          Store.finalizarRuta(b.dataset.fin);
+          if (r.repartidorId) Store.pushNotif(r.repartidorId, `Administración cerró la ruta "${r.nombre}".`, { tipo: 'ruta', rutaId: r.id });
+          toast('Ruta cerrada', 'ok'); GDO.App.render();
+        }, 'Cerrar ruta', 'btn-verde');
+      });
       box.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
         confirmDlg('¿Eliminar la ruta? Los pedidos vuelven a “pendiente”.', () => { Store.deleteRuta(b.dataset.del); toast('Ruta eliminada', 'ok'); GDO.App.render(); });
       });

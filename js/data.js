@@ -517,6 +517,26 @@ window.GDO = window.GDO || {};
       });
       db.rutas = db.rutas.filter((x) => x.id !== id); persist(db); fsDel('rutas', id);
     },
+    // Cierra/finaliza una ruta desde el ADMIN (p. ej. si el chofer se olvidó de
+    // hacerlo). Mismo efecto que el "finalizar" del chofer: la ruta pasa a
+    // 'finalizada', las paradas SIN resolver (sin marcar o salteadas) vuelven a
+    // 'pendiente' y se desvinculan para poder reasignarlas; las entregadas / no
+    // entregadas conservan su estado y su vínculo (quedan como registro).
+    finalizarRuta(id) {
+      const r = db.rutas.find((x) => x.id === id);
+      if (!r) return null;
+      const orden = (r.orden && r.orden.length ? r.orden : r.pedidoIds) || [];
+      const prog = r.progreso || {};
+      r.estado = 'finalizada';
+      orden.forEach((pid) => {
+        const p = db.pedidos.find((x) => x.id === pid);
+        if (!p) return;
+        const resuelto = ['entregado', 'no_entregado'].includes(prog[pid]) || ['entregado', 'no_entregado'].includes(p.estado);
+        if (!resuelto) { p.estado = 'pendiente'; p.rutaId = null; p.salteado = false; fsSet('pedidos', p); }
+      });
+      persist(db); fsSet('rutas', r);
+      return r;
+    },
     rutasDe: (userId) => db.rutas.filter((r) => r.repartidorId === userId),
 
     // ----- notificaciones -----
