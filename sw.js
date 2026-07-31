@@ -3,7 +3,7 @@
    último (así los cambios publicados aparecen al toque), y si no hay señal usa
    lo guardado. Solo cachea archivos del propio sitio; CDNs/Firebase pasan
    directo (necesitan red). Subí CACHE de versión cuando quieras forzar limpieza. */
-const CACHE = 'gdo-reparto-v92';
+const CACHE = 'gdo-reparto-v93';
 const CORE = [
   './',
   'index.html',

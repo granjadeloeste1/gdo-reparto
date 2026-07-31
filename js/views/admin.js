@@ -28,6 +28,76 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#d-new').onclick = () => pedidoModal(null, () => GDO.App.render());
   };
 
+  /* ---- Exportar pedidos como mensajes de WhatsApp (por día de entrega) ----
+     Sirve para recuperar/reenviar pedidos que no llegaron por WhatsApp. */
+  function pedidoWspTexto(p) {
+    const m = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+    const f = efFechaEntrega(p);
+    const L = [];
+    L.push('🛒 *NUEVO PEDIDO MINORISTA*');
+    L.push('*Granja del Oeste*');
+    L.push('━━━━━━━━━━━━━━');
+    L.push('👤 *DATOS DEL CLIENTE*');
+    L.push('• *Nombre:* ' + (p.cliente || ''));
+    if (p.telefono) L.push('• *Teléfono:* ' + p.telefono);
+    L.push('• *Modalidad:* Envío a domicilio');
+    if (p.zona) L.push('• *Zona:* ' + p.zona);
+    if (f) L.push('• *Día de entrega:* ' + diaSemanaDe(f) + ' ' + fmtFecha(f));
+    L.push('• *Dirección:* ' + (p.direccion || ''));
+    if (p.localidad) L.push('• *Localidad:* ' + p.localidad);
+    if (p.entrecalles) L.push('• *Entre calles:* ' + p.entrecalles);
+    if (p.formaPago) L.push('• *Forma de pago:* ' + p.formaPago);
+    L.push('━━━━━━━━━━━━━━');
+    L.push('📦 *DETALLE DEL PEDIDO*');
+    let sub = 0;
+    (p.items || []).forEach((it, i) => {
+      const cant = (it.cantidad != null) ? it.cantidad : (it.cant || 0);
+      const pr = it.precio || 0, u = it.unidad || it.u || 'un';
+      const st = cant * pr; sub += st;
+      L.push('*' + (i + 1) + ') ' + (it.producto || it.nombre || '') + '*');
+      L.push('    ' + cant + ' ' + u + (pr ? (' × ' + m(pr) + ' = *' + m(st) + '*') : ''));
+    });
+    L.push('━━━━━━━━━━━━━━');
+    L.push('💰 *TOTAL: ' + m(p.totalEstimado || sub) + '*');
+    return L.join('\n');
+  }
+  function wspDelDiaModal() {
+    const peds = Store.pedidos().filter((p) => p.estado !== 'entregado');
+    if (!peds.length) { toast('No hay pedidos pendientes.', 'error'); return; }
+    const grupos = {};
+    peds.forEach((p) => { const f = efFechaEntrega(p) || 'sin'; (grupos[f] = grupos[f] || []).push(p); });
+    const fechas = Object.keys(grupos).filter((k) => k !== 'sin').sort();
+    if (grupos['sin']) fechas.push('sin');
+    const chip = (f) => `<button type="button" class="btn btn-sm btn-ghost" data-f="${esc(f)}">${f === 'sin' ? 'Sin fecha' : (esc(diaSemanaDe(f)) + ' ' + fmtFecha(f))} (${grupos[f].length})</button>`;
+    modal({
+      title: '📋 Pedidos en formato WhatsApp', width: 580,
+      bodyHTML:
+        `<div class="small muted" style="margin:0 0 8px">Elegí el día y copiá los pedidos para pegarlos en WhatsApp.</div>` +
+        `<div id="wsp-dias" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${fechas.map(chip).join('')}</div>` +
+        `<textarea id="wsp-txt" readonly style="width:100%;height:300px;font-family:monospace;font-size:12px;line-height:1.4;padding:10px;border:1px solid #cfd4da;border-radius:9px"></textarea>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button><button class="btn" id="wsp-copy">📋 Copiar</button>`,
+      onMount(node, close) {
+        const ta = node.querySelector('#wsp-txt');
+        const pintar = (f) => {
+          ta.value = grupos[f].map(pedidoWspTexto).join('\n\n──────────────────────\n\n');
+          node.querySelectorAll('[data-f]').forEach((b) => b.classList.toggle('btn-ghost', b.dataset.f !== f));
+        };
+        node.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => pintar(b.dataset.f));
+        if (fechas.length) pintar(fechas[0]);
+        node.querySelector('[data-no]').onclick = close;
+        node.querySelector('#wsp-copy').onclick = () => {
+          ta.focus(); ta.select();
+          const ok = () => toast('Copiado ✓ — pegalo en WhatsApp');
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(ta.value).then(ok, () => { try { document.execCommand('copy'); ok(); } catch (e) { toast('Seleccioná y copiá a mano.', 'error'); } });
+            } else { document.execCommand('copy'); ok(); }
+          } catch (e) { toast('Seleccioná y copiá a mano.', 'error'); }
+        };
+      },
+    });
+  }
+
   /* ---------------- Pedidos ---------------- */
   GDO.Views.pedidos = function (c) {
     const soyVend = Store.rolActivo() === 'vendedor';
@@ -46,6 +116,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </select>
         <div class="spacer"></div>
         <a class="btn btn-ghost" href="tienda/index.html" target="_blank">🛒 Tienda online ↗</a>
+        <button class="btn btn-ghost" id="p-wsp">📋 WhatsApp del día</button>
         <button class="btn btn-ghost" id="p-ocr">📷 Desde imagen</button>
         <button class="btn btn-ghost" id="p-import">📥 Importar</button>
         <button class="btn btn-primary" id="p-new">+ Nuevo pedido</button>
@@ -92,6 +163,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#p-new').onclick = () => pedidoModal(null, draw);
     c.querySelector('#p-ocr').onclick = () => ocrPedidoModal(draw);
     c.querySelector('#p-import').onclick = () => importModal(draw);
+    c.querySelector('#p-wsp').onclick = () => wspDelDiaModal();
     c.querySelector('#p-bulk-clear').onclick = () => { sel.clear(); draw(); };
     c.querySelector('#p-bulk-del').onclick = () => {
       const ids = [...sel];
