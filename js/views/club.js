@@ -353,25 +353,47 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       '¡Gracias por ser parte del GDO CLUB!\n— Granja del Oeste 🐔';
   }
 
+  // Copia al portapapeles (con respaldo para navegadores viejos / sin permiso).
+  function copiar(texto) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(texto);
+    } catch (e) {}
+    return new Promise((res, rej) => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = texto; ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand('copy'); ta.remove();
+        ok ? res() : rej();
+      } catch (e) { rej(e); }
+    });
+  }
+
   function avisoPuntosWpp(socio, pts, saldo, monto) {
     if (!GDO.Wpp || !GDO.Wpp.tieneTel(socio.telefono)) return;
     const texto = textoPuntosWpp(socio, pts, Number(saldo) || ((socio.puntos || 0) + pts), monto);
     const link = GDO.Wpp.link(socio.telefono, texto);
     if (!link) return;
+    // RED DE SEGURIDAD DE LOS EMOJIS: hay teléfonos/versiones de WhatsApp que, al
+    // recibir el mensaje por el link (?text=), pierden los emojis y los muestran
+    // como "?". Dejamos el mensaje COMPLETO en el portapapeles: si llega mal, el
+    // operador borra y pega, y sale perfecto.
+    copiar(texto).catch(() => {});
     // Intento automático. Si el navegador bloquea la ventana emergente, cae al
     // modal de abajo (ahí el clic es un gesto directo del usuario y siempre abre).
     let w = null;
     try { w = window.open(link, '_blank'); } catch (e) {}
-    if (w) { toast('💬 WhatsApp abierto con el aviso — tocá Enviar.'); return; }
+    if (w) { toast('💬 WhatsApp abierto — tocá Enviar. (El mensaje quedó copiado por si los emojis salen mal: pegalo.)'); return; }
     modal({
       title: 'Avisar a ' + (socio.nombre || 'el socio') + ' por WhatsApp', width: 520,
       bodyHTML:
         `<p class="small muted" style="margin:0 0 8px">Se cargaron <b style="color:#F58220">${fmt(pts)}</b> puntos. Mensaje listo para ${esc(socio.telefono)}:</p>` +
-        `<pre style="white-space:pre-wrap;background:#f6f7f9;border:1px solid #e3e6ea;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;margin:0">${esc(texto)}</pre>` +
-        `<div class="note" style="margin-top:8px">Se abre WhatsApp con el mensaje escrito. Vos tocás <b>Enviar</b>.</div>`,
-      footHTML: `<button class="btn btn-ghost" data-no>Ahora no</button><a class="btn btn-verde" data-send target="_blank">💬 Abrir WhatsApp</a>`,
+        `<pre id="ap-txt" style="white-space:pre-wrap;background:#f6f7f9;border:1px solid #e3e6ea;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;margin:0">${esc(texto)}</pre>` +
+        `<div class="note" style="margin-top:8px">Se abre WhatsApp con el mensaje escrito. Vos tocás <b>Enviar</b>. Si los emojis llegan como “?”, borrá y <b>pegá</b> (ya está copiado).</div>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Ahora no</button><button class="btn btn-ghost" data-copy>📋 Copiar</button><a class="btn btn-verde" data-send target="_blank">💬 Abrir WhatsApp</a>`,
       onMount(m, close) {
         m.querySelector('[data-no]').onclick = close;
+        m.querySelector('[data-copy]').onclick = () => copiar(texto).then(() => toast('Mensaje copiado ✓')).catch(() => toast('No se pudo copiar.', 'error'));
         const send = m.querySelector('[data-send]');
         send.href = link;
         send.onclick = () => { toast('WhatsApp abierto con el mensaje'); setTimeout(close, 300); };
@@ -617,7 +639,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   function renderCanjes(box) {
     subs.push(db().collection('canjes').onSnapshot((snap) => {
       const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
-      arr.sort((a, b) => (Number(!!a.usado) - Number(!!b.usado)) ||
+      // Orden: primero los que hay que entregar (vigentes), después vencidos y usados.
+      const peso = (x) => x.usado ? 2 : (vencido(x) ? 1 : 0);
+      arr.sort((a, b) => (peso(a) - peso(b)) ||
         ((b.ts && b.ts.toMillis ? b.ts.toMillis() : 0) - (a.ts && a.ts.toMillis ? a.ts.toMillis() : 0)));
       const puedeBorrar = !esCajero();   // el cajero escanea pero NO elimina vouchers
       box.innerHTML =
@@ -632,7 +656,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <td>${esc(c.premioIco || '🎁')} ${esc(c.premioNombre || '')}</td>
               <td class="small">${esc(c.socioNombre || '')}<br><span class="muted">N° ${padNro(c.socioNro)}</span></td>
               <td class="small" style="font-family:monospace">${esc(c.codigo || '')}</td>
-              <td>${c.usado ? '<span class="chip chip-entreg">✔ Usado</span>' : '<span class="chip chip-pend">🎟️ Vigente</span>'}</td>
+              <td>${c.usado ? '<span class="chip chip-entreg">✔ Usado</span>'
+                    : vencido(c) ? `<span class="chip chip-no">⌛ Vencido ${fechaCorta(c.venceMs)}</span>`
+                    : `<span class="chip chip-pend">🎟️ Vigente</span> <span class="small muted">vence ${fechaCorta(c.venceMs)}</span>`}</td>
             </tr>`).join('') + `</tbody></table>`
           : '<div class="empty">Todavía no hay canjes. Cuando un socio canjee un premio, su voucher aparece acá.</div>');
       box.querySelector('#cj-scan').onclick = escanearVoucher;
@@ -681,8 +707,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           .then((x) => { cerrar(); resultadoOk(x); })
           .catch((e) => {
             const mm = (e && e.message) || '';
+            const denegado = (e && e.code === 'permission-denied');
             msg.innerHTML = mm === 'usado' ? '<b style="color:#c0392b">❌ Este voucher YA fue usado.</b>'
+              : mm === 'vencido' ? '<b style="color:#c0392b">⌛ Voucher VENCIDO' + (e.venceMs ? ' el ' + fechaCorta(e.venceMs) : '') + ' — no se entrega.</b>'
               : mm === 'inexistente' ? '<b style="color:#c0392b">❌ Voucher inexistente.</b>'
+              // El servidor puede rechazarlo por vencido aunque el reloj del
+              // dispositivo diga otra cosa: lo decimos en vez de "reintentá".
+              : denegado ? '<b style="color:#c0392b">❌ Rechazado por el servidor: el voucher está vencido o ya se usó.</b>'
               : '<b style="color:#c0392b">❌ No se pudo validar. Reintentá.</b>';
             done = false; // permite reintentar sin cerrar
           });
@@ -726,14 +757,23 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
 
+  // ¿El voucher pasó los 30 días? venceMs lo fijó el servidor al emitirlo (las
+  // reglas acotan el máximo con request.time), así que es dato confiable.
+  function vencido(x) { return !!(x && x.venceMs && Date.now() > x.venceMs); }
+
   // Marca el voucher USADO en transacción (single-use). Si ya estaba usado falla:
   // no se puede canjear dos veces (ni con fotocopias del mismo código).
+  // VENCIMIENTO AUTOMÁTICO: pasados los 30 días no se entrega. Acá lo cortamos
+  // antes de escribir para dar un mensaje claro; la palabra final igual la tiene
+  // la regla de Firestore (allow update … venceMs > request.time), que usa el
+  // reloj del SERVIDOR y no se puede saltear cambiando la hora del dispositivo.
   function usarVoucher(canjeId) {
     const ref = db().collection('canjes').doc(canjeId);
     return db().runTransaction((tx) => tx.get(ref).then((cd) => {
       if (!cd.exists) throw new Error('inexistente');
       const x = cd.data();
       if (x.usado) throw new Error('usado');
+      if (vencido(x)) { const ev = new Error('vencido'); ev.venceMs = x.venceMs; throw ev; }
       // Defensa en profundidad: nombre/ico/costo del voucher los escribió el cliente.
       // Re-leemos el premio real y mostramos SIEMPRE esos valores, no los del canje.
       const pref = x.premioId ? db().collection('premios').doc(x.premioId) : null;
@@ -775,7 +815,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const cuando = (x.usadoTs && x.usadoTs.toDate) ? ' el ' + x.usadoTs.toDate().toLocaleString('es-AR') : '';
         mount.innerHTML = wrap(vvDetalle(x) + vvCard('⚠️', 'Ya fue usado', 'Este voucher ya se canjeó' + cuando + '. No es válido de nuevo.', '#c0392b')); wireBack(); return;
       }
-      mount.innerHTML = wrap(vvDetalle(x) + `<button class="btn btn-verde" id="vv-ok" style="width:100%">✓ Validar y entregar</button>`);
+      // VENCIDO: ni siquiera se ofrece el botón de entregar (el voucher dura 30 días).
+      if (vencido(x)) {
+        mount.innerHTML = wrap(vvDetalle(x) + vvCard('⌛', 'Voucher vencido',
+          'Venció el <b>' + fechaCorta(x.venceMs) + '</b> (los vouchers duran 30 días). <b>No se entrega el premio.</b>', '#c0392b')); wireBack(); return;
+      }
+      mount.innerHTML = wrap(vvDetalle(x) + `<div class="small muted" style="text-align:center;margin-bottom:8px">Vence el <b>${fechaCorta(x.venceMs)}</b></div><button class="btn btn-verde" id="vv-ok" style="width:100%">✓ Validar y entregar</button>`);
       wireBack();
       mount.querySelector('#vv-ok').onclick = () => {
         const b = mount.querySelector('#vv-ok'); b.disabled = true; b.textContent = 'Validando…';
@@ -783,7 +828,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           mount.innerHTML = wrap(vvCard('✅', 'Voucher válido', 'Entregá <b>' + esc(y.premioIco || '🎁') + ' ' + esc(y.premioNombre || '') + '</b> a <b>' + esc(y.socioNombre || '') + '</b> (N° ' + padNro(y.socioNro) + ').', '#1e8449')); wireBack();
         }).catch((e) => {
           const mm = (e && e.message) || ''; b.disabled = false; b.textContent = '✓ Validar y entregar';
-          toast(mm === 'usado' ? 'Recién se usó este voucher.' : 'No se pudo validar (¿iniciaste sesión como personal?).', 'error');
+          toast(mm === 'usado' ? 'Recién se usó este voucher.'
+            : mm === 'vencido' ? '⌛ Voucher vencido: no se entrega.'
+            : (e && e.code === 'permission-denied') ? 'Rechazado: el voucher está vencido o ya se usó.'
+            : 'No se pudo validar (¿iniciaste sesión como personal?).', 'error');
         });
       };
     }).catch(() => { mount.innerHTML = wrap(vvCard('🔒', 'No se pudo leer', 'Entrá como personal (admin/chofer) para validar vouchers.', '#c0392b')); wireBack(); });

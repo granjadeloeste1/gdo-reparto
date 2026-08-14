@@ -37,10 +37,22 @@ window.GDO = window.GDO || {};
     return d.length >= 8;
   }
 
+  // ¿Estamos en un celular/tablet? (ahí conviene la app nativa)
+  function esMovil() {
+    return /Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(navigator.userAgent || '');
+  }
+
+  // EMOJIS: en la COMPUTADORA, wa.me le entrega el mensaje a la app de escritorio
+  // de WhatsApp por el protocolo whatsapp:// y ese salto PIERDE los emojis (llegan
+  // como "?"). WhatsApp Web respeta el texto completo, así que en PC apuntamos
+  // directo a web.whatsapp.com. En el celular seguimos con wa.me, que abre la app
+  // nativa y ahí los emojis llegan bien.
   function linkWpp(tel, texto) {
     const t = telWpp(tel);
-    const q = texto ? '?text=' + encodeURIComponent(texto) : '';
-    return t ? 'https://wa.me/' + t + q : '';
+    if (!t) return '';
+    const txt = texto ? encodeURIComponent(texto) : '';
+    if (!esMovil()) return 'https://web.whatsapp.com/send?phone=' + t + (txt ? '&text=' + txt : '');
+    return 'https://wa.me/' + t + (txt ? '?text=' + txt : '');
   }
 
   // Mensajes listos para distintos momentos del reparto.
@@ -77,7 +89,7 @@ window.GDO = window.GDO || {};
     return 'https://lista.granjadeloeste.com/seguir.html?p=' + encodeURIComponent(pedidoId);
   }
 
-  GDO.Wpp = { tel: telWpp, tieneTel, link: linkWpp, msg, seguimientoUrl };
+  GDO.Wpp = { tel: telWpp, tieneTel, link: linkWpp, msg, seguimientoUrl, esMovil };
 
   /* ---------------- Compresión de imagen ---------------- */
   // Toma un File (foto de la cámara) y devuelve un dataURL JPEG reducido.
