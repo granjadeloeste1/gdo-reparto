@@ -198,10 +198,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${esc(s.email || '')}</td>
           <td><b style="color:#F58220">${fmt(s.puntos)}</b></td>
           <td class="small">${fechaCorta(s.creado)}</td>
-          <td class="t-actions"><button class="btn btn-ghost btn-sm" data-pts="${esc(s._id)}" title="Cargar puntos">＋ puntos</button></td>
+          <td class="t-actions"><button class="btn btn-ghost btn-sm" data-hist="${esc(s._id)}" title="Historial de cargas de puntos">📜</button><button class="btn btn-ghost btn-sm" data-pts="${esc(s._id)}" title="Cargar puntos">＋ puntos</button></td>
         </tr>`).join('') + `</tbody></table>`;
       lista.querySelectorAll('[data-ver]').forEach((tr) => tr.onclick = () => verSocio(socios.find((x) => x._id === tr.dataset.ver)));
       lista.querySelectorAll('[data-pts]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); cargarPuntos(socios.find((x) => x._id === b.dataset.pts)); });
+      lista.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); historialPuntos(socios.find((x) => x._id === b.dataset.hist)); });
     };
     inp.oninput = pintar;
     subs.push(db().collection('clientes').onSnapshot((snap) => {
@@ -225,6 +226,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
           <div style="font-size:13px;color:#6b7280">Puntos</div>
           <div style="font-weight:900;color:#F58220;font-size:20px">${fmt(s.puntos)}</div>
+          <button class="btn btn-ghost btn-sm" data-hist style="margin-left:auto">📜 Historial de cargas</button>
         </div>` +
         filaDato('Nombre y apellido', s.nombre) +
         filaDato('DNI', s.dni) +
@@ -236,6 +238,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       onMount(m, close) {
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
+        m.querySelector('[data-hist]').onclick = () => { close(); historialPuntos(s); };
         const delB = m.querySelector('[data-del]'); if (delB) delB.onclick = () => { close(); eliminarSocioAdmin(s); };
       },
     });
@@ -275,7 +278,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <span style="font-weight:400;color:#8a93a0">${esCajero() ? '(<b style=\"color:#c0392b\">obligatorio</b> · escaneá la foto o ponelo a mano)' : '(opcional · evita cargar 2 veces el mismo)'}</span></label>` +
         `<input id="cp-nro" type="text" inputmode="numeric" placeholder="ej: 10080" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
         `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Motivo (opcional)</label>` +
-        `<input id="cp-mot" type="text" placeholder="ej: compra en el local" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>`,
+        `<input id="cp-mot" type="text" placeholder="ej: compra en el local" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+        (GDO.Wpp && GDO.Wpp.tieneTel(socio.telefono)
+          ? `<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer"><input id="cp-wpp" type="checkbox" checked/> 💬 Avisarle por WhatsApp al ${esc(socio.telefono)}</label>`
+          : `<div class="small muted" style="margin-top:12px">💬 Este socio no tiene teléfono cargado: no se le puede avisar por WhatsApp.</div>`),
       footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Sumar puntos</button>`,
       onMount(m, close) {
         const ptsDe = (monto) => Math.floor((parseInt(monto, 10) || 0) / 100);   // $100 = 1 punto
@@ -311,13 +317,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (!pts || pts <= 0) { toast('El monto es muy chico para sumar puntos (mínimo $100).', 'error'); return; }
           // Para el CAJERO el ticket es OBLIGATORIO (escaneo o manual): evita carga sin respaldo.
           if (esCajero() && !nro) { toast('Cargá el N° de ticket (escaneá la foto o ponelo a mano). Es obligatorio.', 'error'); return; }
+          const wppCb = m.querySelector('#cp-wpp');
+          const avisar = !!(wppCb && wppCb.checked);
           const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Sumando…';
-          const op = nro ? acreditarPorTicket(socio._id, nro, ticketFecha, monto) : acreditar(socio._id, pts, mot, null);
-          op.then(() => {
+          const op = nro ? acreditarPorTicket(socio._id, nro, ticketFecha, monto) : acreditar(socio._id, pts, mot, null, { monto: monto });
+          op.then((saldo) => {
               if (visitaId) {
                 db().collection('visitas').doc(visitaId).update({ estado: 'atendido', puntos: pts, por: staffUid(), cierreTs: FV().serverTimestamp() }).catch(() => {});
               }
               toast('✓ ' + fmt(pts) + ' puntos cargados.'); close();
+              if (avisar) avisoPuntosWpp(socio, pts, saldo, monto);
             })
             .catch((e) => {
               const mm = (e && e.message) || '';
@@ -325,6 +334,47 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               btn.disabled = false; btn.textContent = 'Sumar puntos';
             });
         };
+      },
+    });
+  }
+
+  /* ---------------- AVISO AL SOCIO POR WHATSAPP ----------------
+     Al cargar los puntos se le avisa al socio automáticamente. Sin servidor ni
+     API paga: se abre WhatsApp con el mensaje ya escrito al número del socio y
+     solo queda tocar "Enviar" (mismo mecanismo que los avisos de reparto).
+     El envío 100% desatendido necesitaría la API de WhatsApp Business (paga). */
+  function textoPuntosWpp(socio, pts, saldo, monto) {
+    const nom = ((socio.nombre || '').trim().split(/\s+/)[0] || '').trim();
+    return (nom ? '¡Hola ' + nom + '! 👋 ' : '¡Hola! 👋 ') +
+      'Te acreditamos *' + fmt(pts) + ' Puntos GDO* por tu compra' + (monto ? ' de $' + fmt(monto) : '') + '. 🧡\n\n' +
+      '⭐ Saldo actual: *' + fmt(saldo) + ' Puntos GDO*\n' +
+      '🎁 Mirá tu credencial y los premios para canjear acá:\n' +
+      'https://lista.granjadeloeste.com/club.html\n\n' +
+      '¡Gracias por ser parte del GDO CLUB!\n— Granja del Oeste 🐔';
+  }
+
+  function avisoPuntosWpp(socio, pts, saldo, monto) {
+    if (!GDO.Wpp || !GDO.Wpp.tieneTel(socio.telefono)) return;
+    const texto = textoPuntosWpp(socio, pts, Number(saldo) || ((socio.puntos || 0) + pts), monto);
+    const link = GDO.Wpp.link(socio.telefono, texto);
+    if (!link) return;
+    // Intento automático. Si el navegador bloquea la ventana emergente, cae al
+    // modal de abajo (ahí el clic es un gesto directo del usuario y siempre abre).
+    let w = null;
+    try { w = window.open(link, '_blank'); } catch (e) {}
+    if (w) { toast('💬 WhatsApp abierto con el aviso — tocá Enviar.'); return; }
+    modal({
+      title: 'Avisar a ' + (socio.nombre || 'el socio') + ' por WhatsApp', width: 520,
+      bodyHTML:
+        `<p class="small muted" style="margin:0 0 8px">Se cargaron <b style="color:#F58220">${fmt(pts)}</b> puntos. Mensaje listo para ${esc(socio.telefono)}:</p>` +
+        `<pre style="white-space:pre-wrap;background:#f6f7f9;border:1px solid #e3e6ea;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;margin:0">${esc(texto)}</pre>` +
+        `<div class="note" style="margin-top:8px">Se abre WhatsApp con el mensaje escrito. Vos tocás <b>Enviar</b>.</div>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Ahora no</button><a class="btn btn-verde" data-send target="_blank">💬 Abrir WhatsApp</a>`,
+      onMount(m, close) {
+        m.querySelector('[data-no]').onclick = close;
+        const send = m.querySelector('[data-send]');
+        send.href = link;
+        send.onclick = () => { toast('WhatsApp abierto con el mensaje'); setTimeout(close, 300); };
       },
     });
   }
@@ -373,6 +423,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   // Acredita puntos a partir de un TICKET, en transacción, con anti-duplicado por N°.
   // Guarda el ticket en /tickets (id = N°): si ya existe, NO vuelve a cargar.
+  // El log guarda TAMBIÉN el monto y la fecha del ticket: así el historial del
+  // socio se puede auditar sin tener que abrir /tickets uno por uno.
   function acreditarPorTicket(clienteUid, nro, fecha, monto){
     const mn = parseInt(monto, 10) || 0;
     const pts = Math.floor(mn / 100);
@@ -386,14 +438,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const nuevo = (cd.data().puntos || 0) + pts;
         tx.update(cref, { puntos: nuevo });
         tx.set(tref, { nro: String(nro), fecha: String(fecha || ''), monto: mn, puntos: pts, clienteUid: clienteUid, por: staffUid(), ts: FV().serverTimestamp() });
-        tx.set(lref, { clienteUid: clienteUid, delta: pts, motivo: 'Ticket ' + nro, saldo: nuevo, ticketNro: String(nro), por: staffUid(), ts: FV().serverTimestamp() });
+        tx.set(lref, { clienteUid: clienteUid, delta: pts, motivo: 'Ticket ' + nro, saldo: nuevo, ticketNro: String(nro), monto: mn, ticketFecha: String(fecha || ''), por: staffUid(), ts: FV().serverTimestamp() });
         return nuevo;
       });
     }));
   }
 
   // Suma/resta puntos en transacción + log de auditoría. delta>0 acredita.
-  function acreditar(clienteUid, delta, motivo, canjeId) {
+  // extra (opcional): datos de respaldo de la carga (ej. { monto }).
+  function acreditar(clienteUid, delta, motivo, canjeId, extra) {
     const cref = db().collection('clientes').doc(clienteUid);
     const lref = db().collection('puntos_log').doc();
     return db().runTransaction((tx) => tx.get(cref).then((cd) => {
@@ -402,9 +455,65 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const nuevo = actual + delta;
       if (nuevo < 0) throw new Error('saldo insuficiente');
       tx.update(cref, { puntos: nuevo });
-      tx.set(lref, { clienteUid: clienteUid, delta: delta, motivo: motivo || '', saldo: nuevo, canjeId: canjeId || null, por: staffUid(), ts: FV().serverTimestamp() });
+      const log = { clienteUid: clienteUid, delta: delta, motivo: motivo || '', saldo: nuevo, canjeId: canjeId || null, por: staffUid(), ts: FV().serverTimestamp() };
+      if (extra && extra.monto) log.monto = parseInt(extra.monto, 10) || 0;
+      tx.set(lref, log);
       return nuevo;
     }));
+  }
+
+  /* ---------------- HISTORIAL DE PUNTOS DEL SOCIO ----------------
+     Todo movimiento queda en /puntos_log (inmutable). Acá lo mostramos por
+     socio para poder auditar una carga: cuándo, cuánto compró, qué ticket,
+     cuántos puntos y con qué saldo quedó. Ordenamos en el navegador (no pide
+     índice compuesto en Firestore). */
+  function nombreStaff(uid) {
+    if (!uid) return '—';
+    try { const u = GDO.Store && GDO.Store.user && GDO.Store.user(uid); if (u && u.nombre) return u.nombre; } catch (e) {}
+    return String(uid).slice(0, 6) + '…';
+  }
+  function fechaHora(ts) {
+    try { const d = ts && ts.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
+      return d ? d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : '—'; }
+    catch (e) { return '—'; }
+  }
+
+  function historialPuntos(s) {
+    if (!s) return;
+    const m = modal({
+      title: `Historial de puntos · ${s.nombre || 'Socio'} (N° ${padNro(s.nroSocio)})`, width: 640,
+      bodyHTML: '<div id="hp-body"><div class="empty">Cargando movimientos…</div></div>',
+      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button><button class="btn" data-pts>＋ Cargar puntos</button>`,
+      onMount(mm, close) {
+        mm.querySelector('[data-no]').onclick = close;
+        mm.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
+      },
+    });
+    const box = m.node.querySelector('#hp-body');
+    db().collection('puntos_log').where('clienteUid', '==', s._id).limit(300).get().then((snap) => {
+      const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
+      arr.sort((a, b) => ((b.ts && b.ts.toMillis ? b.ts.toMillis() : 0) - (a.ts && a.ts.toMillis ? a.ts.toMillis() : 0)));
+      if (!arr.length) { box.innerHTML = '<div class="empty">Este socio todavía no tiene movimientos de puntos.</div>'; return; }
+      const sumas = arr.filter((x) => (x.delta || 0) > 0).reduce((t, x) => t + x.delta, 0);
+      const restas = arr.filter((x) => (x.delta || 0) < 0).reduce((t, x) => t - x.delta, 0);
+      box.innerHTML =
+        `<div class="small muted" style="margin-bottom:10px">${arr.length} movimiento${arr.length === 1 ? '' : 's'} · sumados <b style="color:#2e9e5b">+${fmt(sumas)}</b> · canjeados <b style="color:#c0392b">−${fmt(restas)}</b> · saldo actual <b style="color:#F58220">${fmt(s.puntos)}</b></div>` +
+        `<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Motivo</th><th>Ticket</th><th>Compra</th><th>Puntos</th><th>Saldo</th><th>Cargó</th></tr></thead><tbody>` +
+        arr.map((x) => {
+          const d = x.delta || 0;
+          return `<tr>
+            <td class="small">${fechaHora(x.ts)}</td>
+            <td>${esc(x.motivo || (d < 0 ? 'Canje' : 'Carga'))}</td>
+            <td class="small">${x.ticketNro ? esc(x.ticketNro) : '—'}</td>
+            <td class="small">${x.monto ? '$' + fmt(x.monto) : '—'}</td>
+            <td><b style="color:${d < 0 ? '#c0392b' : '#2e9e5b'}">${d < 0 ? '−' : '+'}${fmt(Math.abs(d))}</b></td>
+            <td class="small">${fmt(x.saldo)}</td>
+            <td class="small">${esc(nombreStaff(x.por))}</td>
+          </tr>`;
+        }).join('') + `</tbody></table></div>` +
+        `<div class="small muted" style="margin-top:8px">La columna <b>Compra</b> aparece en las cargas hechas desde esta versión. En las anteriores el monto está en el ticket.` +
+        (arr.length >= 300 ? ' Se muestran los primeros 300 movimientos.' : '') + `</div>`;
+    }).catch(() => { box.innerHTML = '<div class="empty">No se pudo cargar el historial.</div>'; });
   }
 
   /* ---------------- PREMIOS ---------------- */
