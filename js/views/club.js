@@ -48,6 +48,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div><b>Canje de premios</b><div class="small muted" id="canje-estado">Consultando estado…</div></div>
         </div>
         <button class="btn btn-sm btn-ghost" id="canje-toggle" disabled>…</button>
+      </div>
+      <div id="juego-onoff" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="juego-dot" style="width:11px;height:11px;border-radius:50%;background:#bbb;flex-shrink:0"></span>
+          <div><b>Juego DIEZ EXACTO</b><div class="small muted" id="juego-estado">Consultando estado…</div></div>
+        </div>
+        <button class="btn btn-sm btn-ghost" id="juego-toggle" disabled>…</button>
       </div>`}
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-sm ${tab === 'mostrador' ? '' : 'btn-ghost'}" data-tab="mostrador">📍 Mostrador <span id="mb-badge"></span></button>
@@ -56,7 +63,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-sm ${tab === 'canjes' ? '' : 'btn-ghost'}" data-tab="canjes">📋 Canjes</button>
       </div>
       <div id="club-body"><div class="empty">Cargando…</div></div>`;
-    if (!cajero) { renderOnOff(c); renderCanjeToggle(c); }
+    if (!cajero) { renderOnOff(c); renderCanjeToggle(c); renderJuegoToggle(c); }
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.club(c); });
     const body = c.querySelector('#club-body');
     if (tab === 'mostrador') renderMostrador(body, c);
@@ -126,6 +133,42 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             .catch(() => { pintar(actual); toast('No se pudo cambiar el canje.', 'error'); });
         },
         nuevo ? 'Activar canje' : 'Pausar canje'
+      );
+    };
+  }
+
+  /* ---------------- ON / OFF del JUEGO "DIEZ EXACTO" ----------------
+     club_config/flags { juegoActivo }. Sin el campo = juego APAGADO (default).
+     APAGADO NO ESCONDE EL JUEGO: lo deja en modo PRÓXIMAMENTE. La tarjeta sigue
+     en la lista (en gris) y el socio puede entrar y ver cómo va a ser, pero no
+     se habilita ninguna partida. Encendido = se puede jugar en sucursal. */
+  function renderJuegoToggle(c) {
+    const dot = c.querySelector('#juego-dot'), est = c.querySelector('#juego-estado'), btn = c.querySelector('#juego-toggle');
+    let actual = false;
+    function pintar(activo) {
+      actual = !!activo;
+      if (dot) dot.style.background = activo ? '#2e9e5b' : '#bbb';
+      if (est) est.textContent = activo
+        ? 'Activado · se puede jugar en sucursal'
+        : 'En modo PRÓXIMAMENTE · la tarjeta se ve en gris y no se habilita ninguna partida';
+      if (btn) { btn.disabled = false; btn.textContent = activo ? '⏸ Pasar a Próximamente' : '▶ Activar juego'; btn.className = 'btn btn-sm ' + (activo ? 'btn-ghost' : ''); }
+      return activo;
+    }
+    db().collection('club_config').doc('flags').get()
+      .then((d) => pintar(d.exists && d.data().juegoActivo === true))
+      .catch(() => pintar(false));
+    if (btn) btn.onclick = () => {
+      const nuevo = !actual;
+      confirmDlg(
+        nuevo ? '¿Activar el juego DIEZ EXACTO? Los socios van a poder jugar en sucursal según las bases publicadas.'
+              : '¿Pasar el juego a modo PRÓXIMAMENTE? La tarjeta queda en gris, nadie puede jugar y las partidas en curso se cierran.',
+        () => {
+          btn.disabled = true; btn.textContent = 'Guardando…';
+          db().collection('club_config').doc('flags').set({ juegoActivo: nuevo, juegoPor: staffUid(), juegoTs: FV().serverTimestamp() }, { merge: true })
+            .then(() => { pintar(nuevo); toast(nuevo ? '✓ Juego ACTIVADO.' : '✓ Juego en modo PRÓXIMAMENTE.'); })
+            .catch(() => { pintar(actual); toast('No se pudo cambiar el juego.', 'error'); });
+        },
+        nuevo ? 'Activar juego' : 'Pasar a Próximamente'
       );
     };
   }
