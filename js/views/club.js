@@ -278,19 +278,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         title: `🎮 Habilitar partida · ${socio.nombre || 'Socio'}`, width: 440,
         bodyHTML:
           `<p class="small muted" style="margin:0 0 10px">Objetivo de hoy: <b style="color:#F58220">${((cfg.objetivoMs) / 1000).toFixed(2)} s</b> · Premio: ${esc(cfg.premioIco || '🎁')} <b>${esc(cfg.premioNombre)}</b> · Quedan <b>${cfg.unidades}</b></p>` +
-          `<label style="font-size:13px;color:#5b6470;font-weight:600">Monto de la compra ($) <span style="font-weight:400;color:#8a93a0">mínimo $${fmt(MONTO_MIN_JUEGO)}</span></label>` +
-          `<input id="hp-monto" type="number" inputmode="numeric" min="1" placeholder="ej: 35000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
-          `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <b style="color:#c0392b">(obligatorio)</b></label>` +
+          `<div class="small muted" style="margin-bottom:8px">💵 El mínimo de <b>$${fmt(MONTO_MIN_JUEGO)}</b> se controla en el mostrador mirando el ticket.</div>` +
+          `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <b style="color:#c0392b">(obligatorio · no se puede repetir)</b></label>` +
           `<input id="hp-nro" type="text" inputmode="numeric" placeholder="ej: 10080" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
           `<div class="note" style="margin-top:10px">El socio tiene <b>60 segundos</b> para arrancar desde su celular. Si se le vence, se puede volver a habilitar con el mismo ticket.</div>`,
         footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Habilitar</button>`,
         onMount(m, close) {
           m.querySelector('[data-no]').onclick = close;
           m.querySelector('[data-yes]').onclick = () => {
-            const monto = parseInt(m.querySelector('#hp-monto').value, 10);
             const nro = (m.querySelector('#hp-nro').value || '').replace(/\D/g, '');
-            if (!monto || monto < MONTO_MIN_JUEGO) { toast('La compra tiene que ser de $' + fmt(MONTO_MIN_JUEGO) + ' o más.', 'error'); return; }
             if (!nro) { toast('Cargá el N° de ticket.', 'error'); return; }
+            const monto = 0;   // el mínimo lo controla el mostrador, no la app
             const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Habilitando…';
             // Un solo camino de alta (activarPartida): así el candado diario y la
             // excepción de la cuenta de demo se comportan igual desde acá y desde
@@ -298,8 +296,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             activarPartida(socio, nro, monto)
               .then(() => { toast('✓ Partida habilitada. Tiene 60 segundos para arrancar.'); close(); })
               .catch((e) => {
-                toast((e && e.message) === 'yajugo'
-                  ? 'Esta persona ya jugó hoy (el límite es por DNI).'
+                const mm = (e && e.message) || '';
+                toast(mm === 'yajugo' ? 'Esta persona ya jugó hoy (el límite es por DNI).'
+                  : mm === 'ticketusado' ? 'Ese N° de ticket ya se usó para una partida.'
                   : 'No se pudo habilitar. Reintentá.', 'error');
                 btn.disabled = false; btn.textContent = 'Habilitar';
               });
@@ -406,8 +405,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
           <div style="font-size:13px;color:#6b7280">Puntos</div>
           <div style="font-weight:900;color:#F58220;font-size:20px">${fmt(s.puntos)}</div>
-          <button class="btn btn-ghost btn-sm" data-edit style="margin-left:auto">✎ Editar datos</button>
-          <button class="btn btn-ghost btn-sm" data-hist>📜 Historial</button>
+          ${esCajero() ? '' : '<button class="btn btn-ghost btn-sm" data-edit style="margin-left:auto">✎ Editar datos</button>'}
+          <button class="btn btn-ghost btn-sm" data-hist${esCajero() ? ' style="margin-left:auto"' : ''}>📜 Historial</button>
         </div>` +
         filaDato('Nombre y apellido', s.nombre) +
         filaDato('DNI', s.dni) +
@@ -421,7 +420,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         m.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
         m.querySelector('[data-hist]').onclick = () => { close(); historialPuntos(s); };
         m.querySelector('[data-juego]').onclick = () => { close(); habilitarPartida(s); };
-        m.querySelector('[data-edit]').onclick = () => { close(); editarSocio(s); };
+        const edB = m.querySelector('[data-edit]'); if (edB) edB.onclick = () => { close(); editarSocio(s); };
         const delB = m.querySelector('[data-del]'); if (delB) delB.onclick = () => { close(); eliminarSocioAdmin(s); };
       },
     });
@@ -870,10 +869,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return ('0' + s).slice(-2) + '.' + ('0' + c).slice(-2); };
 
   function renderJuego(box) {
+    // El CAJERO solo activa partidas: no define el premio ni el objetivo del día
+    // (eso cambia lo que se entrega) y no accede al demo.
+    const cajero = esCajero();
     box.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr;gap:14px" id="jg-grid">
         <div style="background:#fff;border:1px solid var(--gris-bd);border-radius:12px;overflow:hidden">
-          <div style="background:#fff7ef;border-left:4px solid #F58220;padding:12px 16px">
+          ${cajero ? `<div style="background:#fff7ef;border-left:4px solid #F58220;padding:12px 16px">
+            <div class="small" style="font-weight:800;letter-spacing:.08em;color:#a85f1a;text-transform:uppercase">Premio de hoy</div>
+            <div id="jg-cfgro" class="small" style="margin-top:6px;color:#5b6470">Consultando…</div>
+          </div>` : `<div style="background:#fff7ef;border-left:4px solid #F58220;padding:12px 16px">
             <div class="small" style="font-weight:800;letter-spacing:.08em;color:#a85f1a;text-transform:uppercase">Configuración del día</div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
               <div style="flex:1;min-width:120px">
@@ -893,7 +898,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <button class="btn btn-sm" id="jg-guardar">Guardar el día</button>
               <span class="small muted" id="jg-cfgmsg"></span>
             </div>
-          </div>
+          </div>`}
           <div style="padding:14px 16px">
             <div style="display:flex;gap:12px;flex-wrap:wrap">
               <div style="flex:1;min-width:140px">
@@ -904,14 +909,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
                 <label class="small" style="color:#5b6470;font-weight:600">N° de ticket</label>
                 <input id="jg-ticket" type="text" placeholder="ej: 10080" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
               </div>
-              <div style="flex:1;min-width:140px">
-                <label class="small" style="color:#5b6470;font-weight:600">Monto ($)</label>
-                <input id="jg-monto" type="number" inputmode="numeric" placeholder="mín. 30000" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
-              </div>
             </div>
+            <div class="small muted" style="margin-top:8px">💵 El mínimo de <b>$30.000</b> lo controlás vos en el mostrador, mirando el ticket. No hace falta cargarlo acá.</div>
             <button class="btn" id="jg-activar" style="width:100%;margin-top:12px;font-size:16px;letter-spacing:.06em">ACTIVAR PARTIDA</button>
             <div class="small" id="jg-msg" style="margin-top:8px;min-height:18px"></div>
-            <button class="btn btn-ghost btn-sm" id="jg-demo" style="width:100%;margin-top:6px">▶ Ver demo (no consume partida)</button>
+            ${cajero ? '' : '<button class="btn btn-ghost btn-sm" id="jg-demo" style="width:100%;margin-top:6px">▶ Ver demo (no consume partida)</button>'}
           </div>
         </div>
 
@@ -930,6 +932,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     let cfg = null;
     subs.push(cfgRef.onSnapshot((d) => {
       cfg = d.exists ? d.data() : null;
+      // Vista del cajero: solo lectura, sin poder cambiar objetivo ni premio.
+      const ro = box.querySelector('#jg-cfgro');
+      if (ro) {
+        ro.innerHTML = (cfg && cfg.fecha === hoyISO())
+          ? `Objetivo <b style="color:#F58220">${(cfg.objetivoMs / 1000).toFixed(2)} s</b> · ${esc(cfg.premioIco || '🎁')} <b>${esc(cfg.premioNombre || '')}</b> · quedan <b>${cfg.unidades != null ? cfg.unidades : 0}</b>`
+          : '<b style="color:#c0392b">Todavía no se cargó el premio de hoy.</b> Avisale al administrador.';
+        return;
+      }
       const o = box.querySelector('#jg-obj'), p = box.querySelector('#jg-prem'), u = box.querySelector('#jg-uni');
       if (document.activeElement !== o) o.value = cfg && cfg.objetivoMs ? (cfg.objetivoMs / 1000).toFixed(2) : '10.00';
       if (document.activeElement !== p) p.value = (cfg && cfg.premioNombre) || '';
@@ -940,7 +950,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         : '<span style="color:#c0392b">Falta guardarlo para hoy</span>';
     }, (e) => { if (esPermiso(e)) avisoReglas(); }));
 
-    box.querySelector('#jg-guardar').onclick = () => {
+    if (!cajero) box.querySelector('#jg-guardar').onclick = () => {
       const seg = parseFloat(box.querySelector('#jg-obj').value);
       const prem = (box.querySelector('#jg-prem').value || '').trim();
       const uni = parseInt(box.querySelector('#jg-uni').value, 10);
@@ -957,12 +967,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     box.querySelector('#jg-activar').onclick = () => {
       const nro = parseInt(box.querySelector('#jg-socio').value, 10);
       const tk = (box.querySelector('#jg-ticket').value || '').trim();
-      const monto = parseInt(box.querySelector('#jg-monto').value, 10);
       const msg = box.querySelector('#jg-msg');
       const fail = (t) => { msg.innerHTML = '<b style="color:#c0392b">' + esc(t) + '</b>'; };
       if (!nro) { fail('Poné el N° de socio.'); return; }
       if (!tk) { fail('Poné el N° de ticket.'); return; }
-      if (!monto || monto < MONTO_MIN_JUEGO) { fail('La compra tiene que ser de $' + fmt(MONTO_MIN_JUEGO) + ' o más.'); return; }
+      // El mínimo de compra NO se carga: es un control físico del mostrador
+      // (el cajero mira el ticket). Pedirlo acá solo hacía más lento el proceso.
+      const monto = 0;
       msg.innerHTML = 'Buscando al socio…';
       db().collection('clientes').where('nroSocio', '==', nro).limit(1).get().then((s) => {
         if (s.empty) { fail('No hay ningún socio con el N° ' + nro + '.'); return; }
@@ -970,19 +981,20 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         msg.innerHTML = 'Habilitando a <b>' + esc(soc.nombre || '') + '</b>…';
         return activarPartida(soc, tk, monto).then(() => {
           msg.innerHTML = '<b style="color:#2e9e5b">✓ Partida habilitada a ' + esc(soc.nombre || '') + '. Tiene 60 s para arrancar.</b>';
-          box.querySelector('#jg-ticket').value = ''; box.querySelector('#jg-monto').value = ''; box.querySelector('#jg-socio').value = '';
+          box.querySelector('#jg-ticket').value = ''; box.querySelector('#jg-socio').value = '';
         });
       }).catch((e) => {
         const m = (e && e.message) || '';
         if (esPermiso(e)) { avisoReglas(); fail('Faltan publicar las reglas de Firestore.'); return; }
         fail(m === 'yajugo' ? 'Esta persona ya jugó hoy (el límite es por DNI).'
+           : m === 'ticketusado' ? 'Ese N° de ticket ya se usó para una partida. Cada ticket habilita una sola.'
            : m === 'sindni' ? 'El socio no tiene DNI cargado: no se puede aplicar el límite diario.'
-           : m === 'sincfg' ? 'Primero guardá el objetivo y el premio del día.'
+           : m === 'sincfg' ? (cajero ? 'Todavía no se cargó el premio de hoy. Avisale al administrador.' : 'Primero guardá el objetivo y el premio del día.')
            : 'No se pudo habilitar. Reintentá.');
       });
     };
 
-    box.querySelector('#jg-demo').onclick = () => demoJuego(cfg);
+    if (!cajero) box.querySelector('#jg-demo').onclick = () => demoJuego(cfg);
 
     // ---- espejo en vivo + log ----
     let espejoRaf = null;
@@ -1194,15 +1206,24 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         ticketNro: String(ticketNro), monto: monto, gano: false, premioEntregado: false, demo: ilimitado,
         venceMs: Date.now() + 60000, habilitadaPor: staffUid(), habilitadaTs: FV().serverTimestamp(),
       };
-      // CUENTA DE DEMO: se saltea el candado diario, así se puede mostrar el juego
-      // las veces que haga falta. Las partidas quedan marcadas demo:true para que
-      // no se confundan con las reales en el log.
+      // CUENTA DE DEMO: se saltea el candado diario y el del ticket, así se puede
+      // mostrar el juego las veces que haga falta. Las partidas quedan marcadas
+      // demo:true para que no se confundan con las reales en el log.
       if (ilimitado) return pref.set(datos);
       const lref = db().collection('juego_dias').doc(dni + '_' + fecha);
-      return db().runTransaction((tx) => tx.get(lref).then((ld) => {
-        if (ld.exists) throw new Error('yajugo');
-        tx.set(lref, { dni: dni, fecha: fecha, clienteUid: socio._id, partidaId: pref.id, por: staffUid(), ts: FV().serverTimestamp() });
-        tx.set(pref, datos);
+      // TICKET ÚNICO: un ticket habilita UNA sola partida y no se puede volver a
+      // usar (bases, punto 3). El candado es el propio N° de ticket como id, así
+      // que el segundo intento con el mismo número choca contra el doc existente.
+      const tref = db().collection('juego_tickets').doc(String(ticketNro));
+      return db().runTransaction((tx) => tx.get(tref).then((td) => {
+        if (td.exists) throw new Error('ticketusado');
+        return tx.get(lref).then((ld) => {
+          if (ld.exists) throw new Error('yajugo');
+          tx.set(tref, { nro: String(ticketNro), fecha: fecha, clienteUid: socio._id, socioNro: socio.nroSocio || 0,
+                         partidaId: pref.id, monto: monto, por: staffUid(), ts: FV().serverTimestamp() });
+          tx.set(lref, { dni: dni, fecha: fecha, clienteUid: socio._id, partidaId: pref.id, por: staffUid(), ts: FV().serverTimestamp() });
+          tx.set(pref, datos);
+        });
       }));
     });
   }

@@ -288,6 +288,18 @@ service cloud.firestore {
     // independencia del número de socio utilizado": por eso la llave es el DNI y
     // no el uid — abrirse una segunda cuenta de socio no habilita otra partida.
     // Lo crea el PERSONAL al habilitar, y no se puede pisar (create-only).
+    // TICKET ÚNICO (id = N° de ticket). Un ticket habilita UNA sola partida y no
+    // se puede volver a usar (bases, punto 3). Como el id es el propio número, el
+    // segundo intento con el mismo ticket choca contra el doc que ya existe.
+    // Es una colección aparte de /tickets: ese es el de la carga de puntos, y un
+    // mismo ticket puede sumar puntos Y habilitar una partida.
+    match /juego_tickets/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
     match /juego_dias/{id} {
       allow read:   if isStaff() || request.auth != null;
       allow create: if isStaff();
