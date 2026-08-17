@@ -64,6 +64,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-sm ${tab === 'socios' ? '' : 'btn-ghost'}" data-tab="socios">👥 Socios</button>
         ${cajero ? '' : `<button class="btn btn-sm ${tab === 'premios' ? '' : 'btn-ghost'}" data-tab="premios">🎁 Premios</button>`}
         <button class="btn btn-sm ${tab === 'canjes' ? '' : 'btn-ghost'}" data-tab="canjes">📋 Canjes</button>
+        <button class="btn btn-sm ${tab === 'juego' ? '' : 'btn-ghost'}" data-tab="juego">🎮 Juego</button>
       </div>
       <div id="club-body"><div class="empty">Cargando…</div></div>`;
     if (!cajero) { renderOnOff(c); renderCanjeToggle(c); renderJuegoToggle(c); }
@@ -72,6 +73,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (tab === 'mostrador') renderMostrador(body, c);
     else if (tab === 'socios') renderSocios(body);
     else if (tab === 'premios' && !cajero) renderPremios(body);
+    else if (tab === 'juego') renderJuego(body);
     else renderCanjes(body);
   };
 
@@ -187,8 +189,33 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      juego_config/dia. Lo lee el socio (solo lectura) y lo escribe el personal.
      El objetivo NO se puede tocar con una partida abierta sin que quede raro,
      así que conviene fijarlo antes de abrir el local. */
+  // Aviso de reglas sin publicar. La sección del juego en firestore.rules es
+  // nueva: hasta que no se publique en la consola, Firestore rechaza TODA lectura
+  // y escritura de juego_config / partidas / juego_dias. Antes eso hacía que el
+  // botón no abriera nada y pareciera roto; ahora lo decimos con todas las letras.
+  function esPermiso(e) {
+    const c = (e && (e.code || e.message)) || '';
+    return String(c).indexOf('permission-denied') >= 0 || String(c).indexOf('insufficient') >= 0;
+  }
+  function avisoReglas() {
+    modal({
+      title: '🔒 Faltan publicar las reglas del juego', width: 520,
+      bodyHTML:
+        `<p style="margin:0 0 10px;font-size:15px">Firestore está rechazando el acceso a los datos del juego porque las reglas nuevas <b>todavía no están publicadas</b>.</p>` +
+        `<div class="note">Andá a <b>consola de Firebase → Firestore Database → Reglas</b>, pegá el contenido de <b>firestore.rules</b> del proyecto y tocá <b>Publicar</b>. Es un paso manual: la app no puede hacerlo sola.</div>` +
+        `<p class="small muted" style="margin-top:10px">Hasta entonces no se puede cargar el premio del día ni habilitar partidas. El resto del Club (puntos, premios, canjes) sigue funcionando normal.</p>`,
+      footHTML: `<button class="btn" data-no>Entendido</button>`,
+      onMount(m, close) { m.querySelector('[data-no]').onclick = close; },
+    });
+  }
+
   function premioDiaModal() {
-    db().collection('juego_config').doc('dia').get().then((d) => {
+    // Si la lectura falla por permisos, igual abrimos el formulario con los
+    // valores por defecto: así se ve qué hay que cargar, y el error concreto
+    // aparece recién al guardar.
+    db().collection('juego_config').doc('dia').get()
+      .catch((e) => { if (esPermiso(e)) { avisoReglas(); throw e; } return { exists: false }; })
+      .then((d) => {
       const x = d.exists ? d.data() : {};
       const objSeg = ((x.objetivoMs || 10000) / 1000).toFixed(2);
       modal({
@@ -794,6 +821,205 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           op.then(() => { toast('Premio guardado.'); close(); }).catch(() => toast('No se pudo guardar.', 'error'));
         };
       },
+    });
+  }
+
+  /* ==================== PANTALLA DE MOSTRADOR DEL JUEGO ====================
+     El lado interno: nada de esto lo ve el cliente. Tiene la configuración del
+     día, el alta de la partida (socio + ticket) y el ESPEJO EN VIVO.
+     El espejo NO cuesta escrituras: la partida solo se escribe dos veces (al
+     arrancar y al frenar). El cronómetro de acá se calcula solo, restando
+     inicioTs del reloj, así el cajero ve correr el tiempo igual que el cliente. */
+  const jm = (ms) => { const s = Math.floor(ms / 1000), c = Math.floor((ms % 1000) / 10);
+    return ('0' + s).slice(-2) + '.' + ('0' + c).slice(-2); };
+
+  function renderJuego(box) {
+    box.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr;gap:14px" id="jg-grid">
+        <div style="background:#fff;border:1px solid var(--gris-bd);border-radius:12px;overflow:hidden">
+          <div style="background:#fff7ef;border-left:4px solid #F58220;padding:12px 16px">
+            <div class="small" style="font-weight:800;letter-spacing:.08em;color:#a85f1a;text-transform:uppercase">Configuración del día</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+              <div style="flex:1;min-width:120px">
+                <label class="small" style="color:#5b6470;font-weight:600">Objetivo (seg)</label>
+                <input id="jg-obj" type="number" step="0.01" min="1" max="60" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
+              </div>
+              <div style="flex:3;min-width:200px">
+                <label class="small" style="color:#5b6470;font-weight:600">Premio</label>
+                <input id="jg-prem" type="text" placeholder="ej: 1 kg de hamburguesas caseras" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
+              </div>
+              <div style="flex:1;min-width:100px">
+                <label class="small" style="color:#5b6470;font-weight:600">Unidades</label>
+                <input id="jg-uni" type="number" min="0" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
+              </div>
+            </div>
+            <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+              <button class="btn btn-sm" id="jg-guardar">Guardar el día</button>
+              <span class="small muted" id="jg-cfgmsg"></span>
+            </div>
+          </div>
+          <div style="padding:14px 16px">
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <div style="flex:1;min-width:140px">
+                <label class="small" style="color:#5b6470;font-weight:600">N° de socio</label>
+                <input id="jg-socio" type="number" inputmode="numeric" placeholder="ej: 12" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
+              </div>
+              <div style="flex:1;min-width:140px">
+                <label class="small" style="color:#5b6470;font-weight:600">N° de ticket</label>
+                <input id="jg-ticket" type="text" placeholder="ej: 10080" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
+              </div>
+              <div style="flex:1;min-width:140px">
+                <label class="small" style="color:#5b6470;font-weight:600">Monto ($)</label>
+                <input id="jg-monto" type="number" inputmode="numeric" placeholder="mín. 30000" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
+              </div>
+            </div>
+            <button class="btn" id="jg-activar" style="width:100%;margin-top:12px;font-size:16px;letter-spacing:.06em">ACTIVAR PARTIDA</button>
+            <div class="small" id="jg-msg" style="margin-top:8px;min-height:18px"></div>
+          </div>
+        </div>
+
+        <div style="background:#fff;border:1px solid var(--gris-bd);border-radius:12px;overflow:hidden">
+          <div class="small" style="padding:11px 16px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#5b6470;border-bottom:1px solid var(--gris-bd)">En vivo</div>
+          <div style="background:#111;padding:22px;text-align:center">
+            <div id="jg-espejo" style="font-family:monospace;font-size:44px;font-weight:700;color:#F58220;letter-spacing:2px">00.00</div>
+            <div id="jg-espejoL" class="small" style="color:#8a8a8a;letter-spacing:.14em;text-transform:uppercase;margin-top:4px">Sin actividad</div>
+          </div>
+          <div id="jg-log" style="max-height:280px;overflow-y:auto"></div>
+        </div>
+      </div>`;
+
+    // ---- configuración del día ----
+    const cfgRef = db().collection('juego_config').doc('dia');
+    let cfg = null;
+    subs.push(cfgRef.onSnapshot((d) => {
+      cfg = d.exists ? d.data() : null;
+      const o = box.querySelector('#jg-obj'), p = box.querySelector('#jg-prem'), u = box.querySelector('#jg-uni');
+      if (document.activeElement !== o) o.value = cfg && cfg.objetivoMs ? (cfg.objetivoMs / 1000).toFixed(2) : '10.00';
+      if (document.activeElement !== p) p.value = (cfg && cfg.premioNombre) || '';
+      if (document.activeElement !== u) u.value = cfg && cfg.unidades != null ? cfg.unidades : 5;
+      const msg = box.querySelector('#jg-cfgmsg');
+      msg.innerHTML = (cfg && cfg.fecha === hoyISO())
+        ? '<span style="color:#2e9e5b">✓ Cargado para hoy</span>'
+        : '<span style="color:#c0392b">Falta guardarlo para hoy</span>';
+    }, (e) => { if (esPermiso(e)) avisoReglas(); }));
+
+    box.querySelector('#jg-guardar').onclick = () => {
+      const seg = parseFloat(box.querySelector('#jg-obj').value);
+      const prem = (box.querySelector('#jg-prem').value || '').trim();
+      const uni = parseInt(box.querySelector('#jg-uni').value, 10);
+      if (!seg || seg <= 0) { toast('Poné el objetivo en segundos.', 'error'); return; }
+      if (!prem) { toast('Poné el premio del día.', 'error'); return; }
+      cfgRef.set({ fecha: hoyISO(), objetivoMs: Math.round(seg * 1000), premioNombre: prem,
+                   premioIco: (cfg && cfg.premioIco) || '🎁', unidades: isNaN(uni) ? 0 : uni,
+                   por: staffUid(), ts: FV().serverTimestamp() }, { merge: true })
+        .then(() => toast('✓ Día guardado.'))
+        .catch((e) => { if (esPermiso(e)) avisoReglas(); else toast('No se pudo guardar.', 'error'); });
+    };
+
+    // ---- activar partida por N° de socio ----
+    box.querySelector('#jg-activar').onclick = () => {
+      const nro = parseInt(box.querySelector('#jg-socio').value, 10);
+      const tk = (box.querySelector('#jg-ticket').value || '').trim();
+      const monto = parseInt(box.querySelector('#jg-monto').value, 10);
+      const msg = box.querySelector('#jg-msg');
+      const fail = (t) => { msg.innerHTML = '<b style="color:#c0392b">' + esc(t) + '</b>'; };
+      if (!nro) { fail('Poné el N° de socio.'); return; }
+      if (!tk) { fail('Poné el N° de ticket.'); return; }
+      if (!monto || monto < MONTO_MIN_JUEGO) { fail('La compra tiene que ser de $' + fmt(MONTO_MIN_JUEGO) + ' o más.'); return; }
+      msg.innerHTML = 'Buscando al socio…';
+      db().collection('clientes').where('nroSocio', '==', nro).limit(1).get().then((s) => {
+        if (s.empty) { fail('No hay ningún socio con el N° ' + nro + '.'); return; }
+        const soc = s.docs[0].data(); soc._id = s.docs[0].id;
+        msg.innerHTML = 'Habilitando a <b>' + esc(soc.nombre || '') + '</b>…';
+        return activarPartida(soc, tk, monto).then(() => {
+          msg.innerHTML = '<b style="color:#2e9e5b">✓ Partida habilitada a ' + esc(soc.nombre || '') + '. Tiene 60 s para arrancar.</b>';
+          box.querySelector('#jg-ticket').value = ''; box.querySelector('#jg-monto').value = ''; box.querySelector('#jg-socio').value = '';
+        });
+      }).catch((e) => {
+        const m = (e && e.message) || '';
+        if (esPermiso(e)) { avisoReglas(); fail('Faltan publicar las reglas de Firestore.'); return; }
+        fail(m === 'yajugo' ? 'Esta persona ya jugó hoy (el límite es por DNI).'
+           : m === 'sindni' ? 'El socio no tiene DNI cargado: no se puede aplicar el límite diario.'
+           : m === 'sincfg' ? 'Primero guardá el objetivo y el premio del día.'
+           : 'No se pudo habilitar. Reintentá.');
+      });
+    };
+
+    // ---- espejo en vivo + log ----
+    let espejoRaf = null;
+    subs.push(db().collection('partidas').where('fecha', '==', hoyISO()).onSnapshot((snap) => {
+      const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
+      const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
+      arr.sort((a, b) => (ms(b.habilitadaTs) || 0) - (ms(a.habilitadaTs) || 0));
+      const log = box.querySelector('#jg-log');
+      if (!log) return;
+      log.innerHTML = arr.length ? arr.map((p) => {
+        let chip, txt;
+        if (p.estado === 'jugada') {
+          chip = p.gano ? '<span class="chip chip-entreg">GANÓ</span>' : '<span class="chip chip-no">NO GANÓ</span>';
+          txt = 'Resultado <b>' + jm(p.tiempoMs || 0) + '</b> · socio ' + padNro(p.socioNro);
+        } else if (p.estado === 'jugando') {
+          chip = '<span class="chip chip-ruta">JUGANDO</span>';
+          txt = 'Arrancó el reloj · socio ' + padNro(p.socioNro);
+        } else if (p.venceMs && Date.now() > p.venceMs) {
+          chip = '<span class="chip chip-salt">VENCIDA</span>';
+          txt = 'Venció sin jugar · socio ' + padNro(p.socioNro);
+        } else {
+          chip = '<span class="chip chip-pend">ACTIVADA</span>';
+          txt = 'Activada · socio ' + padNro(p.socioNro) + ' · ticket ' + esc(p.ticketNro || '') + ' · objetivo ' + jm(p.objetivoMs || 0);
+        }
+        return `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #eee;font-size:13px">
+          <div style="flex:1">${txt} ${chip}</div>
+          <div class="small muted" style="white-space:nowrap">${horaCorta(p.habilitadaTs)}</div></div>`;
+      }).join('') : '<div class="empty" style="padding:18px">Sin movimientos todavía.</div>';
+
+      // El espejo sigue a la partida abierta: mientras esté 'jugando' el reloj
+      // corre acá solo, calculado desde inicioTs. Sin escrituras extra.
+      const viva = arr.find((p) => p.estado === 'jugando') || arr.find((p) => p.estado === 'habilitada' && p.venceMs > Date.now());
+      const ult = arr.find((p) => p.estado === 'jugada');
+      const esp = box.querySelector('#jg-espejo'), espL = box.querySelector('#jg-espejoL');
+      if (espejoRaf) { cancelAnimationFrame(espejoRaf); espejoRaf = null; }
+      if (viva && viva.estado === 'jugando' && viva.inicioTs) {
+        const t0 = viva.inicioTs.toMillis();
+        const correr = () => {
+          if (!document.body.contains(esp)) return;
+          esp.textContent = jm(Math.max(0, Date.now() - t0));
+          espL.textContent = 'Socio ' + padNro(viva.socioNro) + ' · jugando';
+          espejoRaf = requestAnimationFrame(correr);
+        };
+        correr();
+      } else if (viva) {
+        esp.textContent = '00.00'; espL.textContent = 'Socio ' + padNro(viva.socioNro) + ' · esperando que arranque';
+      } else if (ult) {
+        esp.textContent = jm(ult.tiempoMs || 0);
+        espL.textContent = 'Socio ' + padNro(ult.socioNro) + ' — ' + (ult.gano ? 'GANÓ' : 'no ganó');
+      } else {
+        esp.textContent = '00.00'; espL.textContent = 'Sin actividad';
+      }
+    }, (e) => { if (esPermiso(e)) avisoReglas(); }));
+  }
+
+  // Crea la partida + el candado del día en una sola transacción.
+  function activarPartida(socio, ticketNro, monto) {
+    const dni = String(socio.dni || '').replace(/\D/g, '');
+    if (!dni) return Promise.reject(new Error('sindni'));
+    return db().collection('juego_config').doc('dia').get().then((d) => {
+      const cfg = d.exists ? d.data() : null;
+      if (!cfg || !cfg.objetivoMs || !cfg.premioNombre || cfg.fecha !== hoyISO()) throw new Error('sincfg');
+      const fecha = hoyISO();
+      const lref = db().collection('juego_dias').doc(dni + '_' + fecha);
+      const pref = db().collection('partidas').doc();
+      return db().runTransaction((tx) => tx.get(lref).then((ld) => {
+        if (ld.exists) throw new Error('yajugo');
+        tx.set(lref, { dni: dni, fecha: fecha, clienteUid: socio._id, partidaId: pref.id, por: staffUid(), ts: FV().serverTimestamp() });
+        tx.set(pref, {
+          clienteUid: socio._id, socioNro: socio.nroSocio || 0, socioNombre: socio.nombre || '', dni: dni,
+          fecha: fecha, estado: 'habilitada', objetivoMs: cfg.objetivoMs,
+          premioIco: cfg.premioIco || '🎁', premioNombre: cfg.premioNombre,
+          ticketNro: String(ticketNro), monto: monto, gano: false, premioEntregado: false,
+          venceMs: Date.now() + 60000, habilitadaPor: staffUid(), habilitadaTs: FV().serverTimestamp(),
+        });
+      }));
     });
   }
 
