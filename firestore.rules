@@ -107,7 +107,14 @@ service cloud.firestore {
       // Update por el socio: puede tocar sus datos y BAJAR puntos (para canjear),
       // NUNCA subirlos (sumar = solo personal) ni cambiar 'nroSocio'. La baja real
       // queda atada a un voucher válido por la regla de /canjes (getAfter).
-      allow update: if isStaff() || (isOwner(uid)
+      // El ADMIN edita todo. El CAJERO (y cualquier staff que no sea admin) SOLO
+      // puede mover 'puntos': es lo que necesita para cargar una compra. No puede
+      // tocar nombre, DNI, teléfono, email, dirección ni el marcador de demo —
+      // antes eso era solo una restricción de pantalla y se podía saltear.
+      allow update: if isAdmin()
+                    || (isStaff()
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puntos']))
+                    || (isOwner(uid)
                         && request.resource.data.nroSocio == resource.data.nroSocio
                         && request.resource.data.puntos is int
                         && request.resource.data.puntos >= 0
@@ -277,10 +284,13 @@ service cloud.firestore {
     //   · el cronómetro se valida contra request.time, no contra el reloj del celular;
     //   · el resultado (ganó / no ganó) lo calcula la regla, no el navegador.
 
-    // Objetivo y premio del día. Lo lee cualquiera logueado; lo escribe el personal.
+    // Objetivo y premio del día. Lo lee cualquiera logueado; lo escribe SOLO un
+    // ADMIN. El cajero no lo toca: define qué se entrega y con qué dificultad, y
+    // esa decisión no es del mostrador. El cajero igual lo lee para saber qué
+    // premio anunciar.
     match /juego_config/{id} {
       allow read:  if request.auth != null;
-      allow write: if isStaff();
+      allow write: if isAdmin();
     }
 
     // CANDADO DIARIO por DOCUMENTO (id = "<dni>_<YYYY-MM-DD>"). Las bases dicen
