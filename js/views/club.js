@@ -1008,10 +1008,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           txt = 'Activada · socio ' + padNro(p.socioNro) + ' · ticket ' + esc(p.ticketNro || '') + ' · objetivo ' + jm(p.objetivoMs || 0);
         }
         const dm = p.demo ? ' <span class="chip" style="background:#fff3cd;color:#7a5c00">DEMO</span>' : '';
+        // Si la partida se ganó, desde acá se puede emitir (o reemitir) el voucher.
+        // Sirve cuando el celular del socio no llegó a crearlo: el premio ya está
+        // ganado y el comprobante no puede quedar colgado.
+        const vch = (p.estado === 'jugada' && p.gano)
+          ? ` <button class="btn btn-ghost btn-sm" data-vch="${esc(p._id)}" title="Emitir el voucher de este premio">🎟️ Voucher</button>` : '';
         return `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #eee;font-size:13px">
-          <div style="flex:1">${txt} ${chip}${dm}</div>
+          <div style="flex:1">${txt} ${chip}${dm}</div>${vch}
           <div class="small muted" style="white-space:nowrap">${horaCorta(p.habilitadaTs)}</div></div>`;
       }).join('') : '<div class="empty" style="padding:18px">Sin movimientos todavía.</div>';
+      log.querySelectorAll('[data-vch]').forEach((b) => b.onclick = () => {
+        const p = arr.find((x) => x._id === b.dataset.vch);
+        if (p) emitirVoucherJuego(p);
+      });
 
       // El espejo sigue a la partida abierta: mientras esté 'jugando' el reloj
       // corre acá solo, calculado desde inicioTs. Sin escrituras extra.
@@ -1116,6 +1125,55 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   // Expuesto: el demo no necesita datos ni sesión, así que se puede abrir desde
   // cualquier lado (por ejemplo para capacitar al personal sin entrar al Club).
   GDO.Views.demoJuego = demoJuego;
+
+  /* Emite (o muestra) el voucher de una partida GANADA, desde el mostrador.
+     El id del voucher es el de la partida, así que esto nunca duplica: si ya
+     existe, lo dice y no vuelve a escribir. Lo crea el PERSONAL, que siempre
+     estuvo autorizado a crear vouchers — no depende de las reglas nuevas. */
+  function emitirVoucherJuego(p) {
+    const ref = db().collection('canjes').doc(p._id);
+    ref.get().then((d) => {
+      if (d.exists) {
+        const v = d.data();
+        modal({
+          title: '🎟️ Voucher del premio', width: 420,
+          bodyHTML:
+            `<p style="margin:0 0 8px;font-size:15px">${esc(p.premioIco || '🎁')} <b>${esc(p.premioNombre || '')}</b></p>` +
+            `<p class="small muted" style="margin:0 0 10px">Socio ${esc(p.socioNombre || '')} · N° ${padNro(p.socioNro)}</p>` +
+            `<div style="font-family:monospace;font-size:20px;letter-spacing:2px;color:#F58220;font-weight:700;background:#fff7ef;border:1px dashed #f3cda0;border-radius:10px;padding:12px;text-align:center">${esc(v.codigo || '')}</div>` +
+            `<div class="note" style="margin-top:10px">${v.usado
+              ? '⚠️ Este voucher <b>ya fue entregado</b>.'
+              : 'Ya estaba emitido. El socio lo ve en <b>Mis canjes</b> del Club, con su QR.'}</div>`,
+          footHTML: `<button class="btn" data-no>Cerrar</button>`,
+          onMount(m, close) { m.querySelector('[data-no]').onclick = close; },
+        });
+        return;
+      }
+      confirmDlg(
+        'Emitir el voucher del premio "' + (p.premioNombre || '') + '" para ' + (p.socioNombre || 'el socio') +
+        ' (N° ' + padNro(p.socioNro) + ')? Le va a aparecer en Mis canjes, con su QR, y vence hoy al cierre.',
+        () => {
+          const fin = new Date(); fin.setHours(23, 59, 59, 999);
+          const a = new Uint8Array(6);
+          if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+          else for (let k = 0; k < a.length; k++) a[k] = Math.floor(Math.random() * 256);
+          let hex = ''; for (let i = 0; i < a.length; i++) hex += ('0' + a[i].toString(16)).slice(-2);
+          hex = hex.toUpperCase();
+          const codigo = 'GDO-' + hex.slice(0, 4) + '-' + hex.slice(4, 8) + '-' + hex.slice(8, 12);
+          ref.set({
+            clienteUid: p.clienteUid, origen: 'juego', partidaId: p._id,
+            premioNombre: p.premioNombre || '', premioIco: p.premioIco || '🎁',
+            costo: 0, estado: 'emitido', usado: false, codigo: codigo,
+            socioNombre: p.socioNombre || '', socioNro: p.socioNro || 0,
+            tiempoMs: p.tiempoMs || 0, venceMs: fin.getTime(),
+            emitidoPor: staffUid(), ts: FV().serverTimestamp(),
+          }).then(() => { toast('✓ Voucher emitido: ' + codigo); emitirVoucherJuego(p); })
+            .catch(() => toast('No se pudo emitir el voucher.', 'error'));
+        },
+        'Emitir voucher', 'btn'
+      );
+    }).catch((e) => { if (esPermiso(e)) avisoReglas(); else toast('No se pudo consultar el voucher.', 'error'); });
+  }
 
   // Crea la partida + el candado del día en una sola transacción.
   function activarPartida(socio, ticketNro, monto) {
