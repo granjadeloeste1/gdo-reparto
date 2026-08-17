@@ -416,7 +416,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
           <div style="font-size:13px;color:#6b7280">Puntos</div>
           <div style="font-weight:900;color:#F58220;font-size:20px">${fmt(s.puntos)}</div>
-          <button class="btn btn-ghost btn-sm" data-hist style="margin-left:auto">📜 Historial de cargas</button>
+          <button class="btn btn-ghost btn-sm" data-edit style="margin-left:auto">✎ Editar datos</button>
+          <button class="btn btn-ghost btn-sm" data-hist>📜 Historial</button>
         </div>` +
         filaDato('Nombre y apellido', s.nombre) +
         filaDato('DNI', s.dni) +
@@ -430,7 +431,47 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         m.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
         m.querySelector('[data-hist]').onclick = () => { close(); historialPuntos(s); };
         m.querySelector('[data-juego]').onclick = () => { close(); habilitarPartida(s); };
+        m.querySelector('[data-edit]').onclick = () => { close(); editarSocio(s); };
         const delB = m.querySelector('[data-del]'); if (delB) delB.onclick = () => { close(); eliminarSocioAdmin(s); };
+      },
+    });
+  }
+
+  /* ---------------- EDITAR LOS DATOS DEL SOCIO ----------------
+     Corrige lo que el socio cargó mal al registrarse, o completa lo que falta.
+     El DNI es el que más importa: sin DNI no se puede habilitar una partida del
+     juego, porque el límite diario se computa por documento (bases, punto 7).
+     NO toca los puntos: esos se mueven solo por /puntos_log, con su auditoría. */
+  function editarSocio(s) {
+    if (!s) return;
+    const campo = (id, lbl, val, tipo, extra) =>
+      `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">${lbl}</label>` +
+      `<input id="${id}" type="${tipo || 'text'}" value="${esc(val || '')}" ${extra || ''} style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>`;
+    modal({
+      title: `Editar socio N° ${padNro(s.nroSocio)}`, width: 460,
+      bodyHTML:
+        `<p class="small muted" style="margin:0 0 4px">Los <b>puntos</b> no se editan acá: se mueven con “Cargar puntos” y quedan registrados.</p>` +
+        campo('ed-nom', 'Nombre y apellido', s.nombre) +
+        campo('ed-dni', 'DNI <span style="font-weight:400;color:#8a93a0">(sin puntos · hace falta para el juego)</span>', s.dni, 'text', 'inputmode="numeric"') +
+        campo('ed-tel', 'Teléfono / WhatsApp', s.telefono, 'text', 'inputmode="tel"') +
+        campo('ed-mail', 'Email', s.email, 'email') +
+        campo('ed-dir', 'Dirección', s.direccion),
+      footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Guardar</button>`,
+      onMount(m, close) {
+        m.querySelector('[data-no]').onclick = close;
+        m.querySelector('[data-yes]').onclick = () => {
+          const nom = (m.querySelector('#ed-nom').value || '').trim();
+          if (!nom) { toast('El nombre no puede quedar vacío.', 'error'); return; }
+          const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Guardando…';
+          db().collection('clientes').doc(s._id).update({
+            nombre: nom,
+            dni: (m.querySelector('#ed-dni').value || '').replace(/\D/g, ''),
+            telefono: (m.querySelector('#ed-tel').value || '').trim(),
+            email: (m.querySelector('#ed-mail').value || '').trim(),
+            direccion: (m.querySelector('#ed-dir').value || '').trim(),
+          }).then(() => { toast('✓ Datos actualizados.'); close(); })
+            .catch(() => { toast('No se pudo guardar.', 'error'); btn.disabled = false; btn.textContent = 'Guardar'; });
+        };
       },
     });
   }
