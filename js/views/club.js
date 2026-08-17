@@ -726,6 +726,35 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     catch (e) { return '—'; }
   }
 
+  /* Partidas del juego de ESE socio, dentro de su historial: cuándo jugó, con qué
+     ticket, qué tiempo hizo y si ganó. Va aparte de /puntos_log porque el juego no
+     mueve puntos — se gana por destreza, no por saldo. */
+  function partidasDelSocio(s, cont) {
+    if (!cont) return;
+    db().collection('partidas').where('clienteUid', '==', s._id).limit(200).get().then((snap) => {
+      const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
+      if (!arr.length) return;   // nunca jugó: no ensuciamos el historial
+      const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
+      arr.sort((a, b) => ms(b.habilitadaTs) - ms(a.habilitadaTs));
+      const ganadas = arr.filter((p) => p.estado === 'jugada' && p.gano).length;
+      const jugadas = arr.filter((p) => p.estado === 'jugada').length;
+      cont.innerHTML =
+        `<h3 style="font-size:15px;margin:18px 0 6px;display:flex;align-items:center;gap:8px">🎮 Juego DIEZ EXACTO</h3>` +
+        `<div class="small muted" style="margin-bottom:8px">${jugadas} partida${jugadas === 1 ? '' : 's'} jugada${jugadas === 1 ? '' : 's'} · <b style="color:#2e9e5b">${ganadas} ganada${ganadas === 1 ? '' : 's'}</b></div>` +
+        `<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Ticket</th><th>Objetivo</th><th>Tiempo</th><th>Resultado</th></tr></thead><tbody>` +
+        arr.map((p) => `<tr>
+          <td class="small">${esc(p.fecha || '')} ${horaCorta(p.habilitadaTs)}</td>
+          <td class="small">${esc(p.ticketNro || '—')}</td>
+          <td class="small">${jm(p.objetivoMs || 0)}</td>
+          <td><b>${p.estado === 'jugada' ? jm(p.tiempoMs || 0) : '—'}</b></td>
+          <td>${p.estado === 'jugada'
+                ? (p.gano ? '<span class="chip chip-entreg">🏆 GANÓ</span>' : '<span class="chip chip-no">No ganó</span>')
+                : (p.estado === 'jugando' ? '<span class="chip chip-ruta">Jugando</span>' : '<span class="chip chip-salt">Sin jugar</span>')}
+              ${p.demo ? ' <span class="chip" style="background:#fff3cd;color:#7a5c00">DEMO</span>' : ''}</td>
+        </tr>`).join('') + `</tbody></table></div>`;
+    }).catch(() => {});
+  }
+
   function historialPuntos(s) {
     if (!s) return;
     const m = modal({
@@ -760,7 +789,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           </tr>`;
         }).join('') + `</tbody></table></div>` +
         `<div class="small muted" style="margin-top:8px">La columna <b>Compra</b> aparece en las cargas hechas desde esta versión. En las anteriores el monto está en el ticket.` +
-        (arr.length >= 300 ? ' Se muestran los primeros 300 movimientos.' : '') + `</div>`;
+        (arr.length >= 300 ? ' Se muestran los primeros 300 movimientos.' : '') + `</div>` +
+        `<div id="hp-juego"></div>`;
+      partidasDelSocio(s, box.querySelector('#hp-juego'));
     }).catch(() => { box.innerHTML = '<div class="empty">No se pudo cargar el historial.</div>'; });
   }
 
@@ -919,6 +950,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
         <div style="background:#fff;border:1px solid var(--gris-bd);border-radius:12px;overflow:hidden">
           <div class="small" style="padding:11px 16px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#5b6470;border-bottom:1px solid var(--gris-bd)">En vivo</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-bottom:1px solid var(--gris-bd);background:#fafbfc">
+            <select id="jg-fres" style="padding:7px 9px;border:1px solid #cfd4da;border-radius:8px;font-size:13px;font-family:inherit">
+              <option value="">Todas</option><option value="si">Solo ganadores</option><option value="no">Solo no ganadores</option>
+            </select>
+            <input id="jg-fsoc" type="number" inputmode="numeric" placeholder="N° socio" style="width:110px;padding:7px 9px;border:1px solid #cfd4da;border-radius:8px;font-size:13px;font-family:inherit"/>
+            <select id="jg-fcant" style="padding:7px 9px;border:1px solid #cfd4da;border-radius:8px;font-size:13px;font-family:inherit;margin-left:auto">
+              <option value="10">Mostrar 10</option><option value="50">Mostrar 50</option>
+              <option value="100">Mostrar 100</option><option value="0">Mostrar todas</option>
+            </select>
+            ${cajero ? '' : '<button class="btn btn-ghost btn-sm" id="jg-del" style="color:#c0392b">🗑 Eliminar seleccionadas</button>'}
+          </div>
           <div style="background:#111;padding:22px;text-align:center">
             <div id="jg-espejo" style="font-family:monospace;font-size:44px;font-weight:700;color:#F58220;letter-spacing:2px">00.00</div>
             <div id="jg-espejoL" class="small" style="color:#8a8a8a;letter-spacing:.14em;text-transform:uppercase;margin-top:4px">Sin actividad</div>
@@ -998,17 +1040,42 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
     // ---- espejo en vivo + log ----
     let espejoRaf = null;
-    subs.push(db().collection('partidas').where('fecha', '==', hoyISO()).onSnapshot((snap) => {
-      const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
+    let todas = [];
+    // Se traen TODAS las partidas (no solo las de hoy) para poder filtrar por socio
+    // y ver su historial completo. El espejo sigue mirando solo las de hoy.
+    subs.push(db().collection('partidas').limit(500).onSnapshot((snap) => {
+      todas = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; todas.push(x); });
       const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
-      arr.sort((a, b) => (ms(b.habilitadaTs) || 0) - (ms(a.habilitadaTs) || 0));
+      todas.sort((a, b) => (ms(b.habilitadaTs) || 0) - (ms(a.habilitadaTs) || 0));
+      pintarLog(); pintarEspejo();
+    }, (e) => { if (esPermiso(e)) avisoReglas(); }));
+
+    ['#jg-fres', '#jg-fsoc', '#jg-fcant'].forEach((s) => {
+      const el = box.querySelector(s); if (el) el.oninput = el.onchange = pintarLog;
+    });
+
+    function pintarLog() {
       const log = box.querySelector('#jg-log');
       if (!log) return;
-      log.innerHTML = arr.length ? arr.map((p) => {
+      const fres = (box.querySelector('#jg-fres') || {}).value || '';
+      const fsoc = parseInt((box.querySelector('#jg-fsoc') || {}).value, 10);
+      const cant = parseInt((box.querySelector('#jg-fcant') || {}).value, 10);
+      let arr = todas.filter((p) => {
+        if (fres === 'si' && !(p.estado === 'jugada' && p.gano)) return false;
+        if (fres === 'no' && !(p.estado === 'jugada' && !p.gano)) return false;
+        if (!isNaN(fsoc) && (p.socioNro || 0) !== fsoc) return false;
+        return true;
+      });
+      const total = arr.length;
+      if (cant > 0) arr = arr.slice(0, cant);
+      log.innerHTML = (arr.length ? arr.map((p) => {
         let chip, txt;
         if (p.estado === 'jugada') {
           chip = p.gano ? '<span class="chip chip-entreg">GANÓ</span>' : '<span class="chip chip-no">NO GANÓ</span>';
-          txt = 'Resultado <b>' + jm(p.tiempoMs || 0) + '</b> · socio ' + padNro(p.socioNro);
+          txt = '<b>' + jm(p.tiempoMs || 0) + '</b> · socio ' + padNro(p.socioNro) +
+                ' · ' + esc(p.socioNombre || '') +
+                '<br><span class="small muted">Ticket ' + esc(p.ticketNro || '—') +
+                ' · objetivo ' + jm(p.objetivoMs || 0) + ' · ' + esc(p.fecha || '') + '</span>';
         } else if (p.estado === 'jugando') {
           chip = '<span class="chip chip-ruta">JUGANDO</span>';
           txt = 'Arrancó el reloj · socio ' + padNro(p.socioNro);
@@ -1026,18 +1093,48 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const vch = (p.estado === 'jugada' && p.gano)
           ? ` <button class="btn btn-ghost btn-sm" data-vch="${esc(p._id)}" title="Emitir el voucher de este premio">🎟️ Voucher</button>` : '';
         return `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #eee;font-size:13px">
+          ${cajero ? '' : `<input type="checkbox" data-selp2="${esc(p._id)}" style="flex:none"/>`}
           <div style="flex:1">${txt} ${chip}${dm}</div>${vch}
           <div class="small muted" style="white-space:nowrap">${horaCorta(p.habilitadaTs)}</div></div>`;
-      }).join('') : '<div class="empty" style="padding:18px">Sin movimientos todavía.</div>';
+      }).join('') : '<div class="empty" style="padding:18px">Ninguna partida coincide con el filtro.</div>') +
+        `<div class="small muted" style="padding:9px 14px;text-align:center;border-top:1px solid #eee">
+           Mostrando ${arr.length} de ${total} partida${total === 1 ? '' : 's'}</div>`;
       log.querySelectorAll('[data-vch]').forEach((b) => b.onclick = () => {
-        const p = arr.find((x) => x._id === b.dataset.vch);
+        const p = todas.find((x) => x._id === b.dataset.vch);
         if (p) emitirVoucherJuego(p);
       });
+    }
 
-      // El espejo sigue a la partida abierta: mientras esté 'jugando' el reloj
-      // corre acá solo, calculado desde inicioTs. Sin escrituras extra.
-      const viva = arr.find((p) => p.estado === 'jugando') || arr.find((p) => p.estado === 'habilitada' && p.venceMs > Date.now());
-      const ult = arr.find((p) => p.estado === 'jugada');
+    const delB = box.querySelector('#jg-del');
+    if (delB) delB.onclick = () => {
+      const ids = Array.prototype.map.call(box.querySelectorAll('[data-selp2]:checked'), (cb) => cb.dataset.selp2);
+      if (!ids.length) { toast('Tildá al menos una partida.', 'error'); return; }
+      confirmDlg(
+        '⚠️ ¿ELIMINAR ' + ids.length + ' partida(s)? Se borra también su voucher y se liberan el candado del día y el N° de ticket, ' +
+        'así esa persona puede volver a jugar y ese ticket se puede reutilizar. No se puede deshacer.',
+        () => {
+          const batch = db().batch();
+          ids.forEach((id) => {
+            const p = todas.find((x) => x._id === id); if (!p) return;
+            batch.delete(db().collection('partidas').doc(id));
+            batch.delete(db().collection('canjes').doc(id));                       // su voucher, si lo tenía
+            if (p.dni && p.fecha) batch.delete(db().collection('juego_dias').doc(p.dni + '_' + p.fecha));
+            if (p.ticketNro) batch.delete(db().collection('juego_tickets').doc(String(p.ticketNro)));
+          });
+          batch.commit()
+            .then(() => toast('Se eliminaron ' + ids.length + ' partida(s).'))
+            .catch((e) => { if (esPermiso(e)) avisoReglas(); else toast('No se pudo eliminar.', 'error'); });
+        }
+      );
+    };
+
+    // El espejo sigue a la partida abierta: mientras esté 'jugando' el reloj
+    // corre acá solo, calculado desde inicioTs. Sin escrituras extra.
+    // Mira SOLO las de hoy: los filtros del log no lo afectan.
+    function pintarEspejo() {
+      const hoyArr = todas.filter((p) => p.fecha === hoyISO());
+      const viva = hoyArr.find((p) => p.estado === 'jugando') || hoyArr.find((p) => p.estado === 'habilitada' && p.venceMs > Date.now());
+      const ult = hoyArr.find((p) => p.estado === 'jugada');
       const esp = box.querySelector('#jg-espejo'), espL = box.querySelector('#jg-espejoL');
       if (espejoRaf) { cancelAnimationFrame(espejoRaf); espejoRaf = null; }
       if (viva && viva.estado === 'jugando' && viva.inicioTs) {
@@ -1057,7 +1154,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       } else {
         esp.textContent = '00.00'; espL.textContent = 'Sin actividad';
       }
-    }, (e) => { if (esPermiso(e)) avisoReglas(); }));
+    }
   }
 
   /* ---------------- DEMO DEL JUEGO ----------------
