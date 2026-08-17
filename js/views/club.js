@@ -266,7 +266,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   function habilitarPartida(socio) {
     if (!socio) return;
     const dni = String(socio.dni || '').replace(/\D/g, '');
-    if (!dni) { toast('El socio no tiene DNI cargado: no se puede aplicar el límite diario.', 'error'); return; }
+    if (!dni && socio.juegoIlimitado !== true) { toast('El socio no tiene DNI cargado: no se puede aplicar el límite diario.', 'error'); return; }
     db().collection('juego_config').doc('dia').get().then((d) => {
       const cfg = d.exists ? d.data() : null;
       if (!cfg || !cfg.objetivoMs || !cfg.premioNombre) {
@@ -292,21 +292,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             if (!monto || monto < MONTO_MIN_JUEGO) { toast('La compra tiene que ser de $' + fmt(MONTO_MIN_JUEGO) + ' o más.', 'error'); return; }
             if (!nro) { toast('Cargá el N° de ticket.', 'error'); return; }
             const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Habilitando…';
-            const fecha = hoyISO();
-            const lref = db().collection('juego_dias').doc(dni + '_' + fecha);
-            const pref = db().collection('partidas').doc();
-            // Candado + partida en la MISMA transacción: si ya jugó hoy, no se crea nada.
-            db().runTransaction((tx) => tx.get(lref).then((ld) => {
-              if (ld.exists) throw new Error('yajugo');
-              tx.set(lref, { dni: dni, fecha: fecha, clienteUid: socio._id, partidaId: pref.id, por: staffUid(), ts: FV().serverTimestamp() });
-              tx.set(pref, {
-                clienteUid: socio._id, socioNro: socio.nroSocio || 0, socioNombre: socio.nombre || '', dni: dni,
-                fecha: fecha, estado: 'habilitada', objetivoMs: cfg.objetivoMs,
-                premioIco: cfg.premioIco || '🎁', premioNombre: cfg.premioNombre,
-                ticketNro: nro, monto: monto, gano: false, premioEntregado: false,
-                venceMs: Date.now() + 60000, habilitadaPor: staffUid(), habilitadaTs: FV().serverTimestamp(),
-              });
-            })).then(() => { toast('✓ Partida habilitada. Tiene 60 segundos para arrancar.'); close(); })
+            // Un solo camino de alta (activarPartida): así el candado diario y la
+            // excepción de la cuenta de demo se comportan igual desde acá y desde
+            // la pantalla de mostrador.
+            activarPartida(socio, nro, monto)
+              .then(() => { toast('✓ Partida habilitada. Tiene 60 segundos para arrancar.'); close(); })
               .catch((e) => {
                 toast((e && e.message) === 'yajugo'
                   ? 'Esta persona ya jugó hoy (el límite es por DNI).'
@@ -455,7 +445,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         campo('ed-dni', 'DNI <span style="font-weight:400;color:#8a93a0">(sin puntos · hace falta para el juego)</span>', s.dni, 'text', 'inputmode="numeric"') +
         campo('ed-tel', 'Teléfono / WhatsApp', s.telefono, 'text', 'inputmode="tel"') +
         campo('ed-mail', 'Email', s.email, 'email') +
-        campo('ed-dir', 'Dirección', s.direccion),
+        campo('ed-dir', 'Dirección', s.direccion) +
+        `<label style="display:flex;align-items:flex-start;gap:9px;margin-top:14px;font-size:14px;cursor:pointer;background:#fff7ef;border:1px solid #f3cda0;border-radius:9px;padding:10px 12px">
+           <input id="ed-ilim" type="checkbox" ${s.juegoIlimitado ? 'checked' : ''} style="margin-top:3px;width:18px;height:18px;flex:none"/>
+           <span>🎮 <b>Jugadas ilimitadas (demo)</b><br><span class="small muted">Se saltea el límite de una partida por día. Es para mostrar el juego, no para un socio común.</span></span>
+         </label>`,
       footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Guardar</button>`,
       onMount(m, close) {
         m.querySelector('[data-no]').onclick = close;
@@ -469,6 +463,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             telefono: (m.querySelector('#ed-tel').value || '').trim(),
             email: (m.querySelector('#ed-mail').value || '').trim(),
             direccion: (m.querySelector('#ed-dir').value || '').trim(),
+            juegoIlimitado: m.querySelector('#ed-ilim').checked,
           }).then(() => { toast('✓ Datos actualizados.'); close(); })
             .catch(() => { toast('No se pudo guardar.', 'error'); btn.disabled = false; btn.textContent = 'Guardar'; });
         };
@@ -916,6 +911,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             </div>
             <button class="btn" id="jg-activar" style="width:100%;margin-top:12px;font-size:16px;letter-spacing:.06em">ACTIVAR PARTIDA</button>
             <div class="small" id="jg-msg" style="margin-top:8px;min-height:18px"></div>
+            <button class="btn btn-ghost btn-sm" id="jg-demo" style="width:100%;margin-top:6px">▶ Ver demo (no consume partida)</button>
           </div>
         </div>
 
@@ -986,6 +982,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       });
     };
 
+    box.querySelector('#jg-demo').onclick = () => demoJuego(cfg);
+
     // ---- espejo en vivo + log ----
     let espejoRaf = null;
     subs.push(db().collection('partidas').where('fecha', '==', hoyISO()).onSnapshot((snap) => {
@@ -1009,8 +1007,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           chip = '<span class="chip chip-pend">ACTIVADA</span>';
           txt = 'Activada · socio ' + padNro(p.socioNro) + ' · ticket ' + esc(p.ticketNro || '') + ' · objetivo ' + jm(p.objetivoMs || 0);
         }
+        const dm = p.demo ? ' <span class="chip" style="background:#fff3cd;color:#7a5c00">DEMO</span>' : '';
         return `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #eee;font-size:13px">
-          <div style="flex:1">${txt} ${chip}</div>
+          <div style="flex:1">${txt} ${chip}${dm}</div>
           <div class="small muted" style="white-space:nowrap">${horaCorta(p.habilitadaTs)}</div></div>`;
       }).join('') : '<div class="empty" style="padding:18px">Sin movimientos todavía.</div>';
 
@@ -1040,26 +1039,112 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     }, (e) => { if (esPermiso(e)) avisoReglas(); }));
   }
 
+  /* ---------------- DEMO DEL JUEGO ----------------
+     Para mostrarlo en el mostrador o capacitar al personal. Corre ENTERO en el
+     navegador: no escribe en Firestore, no crea partidas, no toca el candado
+     diario y no gasta unidades del premio. El objetivo se puede bajar a 2 s para
+     mostrar rápido la pantalla de premio sin tener que acertar 10,00. */
+  function demoJuego(cfg) {
+    const objIni = (cfg && cfg.objetivoMs) ? (cfg.objetivoMs / 1000).toFixed(2) : '10.00';
+    const premio = (cfg && cfg.premioNombre) || 'Premio del día';
+    const ico = (cfg && cfg.premioIco) || '🎁';
+    let t0 = 0, raf = null, corriendo = false, objMs = Math.round(parseFloat(objIni) * 1000);
+
+    const m = modal({
+      title: '▶ Demo del juego · DIEZ EXACTO', width: 420,
+      bodyHTML:
+        `<div style="background:#fff3cd;border-left:4px solid #e0a800;color:#7a5c00;border-radius:9px;padding:9px 12px;font-size:12.5px;margin-bottom:12px">
+           <b>Es una demostración.</b> No consume la partida del socio, no gasta unidades del premio ni deja registro.</div>` +
+        `<label style="font-size:13px;color:#5b6470;font-weight:600">Objetivo (seg) <span style="font-weight:400;color:#8a93a0">bajalo a 2.00 para mostrar rápido el premio</span></label>` +
+        `<input id="dm-obj" type="number" step="0.01" min="0.5" max="60" value="${objIni}" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+        `<div id="dm-pant" style="background:#FBF9F6;border:1px solid #E6E0D8;border-radius:14px;padding:22px;text-align:center;margin-top:12px">
+           <div style="font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#6B6660">Pará el reloj en</div>
+           <div id="dm-obj-v" style="font-family:Georgia,serif;font-size:44px;font-weight:700;color:#F58220;line-height:1">${objIni}</div>
+           <div id="dm-crono" style="font-family:monospace;font-size:42px;font-weight:700;color:#141210;margin-top:14px;letter-spacing:1px">00.00</div>
+           <div style="font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:#6B6660;margin-top:2px">Segundos · centésimas</div>
+           <button id="dm-push" style="margin-top:16px;width:120px;height:120px;border-radius:50%;border:0;cursor:pointer;font-family:Georgia,serif;font-size:26px;font-weight:700;color:#2A1200;background:radial-gradient(115% 115% at 50% 8%,#FFC48A,#F58220 46%,#7A3B0A);box-shadow:0 8px 0 -2px #050505">DALE</button>
+           <div id="dm-res" style="margin-top:14px;min-height:56px"></div>
+         </div>`,
+      footHTML: `<button class="btn btn-ghost" data-reset>↺ Reiniciar</button><button class="btn" data-no>Cerrar</button>`,
+      onMount(mm, close) {
+        const $ = (s) => mm.querySelector(s);
+        const pinta = (ms) => { const sg = Math.floor(ms / 1000), c = Math.floor((ms % 1000) / 10);
+          $('#dm-crono').textContent = ('0' + sg).slice(-2) + '.' + ('0' + c).slice(-2); };
+        const parar = () => { if (raf) cancelAnimationFrame(raf); raf = null; };
+        const reset = () => {
+          parar(); corriendo = false; pinta(0);
+          $('#dm-crono').style.color = '#141210';
+          $('#dm-push').textContent = 'DALE'; $('#dm-push').disabled = false;
+          $('#dm-res').innerHTML = '';
+        };
+        $('#dm-obj').oninput = () => {
+          const v = parseFloat($('#dm-obj').value) || 10;
+          objMs = Math.round(v * 1000); $('#dm-obj-v').textContent = v.toFixed(2); reset();
+        };
+        const tick = () => { pinta(performance.now() - t0); raf = requestAnimationFrame(tick); };
+        $('#dm-push').onclick = () => {
+          if (!corriendo) {
+            corriendo = true; t0 = performance.now(); tick();
+            $('#dm-push').textContent = 'PARÁ'; $('#dm-crono').style.color = '#F58220';
+            $('#dm-res').innerHTML = '';
+          } else {
+            corriendo = false; parar();
+            const ms = Math.floor(performance.now() - t0); pinta(ms);
+            $('#dm-crono').style.color = '#141210';
+            $('#dm-push').textContent = 'DALE';
+            // Mismo criterio que el juego real: acierto exacto, truncado a la centésima.
+            const gano = Math.floor(ms / 10) === Math.floor(objMs / 10);
+            const dif = (ms - objMs) / 1000;
+            $('#dm-res').innerHTML = gano
+              ? `<div style="background:#111;color:#fff;border-left:5px solid #2e9e5b;border-radius:12px;padding:14px">
+                   <div style="font-size:30px">🎉</div><b style="font-size:17px">¡GANASTE!</b>
+                   <div style="font-size:26px;margin-top:4px">${esc(ico)}</div>
+                   <div style="font-size:14px;font-weight:700">${esc(premio)}</div></div>`
+              : `<div style="background:#111;color:#fff;border-left:5px solid #6B6660;border-radius:12px;padding:14px">
+                   <b style="font-size:17px">CASI</b>
+                   <div style="font-size:22px;color:#F58220;font-weight:700;margin-top:2px">${dif < 0 ? '−' : '+'}${Math.abs(dif).toFixed(2)} s</div>
+                   <div class="small" style="color:#bbb">del objetivo</div></div>`;
+          }
+        };
+        mm.querySelector('[data-reset]').onclick = reset;
+        mm.querySelector('[data-no]').onclick = () => { parar(); close(); };
+      },
+    });
+    return m;
+  }
+
+  // Expuesto: el demo no necesita datos ni sesión, así que se puede abrir desde
+  // cualquier lado (por ejemplo para capacitar al personal sin entrar al Club).
+  GDO.Views.demoJuego = demoJuego;
+
   // Crea la partida + el candado del día en una sola transacción.
   function activarPartida(socio, ticketNro, monto) {
     const dni = String(socio.dni || '').replace(/\D/g, '');
-    if (!dni) return Promise.reject(new Error('sindni'));
+    const ilimitado = socio.juegoIlimitado === true;
+    // Sin DNI no hay forma de aplicar el límite diario. La cuenta de DEMO no lo
+    // necesita, porque justamente no usa el candado.
+    if (!dni && !ilimitado) return Promise.reject(new Error('sindni'));
     return db().collection('juego_config').doc('dia').get().then((d) => {
       const cfg = d.exists ? d.data() : null;
       if (!cfg || !cfg.objetivoMs || !cfg.premioNombre || cfg.fecha !== hoyISO()) throw new Error('sincfg');
       const fecha = hoyISO();
-      const lref = db().collection('juego_dias').doc(dni + '_' + fecha);
       const pref = db().collection('partidas').doc();
+      const datos = {
+        clienteUid: socio._id, socioNro: socio.nroSocio || 0, socioNombre: socio.nombre || '', dni: dni,
+        fecha: fecha, estado: 'habilitada', objetivoMs: cfg.objetivoMs,
+        premioIco: cfg.premioIco || '🎁', premioNombre: cfg.premioNombre,
+        ticketNro: String(ticketNro), monto: monto, gano: false, premioEntregado: false, demo: ilimitado,
+        venceMs: Date.now() + 60000, habilitadaPor: staffUid(), habilitadaTs: FV().serverTimestamp(),
+      };
+      // CUENTA DE DEMO: se saltea el candado diario, así se puede mostrar el juego
+      // las veces que haga falta. Las partidas quedan marcadas demo:true para que
+      // no se confundan con las reales en el log.
+      if (ilimitado) return pref.set(datos);
+      const lref = db().collection('juego_dias').doc(dni + '_' + fecha);
       return db().runTransaction((tx) => tx.get(lref).then((ld) => {
         if (ld.exists) throw new Error('yajugo');
         tx.set(lref, { dni: dni, fecha: fecha, clienteUid: socio._id, partidaId: pref.id, por: staffUid(), ts: FV().serverTimestamp() });
-        tx.set(pref, {
-          clienteUid: socio._id, socioNro: socio.nroSocio || 0, socioNombre: socio.nombre || '', dni: dni,
-          fecha: fecha, estado: 'habilitada', objetivoMs: cfg.objetivoMs,
-          premioIco: cfg.premioIco || '🎁', premioNombre: cfg.premioNombre,
-          ticketNro: String(ticketNro), monto: monto, gano: false, premioEntregado: false,
-          venceMs: Date.now() + 60000, habilitadaPor: staffUid(), habilitadaTs: FV().serverTimestamp(),
-        });
+        tx.set(pref, datos);
       }));
     });
   }
