@@ -1169,7 +1169,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           ? `<table><thead><tr>${puedeBorrar ? '<th style="width:34px"><input type="checkbox" id="cj-all" title="Seleccionar todos"/></th>' : ''}<th>Premio</th><th>Socio</th><th>Código</th><th>Estado</th></tr></thead><tbody>` +
             arr.map((c) => `<tr>
               ${puedeBorrar ? `<td><input type="checkbox" data-selc="${esc(c._id)}"/></td>` : ''}
-              <td>${esc(c.premioIco || '🎁')} ${esc(c.premioNombre || '')}</td>
+              <td>${esc(c.premioIco || '🎁')} ${esc(c.premioNombre || '')}
+                ${c.origen === 'juego'
+                  ? '<span class="chip" style="background:#fff3cd;color:#7a5c00">🎮 Juego</span>'
+                  : '<span class="chip" style="background:#fff0e2;color:#a85f1a">⭐ Puntos</span>'}</td>
               <td class="small">${esc(c.socioNombre || '')}<br><span class="muted">N° ${padNro(c.socioNro)}</span></td>
               <td class="small" style="font-family:monospace">${esc(c.codigo || '')}</td>
               <td>${c.usado ? '<span class="chip chip-entreg">✔ Usado</span>'

@@ -160,6 +160,28 @@ service cloud.firestore {
       // en "Mis canjes". La condición obliga a que la query esté acotada a su uid: no
       // puede listar los de otro. El personal ve todos.
       allow list: if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
+      // VOUCHER GANADO EN EL JUEGO. No cuesta puntos, así que no pasa por el
+      // control de saldo: lo que lo respalda es la PARTIDA. Solo se puede emitir
+      // si existe una partida propia, ya jugada y GANADA, y el premio tiene que
+      // ser el mismo que dice esa partida (no se puede pedir otro).
+      // El id del voucher ES el id de la partida: una partida ganada emite UN
+      // voucher y nada más — el segundo intento choca con el doc que ya existe.
+      allow create: if request.auth != null
+                       && request.resource.data.get('origen', '') == 'juego'
+                       && request.resource.data.clienteUid == request.auth.uid
+                       && request.resource.data.partidaId == id
+                       && request.resource.data.costo == 0
+                       && request.resource.data.usado == false
+                       && request.resource.data.estado == 'emitido'
+                       && get(/databases/$(database)/documents/partidas/$(id)).data.clienteUid == request.auth.uid
+                       && get(/databases/$(database)/documents/partidas/$(id)).data.estado == 'jugada'
+                       && get(/databases/$(database)/documents/partidas/$(id)).data.gano == true
+                       && request.resource.data.premioNombre == get(/databases/$(database)/documents/partidas/$(id)).data.premioNombre
+                       // Vence el mismo día (bases, punto 8).
+                       && request.resource.data.venceMs is number
+                       && request.resource.data.venceMs > request.time.toMillis()
+                       && request.resource.data.venceMs <= request.time.toMillis() + 86400000;
+
       allow create: if isStaff() || (
                        request.auth != null
                        && request.resource.data.clienteUid == request.auth.uid
