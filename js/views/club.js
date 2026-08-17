@@ -904,26 +904,47 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // (eso cambia lo que se entrega) y no accede al demo.
     const cajero = esCajero();
     box.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr;gap:14px" id="jg-grid">
+      <style>
+        /* Esta pantalla se usa en el CELULAR, en el mostrador: todo mobile-first.
+           En pantalla chica cada control ocupa el ancho completo y las filas del
+           log se apilan, en vez de pelearse por el espacio en una sola línea. */
+        #jg-grid{display:grid;grid-template-columns:1fr;gap:14px}
+        #jg-campos{display:grid;grid-template-columns:1fr;gap:10px}
+        #jg-campos label{display:block;margin-bottom:3px}
+        #jg-campos input{width:100%;padding:12px;border:1px solid #cfd4da;border-radius:9px;font-size:16px;font-family:inherit}
+        #jg-cfgcampos{display:grid;grid-template-columns:1fr;gap:10px}
+        #jg-cfgcampos input{width:100%;padding:12px;border:1px solid #cfd4da;border-radius:9px;font-size:16px;font-family:inherit}
+        #jg-filtros{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 12px;
+                    border-bottom:1px solid var(--gris-bd);background:#fafbfc}
+        #jg-filtros select,#jg-filtros input{width:100%;padding:9px;border:1px solid #cfd4da;
+                    border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
+        #jg-filtros .full{grid-column:1 / -1}
+        /* Fila del log: el dato manda, y la hora y los botones van abajo. */
+        .jg-fila{padding:11px 13px;border-bottom:1px solid #eee;font-size:13.5px;line-height:1.45}
+        .jg-fila .jg-pie{display:flex;align-items:center;gap:8px;margin-top:7px;flex-wrap:wrap}
+        .jg-fila .jg-hora{margin-left:auto;font-size:11.5px;color:#8a8a8a;white-space:nowrap}
+        .jg-fila .jg-chk{width:18px;height:18px;flex:none}
+        @media(min-width:620px){
+          #jg-campos{grid-template-columns:repeat(2,1fr)}
+          #jg-cfgcampos{grid-template-columns:2fr 4fr 1.4fr}
+          #jg-filtros{grid-template-columns:auto auto 1fr auto}
+          #jg-filtros .full{grid-column:auto}
+        }
+      </style>
+      <div id="jg-grid">
         <div style="background:#fff;border:1px solid var(--gris-bd);border-radius:12px;overflow:hidden">
           ${cajero ? `<div style="background:#fff7ef;border-left:4px solid #F58220;padding:12px 16px">
             <div class="small" style="font-weight:800;letter-spacing:.08em;color:#a85f1a;text-transform:uppercase">Premio de hoy</div>
             <div id="jg-cfgro" class="small" style="margin-top:6px;color:#5b6470">Consultando…</div>
           </div>` : `<div style="background:#fff7ef;border-left:4px solid #F58220;padding:12px 16px">
             <div class="small" style="font-weight:800;letter-spacing:.08em;color:#a85f1a;text-transform:uppercase">Configuración del día</div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
-              <div style="flex:1;min-width:120px">
-                <label class="small" style="color:#5b6470;font-weight:600">Objetivo (seg)</label>
-                <input id="jg-obj" type="number" step="0.01" min="1" max="60" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
-              </div>
-              <div style="flex:3;min-width:200px">
-                <label class="small" style="color:#5b6470;font-weight:600">Premio</label>
-                <input id="jg-prem" type="text" placeholder="ej: 1 kg de hamburguesas caseras" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
-              </div>
-              <div style="flex:1;min-width:100px">
-                <label class="small" style="color:#5b6470;font-weight:600">Unidades</label>
-                <input id="jg-uni" type="number" min="0" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
-              </div>
+            <div id="jg-cfgcampos" style="margin-top:8px">
+              <div><label class="small" style="color:#5b6470;font-weight:600">Objetivo (seg)</label>
+                <input id="jg-obj" type="number" step="0.01" min="1" max="60"/></div>
+              <div><label class="small" style="color:#5b6470;font-weight:600">Premio</label>
+                <input id="jg-prem" type="text" placeholder="ej: 1 kg de hamburguesas"/></div>
+              <div><label class="small" style="color:#5b6470;font-weight:600">Unidades</label>
+                <input id="jg-uni" type="number" min="0"/></div>
             </div>
             <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
               <button class="btn btn-sm" id="jg-guardar">Guardar el día</button>
@@ -931,15 +952,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             </div>
           </div>`}
           <div style="padding:14px 16px">
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <div style="flex:1;min-width:140px">
-                <label class="small" style="color:#5b6470;font-weight:600">N° de socio</label>
-                <input id="jg-socio" type="number" inputmode="numeric" placeholder="ej: 12" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
-              </div>
-              <div style="flex:1;min-width:140px">
-                <label class="small" style="color:#5b6470;font-weight:600">N° de ticket</label>
-                <input id="jg-ticket" type="text" placeholder="ej: 10080" style="width:100%;padding:10px;border:1px solid #cfd4da;border-radius:9px;font-size:16px"/>
-              </div>
+            <div id="jg-campos">
+              <div><label class="small" style="color:#5b6470;font-weight:600">N° de socio</label>
+                <input id="jg-socio" type="number" inputmode="numeric" placeholder="ej: 12"/></div>
+              <div><label class="small" style="color:#5b6470;font-weight:600">N° de ticket</label>
+                <input id="jg-ticket" type="text" inputmode="numeric" placeholder="ej: 10080"/></div>
             </div>
             <div class="small muted" style="margin-top:8px">💵 El mínimo de <b>$30.000</b> lo controlás vos en el mostrador, mirando el ticket. No hace falta cargarlo acá.</div>
             <button class="btn" id="jg-activar" style="width:100%;margin-top:12px;font-size:16px;letter-spacing:.06em">ACTIVAR PARTIDA</button>
@@ -950,16 +967,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
         <div style="background:#fff;border:1px solid var(--gris-bd);border-radius:12px;overflow:hidden">
           <div class="small" style="padding:11px 16px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#5b6470;border-bottom:1px solid var(--gris-bd)">En vivo</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-bottom:1px solid var(--gris-bd);background:#fafbfc">
-            <select id="jg-fres" style="padding:7px 9px;border:1px solid #cfd4da;border-radius:8px;font-size:13px;font-family:inherit">
+          <div id="jg-filtros">
+            <select id="jg-fres">
               <option value="">Todas</option><option value="si">Solo ganadores</option><option value="no">Solo no ganadores</option>
             </select>
-            <input id="jg-fsoc" type="number" inputmode="numeric" placeholder="N° socio" style="width:110px;padding:7px 9px;border:1px solid #cfd4da;border-radius:8px;font-size:13px;font-family:inherit"/>
-            <select id="jg-fcant" style="padding:7px 9px;border:1px solid #cfd4da;border-radius:8px;font-size:13px;font-family:inherit;margin-left:auto">
+            <input id="jg-fsoc" type="number" inputmode="numeric" placeholder="N° socio"/>
+            <select id="jg-fcant">
               <option value="10">Mostrar 10</option><option value="50">Mostrar 50</option>
               <option value="100">Mostrar 100</option><option value="0">Mostrar todas</option>
             </select>
-            ${cajero ? '' : '<button class="btn btn-ghost btn-sm" id="jg-del" style="color:#c0392b">🗑 Eliminar seleccionadas</button>'}
+            ${cajero ? '' : '<button class="btn btn-ghost btn-sm full" id="jg-del" style="color:#c0392b;white-space:nowrap">🗑 Eliminar</button>'}
           </div>
           <div style="background:#111;padding:22px;text-align:center">
             <div id="jg-espejo" style="font-family:monospace;font-size:44px;font-weight:700;color:#F58220;letter-spacing:2px">00.00</div>
@@ -1092,10 +1109,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         // ganado y el comprobante no puede quedar colgado.
         const vch = (p.estado === 'jugada' && p.gano)
           ? ` <button class="btn btn-ghost btn-sm" data-vch="${esc(p._id)}" title="Emitir el voucher de este premio">🎟️ Voucher</button>` : '';
-        return `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #eee;font-size:13px">
-          ${cajero ? '' : `<input type="checkbox" data-selp2="${esc(p._id)}" style="flex:none"/>`}
-          <div style="flex:1">${txt} ${chip}${dm}</div>${vch}
-          <div class="small muted" style="white-space:nowrap">${horaCorta(p.habilitadaTs)}</div></div>`;
+        // Fila apilada: primero el dato, y abajo estado, acciones y hora. En el
+        // celular no entra todo en una línea sin quedar ilegible.
+        return `<div class="jg-fila">
+          <div>${txt}</div>
+          <div class="jg-pie">
+            ${cajero ? '' : `<input type="checkbox" class="jg-chk" data-selp2="${esc(p._id)}"/>`}
+            ${chip}${dm}${vch}
+            <span class="jg-hora">${horaCorta(p.habilitadaTs)}</span>
+          </div></div>`;
       }).join('') : '<div class="empty" style="padding:18px">Ninguna partida coincide con el filtro.</div>') +
         `<div class="small muted" style="padding:9px 14px;text-align:center;border-top:1px solid #eee">
            Mostrando ${arr.length} de ${total} partida${total === 1 ? '' : 's'}</div>`;
