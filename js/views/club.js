@@ -54,7 +54,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <span id="juego-dot" style="width:11px;height:11px;border-radius:50%;background:#bbb;flex-shrink:0"></span>
           <div><b>Juego DIEZ EXACTO</b><div class="small muted" id="juego-estado">Consultando estado…</div></div>
         </div>
-        <button class="btn btn-sm btn-ghost" id="juego-toggle" disabled>…</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-ghost" id="juego-premio">🎁 Premio del día</button>
+          <button class="btn btn-sm btn-ghost" id="juego-toggle" disabled>…</button>
+        </div>
       </div>`}
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-sm ${tab === 'mostrador' ? '' : 'btn-ghost'}" data-tab="mostrador">📍 Mostrador <span id="mb-badge"></span></button>
@@ -171,6 +174,122 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         nuevo ? 'Activar juego' : 'Pasar a Próximamente'
       );
     };
+    const pb = c.querySelector('#juego-premio'); if (pb) pb.onclick = premioDiaModal;
+  }
+
+  // Fecha de HOY en formato YYYY-MM-DD (hora local del local).
+  function hoyISO() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  /* ---------------- PREMIO Y OBJETIVO DEL DÍA ----------------
+     juego_config/dia. Lo lee el socio (solo lectura) y lo escribe el personal.
+     El objetivo NO se puede tocar con una partida abierta sin que quede raro,
+     así que conviene fijarlo antes de abrir el local. */
+  function premioDiaModal() {
+    db().collection('juego_config').doc('dia').get().then((d) => {
+      const x = d.exists ? d.data() : {};
+      const objSeg = ((x.objetivoMs || 10000) / 1000).toFixed(2);
+      modal({
+        title: '🎁 Premio y objetivo del día', width: 460,
+        bodyHTML:
+          `<p class="small muted" style="margin:0 0 10px">Lo que se define acá es lo que ve el socio al jugar. Conviene fijarlo <b>antes de abrir</b>.</p>` +
+          `<label style="font-size:13px;color:#5b6470;font-weight:600">Fecha</label>` +
+          `<input id="jd-fecha" type="date" value="${esc(x.fecha || hoyISO())}" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+          `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Objetivo (segundos) <span style="font-weight:400;color:#8a93a0">— hay que frenar el reloj exacto en este número</span></label>` +
+          `<input id="jd-obj" type="number" step="0.01" min="1" max="60" value="${objSeg}" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+          `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Emoji del premio</label>` +
+          `<input id="jd-ico" type="text" maxlength="2" value="${esc(x.premioIco || '🎁')}" style="width:80px;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:18px;text-align:center"/>` +
+          `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Premio del día</label>` +
+          `<input id="jd-nom" type="text" value="${esc(x.premioNombre || '')}" placeholder="ej: 1 kg de hamburguesas caseras" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+          `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Unidades disponibles hoy</label>` +
+          `<input id="jd-uni" type="number" min="0" value="${x.unidades != null ? x.unidades : 5}" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>`,
+        footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Guardar</button>`,
+        onMount(m, close) {
+          m.querySelector('[data-no]').onclick = close;
+          m.querySelector('[data-yes]').onclick = () => {
+            const seg = parseFloat(m.querySelector('#jd-obj').value);
+            const nom = (m.querySelector('#jd-nom').value || '').trim();
+            const uni = parseInt(m.querySelector('#jd-uni').value, 10);
+            if (!seg || seg <= 0) { toast('Poné el objetivo en segundos.', 'error'); return; }
+            if (!nom) { toast('Poné el premio del día.', 'error'); return; }
+            db().collection('juego_config').doc('dia').set({
+              fecha: m.querySelector('#jd-fecha').value || hoyISO(),
+              objetivoMs: Math.round(seg * 1000),
+              premioIco: (m.querySelector('#jd-ico').value || '🎁').trim() || '🎁',
+              premioNombre: nom,
+              unidades: isNaN(uni) ? 0 : uni,
+              por: staffUid(), ts: FV().serverTimestamp(),
+            }, { merge: true })
+              .then(() => { toast('✓ Premio del día guardado.'); close(); })
+              .catch(() => toast('No se pudo guardar.', 'error'));
+          };
+        },
+      });
+    }).catch(() => toast('No se pudo leer la configuración del juego.', 'error'));
+  }
+
+  /* ---------------- HABILITAR UNA PARTIDA ----------------
+     Es la única puerta de entrada al juego: el socio no puede crearse una partida
+     (lo impide la regla de Firestore). Pide ticket y monto, y deja el candado del
+     día por DNI — no por socio — como exigen las bases: abrirse una segunda cuenta
+     no habilita una segunda partida. */
+  const MONTO_MIN_JUEGO = 30000;
+  function habilitarPartida(socio) {
+    if (!socio) return;
+    const dni = String(socio.dni || '').replace(/\D/g, '');
+    if (!dni) { toast('El socio no tiene DNI cargado: no se puede aplicar el límite diario.', 'error'); return; }
+    db().collection('juego_config').doc('dia').get().then((d) => {
+      const cfg = d.exists ? d.data() : null;
+      if (!cfg || !cfg.objetivoMs || !cfg.premioNombre) {
+        toast('Primero cargá el premio y el objetivo del día.', 'error'); premioDiaModal(); return;
+      }
+      if (cfg.fecha && cfg.fecha !== hoyISO()) { toast('El premio del día es de otra fecha (' + cfg.fecha + '). Actualizalo.', 'error'); premioDiaModal(); return; }
+      if ((cfg.unidades || 0) <= 0) { toast('No quedan unidades del premio de hoy.', 'error'); return; }
+      modal({
+        title: `🎮 Habilitar partida · ${socio.nombre || 'Socio'}`, width: 440,
+        bodyHTML:
+          `<p class="small muted" style="margin:0 0 10px">Objetivo de hoy: <b style="color:#F58220">${((cfg.objetivoMs) / 1000).toFixed(2)} s</b> · Premio: ${esc(cfg.premioIco || '🎁')} <b>${esc(cfg.premioNombre)}</b> · Quedan <b>${cfg.unidades}</b></p>` +
+          `<label style="font-size:13px;color:#5b6470;font-weight:600">Monto de la compra ($) <span style="font-weight:400;color:#8a93a0">mínimo $${fmt(MONTO_MIN_JUEGO)}</span></label>` +
+          `<input id="hp-monto" type="number" inputmode="numeric" min="1" placeholder="ej: 35000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+          `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <b style="color:#c0392b">(obligatorio)</b></label>` +
+          `<input id="hp-nro" type="text" inputmode="numeric" placeholder="ej: 10080" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+          `<div class="note" style="margin-top:10px">El socio tiene <b>60 segundos</b> para arrancar desde su celular. Si se le vence, se puede volver a habilitar con el mismo ticket.</div>`,
+        footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Habilitar</button>`,
+        onMount(m, close) {
+          m.querySelector('[data-no]').onclick = close;
+          m.querySelector('[data-yes]').onclick = () => {
+            const monto = parseInt(m.querySelector('#hp-monto').value, 10);
+            const nro = (m.querySelector('#hp-nro').value || '').replace(/\D/g, '');
+            if (!monto || monto < MONTO_MIN_JUEGO) { toast('La compra tiene que ser de $' + fmt(MONTO_MIN_JUEGO) + ' o más.', 'error'); return; }
+            if (!nro) { toast('Cargá el N° de ticket.', 'error'); return; }
+            const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Habilitando…';
+            const fecha = hoyISO();
+            const lref = db().collection('juego_dias').doc(dni + '_' + fecha);
+            const pref = db().collection('partidas').doc();
+            // Candado + partida en la MISMA transacción: si ya jugó hoy, no se crea nada.
+            db().runTransaction((tx) => tx.get(lref).then((ld) => {
+              if (ld.exists) throw new Error('yajugo');
+              tx.set(lref, { dni: dni, fecha: fecha, clienteUid: socio._id, partidaId: pref.id, por: staffUid(), ts: FV().serverTimestamp() });
+              tx.set(pref, {
+                clienteUid: socio._id, socioNro: socio.nroSocio || 0, socioNombre: socio.nombre || '', dni: dni,
+                fecha: fecha, estado: 'habilitada', objetivoMs: cfg.objetivoMs,
+                premioIco: cfg.premioIco || '🎁', premioNombre: cfg.premioNombre,
+                ticketNro: nro, monto: monto, gano: false, premioEntregado: false,
+                venceMs: Date.now() + 60000, habilitadaPor: staffUid(), habilitadaTs: FV().serverTimestamp(),
+              });
+            })).then(() => { toast('✓ Partida habilitada. Tiene 60 segundos para arrancar.'); close(); })
+              .catch((e) => {
+                toast((e && e.message) === 'yajugo'
+                  ? 'Esta persona ya jugó hoy (el límite es por DNI).'
+                  : 'No se pudo habilitar. Reintentá.', 'error');
+                btn.disabled = false; btn.textContent = 'Habilitar';
+              });
+          };
+        },
+      });
+    }).catch(() => toast('No se pudo leer el premio del día.', 'error'));
   }
 
   /* ---------------- MOSTRADOR (check-ins por QR) ----------------
@@ -241,11 +360,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${esc(s.email || '')}</td>
           <td><b style="color:#F58220">${fmt(s.puntos)}</b></td>
           <td class="small">${fechaCorta(s.creado)}</td>
-          <td class="t-actions"><button class="btn btn-ghost btn-sm" data-hist="${esc(s._id)}" title="Historial de cargas de puntos">📜</button><button class="btn btn-ghost btn-sm" data-pts="${esc(s._id)}" title="Cargar puntos">＋ puntos</button></td>
+          <td class="t-actions"><button class="btn btn-ghost btn-sm" data-hist="${esc(s._id)}" title="Historial de cargas de puntos">📜</button><button class="btn btn-ghost btn-sm" data-juego="${esc(s._id)}" title="Habilitar partida del juego">🎮</button><button class="btn btn-ghost btn-sm" data-pts="${esc(s._id)}" title="Cargar puntos">＋ puntos</button></td>
         </tr>`).join('') + `</tbody></table>`;
       lista.querySelectorAll('[data-ver]').forEach((tr) => tr.onclick = () => verSocio(socios.find((x) => x._id === tr.dataset.ver)));
       lista.querySelectorAll('[data-pts]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); cargarPuntos(socios.find((x) => x._id === b.dataset.pts)); });
       lista.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); historialPuntos(socios.find((x) => x._id === b.dataset.hist)); });
+      lista.querySelectorAll('[data-juego]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); habilitarPartida(socios.find((x) => x._id === b.dataset.juego)); });
     };
     inp.oninput = pintar;
     subs.push(db().collection('clientes').onSnapshot((snap) => {
@@ -277,11 +397,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         filaDato('Email', s.email) +
         filaDato('Dirección', s.direccion) +
         filaDato('Socio desde', fechaCorta(s.creado)),
-      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button>${esCajero() ? '' : '<button class="btn btn-ghost" data-del style="color:#c0392b">🗑 Eliminar</button>'}<button class="btn" data-pts>＋ Cargar puntos</button>`,
+      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button>${esCajero() ? '' : '<button class="btn btn-ghost" data-del style="color:#c0392b">🗑 Eliminar</button>'}<button class="btn btn-ghost" data-juego>🎮 Habilitar partida</button><button class="btn" data-pts>＋ Cargar puntos</button>`,
       onMount(m, close) {
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
         m.querySelector('[data-hist]').onclick = () => { close(); historialPuntos(s); };
+        m.querySelector('[data-juego]').onclick = () => { close(); habilitarPartida(s); };
         const delB = m.querySelector('[data-del]'); if (delB) delB.onclick = () => { close(); eliminarSocioAdmin(s); };
       },
     });

@@ -247,5 +247,90 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if isStaff();
     }
+
+    // ═══════════════════ JUEGO "DIEZ EXACTO" ═══════════════════
+    // Regla de oro: el socio NO decide si ganó ni cuándo puede jugar. El personal
+    // habilita la partida (contra ticket) y el SERVIDOR arbitra el resto:
+    //   · el objetivo del día lo escribe solo el personal (el socio lo lee);
+    //   · el cronómetro se valida contra request.time, no contra el reloj del celular;
+    //   · el resultado (ganó / no ganó) lo calcula la regla, no el navegador.
+
+    // Objetivo y premio del día. Lo lee cualquiera logueado; lo escribe el personal.
+    match /juego_config/{id} {
+      allow read:  if request.auth != null;
+      allow write: if isStaff();
+    }
+
+    // CANDADO DIARIO por DOCUMENTO (id = "<dni>_<YYYY-MM-DD>"). Las bases dicen
+    // "una partida por persona y por día, computada por número de documento, con
+    // independencia del número de socio utilizado": por eso la llave es el DNI y
+    // no el uid — abrirse una segunda cuenta de socio no habilita otra partida.
+    // Lo crea el PERSONAL al habilitar, y no se puede pisar (create-only).
+    match /juego_dias/{id} {
+      allow read:   if isStaff() || request.auth != null;
+      allow create: if isStaff();
+      allow update, delete: if isAdmin();
+    }
+
+    match /partidas/{id} {
+      allow get:  if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
+      allow list: if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
+
+      // Habilitar la partida: SOLO personal, y ya nace atada al objetivo del día
+      // y con vencimiento corto. El socio no puede crearse una partida.
+      allow create: if isStaff()
+                       && request.resource.data.estado == 'habilitada'
+                       && request.resource.data.objetivoMs is int
+                       && request.resource.data.objetivoMs == get(/databases/$(database)/documents/juego_config/dia).data.objetivoMs
+                       && request.resource.data.venceMs is number
+                       && request.resource.data.venceMs > request.time.toMillis()
+                       && request.resource.data.venceMs <= request.time.toMillis() + 120000;
+
+      // Dos updates permitidos, y nada más:
+      //
+      // (1) ARRANCAR — el socio pasa 'habilitada' → 'jugando' y el servidor sella
+      //     el inicio con request.time. No puede arrancar una partida vencida.
+      allow update: if request.auth != null
+                       && resource.data.clienteUid == request.auth.uid
+                       && resource.data.estado == 'habilitada'
+                       && request.resource.data.estado == 'jugando'
+                       && request.resource.data.inicioTs == request.time
+                       && resource.data.venceMs > request.time.toMillis()
+                       // no puede tocar nada más
+                       && request.resource.data.objetivoMs == resource.data.objetivoMs
+                       && request.resource.data.clienteUid == resource.data.clienteUid;
+
+      // (2) FRENAR — el socio pasa 'jugando' → 'jugada' informando su tiempo.
+      //     ACÁ ESTÁ EL ANTI-TRAMPA: el tiempo declarado se contrasta contra lo que
+      //     midió el SERVIDOR (request.time - inicioTs). No puede declarar menos de
+      //     lo que realmente tardó, y se le permite hasta 2 s de más por la latencia
+      //     de red. Cambiar la hora del celular no sirve: ninguna de las dos puntas
+      //     de la medición la pone el celular.
+      //     Y 'gano' no lo decide el navegador: la regla exige que sea exactamente
+      //     la comparación contra el objetivo del día, truncando a la centésima.
+      allow update: if request.auth != null
+                       && resource.data.clienteUid == request.auth.uid
+                       && resource.data.estado == 'jugando'
+                       && request.resource.data.estado == 'jugada'
+                       && request.resource.data.tiempoMs is int
+                       && request.resource.data.tiempoMs >= 0
+                       && request.resource.data.tiempoMs <= request.time.toMillis() - resource.data.inicioTs.toMillis()
+                       && request.resource.data.tiempoMs >= request.time.toMillis() - resource.data.inicioTs.toMillis() - 2000
+                       && request.resource.data.finTs == request.time
+                       && request.resource.data.gano == (
+                            (request.resource.data.tiempoMs / 10) == (resource.data.objetivoMs / 10)
+                          )
+                       && request.resource.data.objetivoMs == resource.data.objetivoMs
+                       && request.resource.data.clienteUid == resource.data.clienteUid;
+
+      // Marcar el premio como entregado en el mostrador: solo personal, una vez.
+      allow update: if isStaff()
+                       && resource.data.estado == 'jugada'
+                       && resource.data.gano == true
+                       && resource.data.premioEntregado == false
+                       && request.resource.data.premioEntregado == true;
+
+      allow delete: if isAdmin();
+    }
   }
 }
