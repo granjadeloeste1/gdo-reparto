@@ -211,6 +211,7 @@ window.GDO = window.GDO || {};
         formaPago: o.formaPago || '',
         estado: 'pendiente', creadoPor: o.creadoPor || null, rutaId: null,
         ventana: o.ventana || '', telefono: o.telefono || '', origen: 'tienda', historia: [],
+        creado: o.creado || Date.now(),
       };
       d.pedidos.push(nuevo);
       fsSet('pedidos', nuevo);
@@ -435,7 +436,10 @@ window.GDO = window.GDO || {};
     upsertPedido(p) {
       let full;
       if (p.id) { full = Object.assign(db.pedidos.find((x) => x.id === p.id), p); }
-      else { p.id = uid('p'); p.estado = p.estado || 'pendiente'; p.historia = []; db.pedidos.push(p); full = p; }
+      // `creado`: hasta ahora un pedido NO guardaba ninguna fecha propia. Si nunca
+      // se entregaba y no le cargaban fecha de entrega, quedaba sin fecha en toda
+      // la base — y el CRM no lo podía contar como compra (no sabía CUÁNDO fue).
+      else { p.id = uid('p'); p.estado = p.estado || 'pendiente'; p.historia = []; p.creado = p.creado || Date.now(); db.pedidos.push(p); full = p; }
       persist(db); fsSet('pedidos', full);
       // Si el pedido está en una ruta, mantené sincronizadas las coordenadas que la
       // ruta lleva embebidas (las usa el seguimiento del cliente y el ETA). Sin

@@ -27,6 +27,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   GDO.Views.clientes = function (c) {
     const fichas = CRM().fichas();
     const sugs = CRM().agenda(fichas);   // una tarjeta por cliente, no una por aviso
+    const huerfanos = CRM().sinFecha();  // pedidos que no se pueden ubicar en el tiempo
 
     const conCompras = fichas.filter((f) => f.nCompras > 0);
     const dormidos = conCompras.filter((f) => CRM().dormido(f)).length;
@@ -40,6 +41,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="card kpi amarillo"><span class="ic">📞</span><span class="num">${sugs.length}</span><span class="lbl">Cosas para hacer</span></div>
       </div>
 
+      ${huerfanos.length ? `<div class="note" id="crm-huerf" style="cursor:pointer">
+        ⚠️ Hay <b>${huerfanos.length} pedido${huerfanos.length === 1 ? '' : 's'} sin fecha</b> (se cargaron sin fecha de entrega y nunca se despacharon).
+        No cuentan para el historial ni para el ritmo de compra. <b>Tocá acá para verlos y completarlos.</b>
+      </div>` : ''}
+
       <div class="crm-tabs">
         <button class="crm-tab ${tab === 'hoy' ? 'on' : ''}" data-tab="hoy">📞 Para hacer hoy${sugs.length ? ' <span class="crm-badge">' + sugs.length + '</span>' : ''}</button>
         <button class="crm-tab ${tab === 'lista' ? 'on' : ''}" data-tab="lista">📇 Todos los clientes <span class="crm-badge sec">${fichas.length}</span></button>
@@ -47,6 +53,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div id="crm-body"></div>`;
 
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.clientes(c); });
+    const hb = c.querySelector('#crm-huerf');
+    if (hb) hb.onclick = () => sinFechaModal(huerfanos, () => GDO.Views.clientes(c));
 
     const body = c.querySelector('#crm-body');
     if (tab === 'hoy') renderAgenda(body, sugs, c);
@@ -362,6 +370,39 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   GDO.Views.fichaClienteModal = fichaModal;
+
+  /* Pedidos sin fecha: los lista para poder completarlos de a uno (abre el pedido)
+     o de una vez con "Usar la fecha de hoy" (para los que ya se entregaron y nadie
+     registró cuándo). Sin fecha, un pedido no puede entrar en el historial. */
+  function sinFechaModal(lista, after) {
+    modal({
+      title: lista.length + ' pedido' + (lista.length === 1 ? '' : 's') + ' sin fecha', width: 620,
+      bodyHTML: `
+        <div class="note">Estos pedidos no tienen <b>fecha de entrega</b> ni entrega registrada, así que la app no sabe cuándo fueron y no los puede sumar al historial del cliente.<br>
+        Tocá uno para abrirlo y ponerle la fecha, o usá el botón de abajo si ya se entregaron y no importa el día exacto.</div>
+        <div class="crm-unir-lista">${lista.map((p) => `
+          <button class="crm-unir-item" data-ped="${esc(p.id)}">
+            <b>${esc(p.cliente || 'Sin nombre')}</b>
+            <span>${esc(p.direccion || 'sin dirección')} · ${esc((p.items || []).map((i) => (i.cantidad || 1) + ' ' + (i.producto || i.nombre || '')).join(', ') || 'sin detalle')}</span>
+          </button>`).join('')}</div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cerrar</button><button class="btn btn-primary" data-todos>Ponerles la fecha de hoy</button>`,
+      onMount(node, close) {
+        node.querySelectorAll('[data-ped]').forEach((b) => b.onclick = () => {
+          close(); GDO.pedidoModal(b.dataset.ped, () => { after && after(); });
+        });
+        node.querySelector('[data-cancel]').onclick = close;
+        node.querySelector('[data-todos]').onclick = () => {
+          confirmDlg(
+            'Se le va a poner la fecha de HOY a los ' + lista.length + ' pedidos. Es una fecha aproximada: sirve para que entren al historial, pero el ritmo de compra de esos clientes va a quedar distorsionado. ¿Seguimos?',
+            () => {
+              const hoy = hoyISO();
+              lista.forEach((p) => Store.upsertPedido({ id: p.id, fechaEntrega: hoy }));
+              close(); toast(lista.length + ' pedidos fechados ✓', 'ok'); after && after();
+            }, 'Poner fecha de hoy', 'btn-primary');
+        };
+      },
+    });
+  }
 
   /* Unir dos fichas a mano. La app une sola cuando dos pedidos comparten teléfono,
      dirección o nombre, pero nunca junta dos teléfonos distintos (para no mezclar

@@ -85,8 +85,15 @@ window.GDO = window.GDO || {};
 
   /* ═════════════════ lecturas del pedido ═════════════════ */
 
-  // Fecha REAL de la compra: la entrega confirmada por el chofer si la hay,
-  // si no la fecha de entrega pactada, y como último recurso el alta del pedido.
+  /* Fecha REAL de la compra, por orden de confianza:
+       1. la entrega confirmada por el chofer,
+       2. la fecha de entrega pactada,
+       3. el primer movimiento que tenga el pedido,
+       4. el alta del pedido.
+     Sin fecha no hay ritmo de compra posible, así que ese pedido no cuenta como
+     compra. Pasa con pedidos VIEJOS que se cargaron sin fecha de entrega y nunca
+     se despacharon: antes de agosto 2026 el pedido no guardaba fecha de alta.
+     Se los lista en la pantalla de Clientes para poder completarlos. */
   function fechaDe(p) {
     const hist = p.historia || [];
     for (let i = hist.length - 1; i >= 0; i--) {
@@ -94,7 +101,14 @@ window.GDO = window.GDO || {};
     }
     const f = p.fechaEntrega || (p.diaEntrega && GDO.UI ? GDO.UI.proximoDiaFecha(p.diaEntrega) : '');
     if (f) { const t = Date.parse(f + 'T12:00:00'); if (!isNaN(t)) return t; }
-    return (hist[0] && hist[0].ts) || null;
+    if (hist[0] && hist[0].ts) return hist[0].ts;
+    return p.creado || null;
+  }
+
+  // Pedidos que la app no puede ubicar en el tiempo: no suman al historial ni al
+  // ritmo de compra. Si son muchos, conviene completarles la fecha de entrega.
+  function sinFecha() {
+    return (GDO.Store.pedidos() || []).filter((p) => !fechaDe(p));
   }
 
   // Plata del pedido. Si el cliente declaró un total lo usamos; si no, sumamos
@@ -638,7 +652,7 @@ window.GDO = window.GDO || {};
   }
 
   GDO.CRM = {
-    fichas, sugerencias, agenda, guardar, unir, marcarContactado, posponer, dormido,
+    fichas, sugerencias, agenda, guardar, unir, marcarContactado, posponer, dormido, sinFecha,
     norm, telKey, dirKey, nomKey, senales, prodKey, fechaDe, montoDe, listaProd,
     TIPOS, DIAS, LISTA_URL,
   };

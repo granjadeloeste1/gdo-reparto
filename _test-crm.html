@@ -151,6 +151,23 @@ chk(pc2[0] && pc2[0].nCompras === 2, 'La ficha unida junta los 2 pedidos, con te
 chk(pc2[0] && pc2[0].telefonos.length === 2, 'Guarda los 2 teléfonos del cliente (dio ' + (pc2[0] ? pc2[0].telefonos.length : '—') + ')');
 chk(DOCS.length === 1, 'La unión deja UN solo documento guardado, no dos (dio ' + DOCS.length + ')');
 
+L.push('<h2>4d · Pedidos sin fecha (los viejos)</h2>');
+// Pedido cargado a mano, sin fecha de entrega, nunca despachado: la app no sabe cuándo fue.
+const viejo = { id: 'p_viejo', cliente: 'Verdulería Los Pinos', telefono: '11 5555-9500',
+  direccion: 'Roca 900, Morón', estado: 'pendiente', items: [{ producto: 'Pollo entero', cantidad: 4 }],
+  historia: [], fechaEntrega: '' };
+PEDIDOS.push(viejo);
+chk(GDO.CRM.fechaDe(viejo) === null, 'Un pedido viejo sin fecha de entrega ni entrega registrada no tiene fecha');
+chk(GDO.CRM.sinFecha().length === 1, 'La app los detecta y los puede listar para completarlos (dio ' + GDO.CRM.sinFecha().length + ')');
+const fv = GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Los Pinos') >= 0)[0];
+chk(!!fv, 'El cliente igual aparece en la lista de clientes (no se pierde)');
+chk(fv && fv.nCompras === 0, 'Pero no cuenta como compra: sin fecha no hay ritmo posible (dio ' + (fv ? fv.nCompras : '—') + ')');
+// Con fecha de alta (pedidos nuevos, desde ago-2026) sí se ubica en el tiempo.
+viejo.creado = hoy - 5 * DIA;
+chk(GDO.CRM.fechaDe(viejo) === viejo.creado, 'Los pedidos nuevos guardan fecha de alta y ya no quedan sin fecha');
+chk(GDO.CRM.sinFecha().length === 0, 'Con la fecha de alta, no queda ningún pedido huérfano');
+PEDIDOS.pop();
+
 L.push('<h2>5 · Agrupación: una tarjeta por cliente</h2>');
 const ids = sugs.map((s) => s.clienteId);
 chk(ids.length === new Set(ids).size, 'Ningún cliente aparece dos veces en la agenda (' + sugs.length + ' tarjetas para ' + todas.length + ' avisos)');
