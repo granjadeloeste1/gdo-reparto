@@ -77,6 +77,11 @@ service cloud.firestore {
     match /notificaciones/{id}  { allow read, write: if isStaff(); }
     match /meta/{id}            { allow read, write: if isStaff(); }
 
+    // CRM: ficha comercial del cliente (tipo, notas, recordatorios, "ya lo
+    // contacté"). NO confundir con /clientes, que es la del socio del GDO CLUB.
+    // Datos de contacto de terceros → solo personal, nunca lectura pública.
+    match /crm_clientes/{id}    { allow read, write: if isStaff(); }
+
     // ───────── Pedidos ─────────
     // get: el cliente final ve SU pedido por el link de seguimiento (id de 128
     //      bits, no adivinable). create: personal (cualquier origen) o tienda

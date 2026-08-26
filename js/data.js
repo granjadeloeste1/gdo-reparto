@@ -32,7 +32,7 @@ window.GDO = window.GDO || {};
   // Si Firebase está activo escribimos cada cambio a Firestore; los listeners
   // (onSnapshot) traen de vuelta los cambios de otros dispositivos y mantienen
   // la cache en memoria. Si no, todo queda en localStorage (modo local).
-  const FS_COLLS = ['users', 'vehiculos', 'pedidos', 'rutas', 'notificaciones'];
+  const FS_COLLS = ['users', 'vehiculos', 'pedidos', 'rutas', 'notificaciones', 'crm_clientes'];
   const fsOn = () => GDO.FB && GDO.FB.enabled && GDO.FB.db;
   const fsClean = (o) => JSON.parse(JSON.stringify(o)); // saca undefined/funciones
   function fsSet(coll, obj) {
@@ -161,6 +161,7 @@ window.GDO = window.GDO || {};
       pedidos,
       rutas,
       notificaciones: [],
+      crm_clientes: [],
       depot: DEPOT,
       session: null,
     };
@@ -175,6 +176,9 @@ window.GDO = window.GDO || {};
       if (raw) { d = JSON.parse(raw); d.depot = DEPOT; }
     } catch (e) {}
     if (!d) d = seed();
+    // Bases guardadas ANTES del CRM no tienen esta colección: la creamos vacía para
+    // que Store.crmClientes() no explote hasta que llegue el primer snapshot.
+    if (!Array.isArray(d.crm_clientes)) d.crm_clientes = [];
     // La sesión NO sale del cache de datos: vive en sessionStorage (por pestaña). Al
     // cerrar la app se borra → al reabrir, la app pide login (no queda sesión vieja).
     d.session = null;
@@ -394,6 +398,27 @@ window.GDO = window.GDO || {};
       persist(db); fsSet('vehiculos', full); return v;
     },
     deleteVehiculo(id) { db.vehiculos = db.vehiculos.filter((v) => v.id !== id); persist(db); fsDel('vehiculos', id); },
+
+    // ----- CRM: fichas de cliente -----
+    // OJO: acá SOLO va lo que se carga a mano (tipo de cliente, notas, recordatorios,
+    // "ya lo contacté"). El historial, el ritmo de compra y los productos NO se guardan:
+    // se calculan en el momento desde /pedidos (js/crm.js), así nunca quedan viejos.
+    // Es una colección distinta de /clientes, que es la del GDO CLUB (doc = uid del socio).
+    crmClientes: () => db.crm_clientes || (db.crm_clientes = []),
+    crmCliente: (id) => (db.crm_clientes || []).find((x) => x.id === id),
+    upsertCrmCliente(cli) {
+      db.crm_clientes = db.crm_clientes || [];
+      let full;
+      const ex = cli.id ? db.crm_clientes.find((x) => x.id === cli.id) : null;
+      if (ex) full = Object.assign(ex, cli);
+      else { cli.id = cli.id || uid('cli'); cli.creado = cli.creado || Date.now(); db.crm_clientes.push(cli); full = cli; }
+      full.actualizado = Date.now();
+      persist(db); fsSet('crm_clientes', full); return full;
+    },
+    deleteCrmCliente(id) {
+      db.crm_clientes = (db.crm_clientes || []).filter((x) => x.id !== id);
+      persist(db); fsDel('crm_clientes', id);
+    },
 
     // ----- pedidos -----
     pedidos: () => db.pedidos,

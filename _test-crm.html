@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Prueba del motor CRM</title>
+<style>body{font-family:system-ui;padding:20px;max-width:1000px;margin:0 auto}
+pre{background:#f3f4f6;padding:12px;border-radius:8px;white-space:pre-wrap;font-size:13px}
+h2{border-bottom:2px solid #F58220;padding-bottom:4px}
+.ok{color:#1d7a44;font-weight:700}.bad{color:#b32020;font-weight:700}</style></head>
+<body>
+<h1>Prueba del motor CRM (js/crm.js)</h1>
+<div id="out">cargando…</div>
+<script src="js/ui.js"></script>
+<script src="js/crm.js"></script>
+<script>
+const DIA = 86400000;
+const hoy = Date.now();
+let n = 0;
+// hace: días atrás. items: [[producto, cantidad, precio]]
+function ped(cliente, tel, hace, items, estado) {
+  const ts = hoy - hace * DIA;
+  return {
+    id: 'p_' + (++n), cliente: cliente, telefono: tel,
+    direccion: 'Calle ' + n + ', Hurlingham', localidad: 'Hurlingham',
+    estado: estado || 'entregado',
+    items: items.map((i) => ({ producto: i[0], cantidad: i[1], precio: i[2] })),
+    historia: (estado && estado !== 'entregado') ? [] : [{ ts: ts, est: 'entregado' }],
+    fechaEntrega: new Date(ts).toISOString().slice(0, 10),
+  };
+}
+const POLLO = ['Pollo entero', 10, 3000];
+const MILA = ['Milanesa de pollo', 5, 6000];
+const HAMB = ['Hamburguesa', 4, 4000];
+const HUEVO = ['Huevos', 2, 5000];
+
+const PEDIDOS = [
+  // A · DORMIDO: compraba cada 9 días, hace 26 que no pide
+  ped('Kiosco Don José', '11 5555-1111', 71, [POLLO, MILA]),
+  ped('kiosco don jose', '1155551111', 62, [POLLO, MILA]),          // mismo tel, otra escritura
+  ped('Don Jose (V. Tesei)', '+54 9 11 5555-1111', 53, [POLLO, MILA]),
+  ped('Kiosco Don José', '11 5555-1111', 44, [POLLO, MILA]),
+  ped('Kiosco Don José', '11 5555-1111', 35, [POLLO, MILA]),
+  ped('Kiosco Don José', '11 5555-1111', 26, [POLLO, MILA]),
+
+  // B · LE TOCA: cada 7 días, último hace 10
+  ped('Granja 2 Cuñados', '11 5555-2222', 38, [POLLO, HUEVO]),
+  ped('Granja 2 Cuñados', '11 5555-2222', 31, [POLLO, HUEVO]),
+  ped('Granja 2 Cuñados', '11 5555-2222', 24, [POLLO, HUEVO]),
+  ped('Granja 2 Cuñados', '11 5555-2222', 17, [POLLO, HUEVO]),
+  ped('Granja 2 Cuñados', '11 5555-2222', 10, [POLLO, HUEVO]),
+
+  // C · COMPRÓ UNA SOLA VEZ hace 20 días
+  ped('Carnicería La Estrella', '11 5555-3333', 20, [MILA]),
+
+  // D · DEJÓ DE LLEVAR milanesa + BAJÓ el volumen
+  ped('Almacén Rosa', '11 5555-4444', 42, [POLLO, MILA, HAMB]),
+  ped('Almacén Rosa', '11 5555-4444', 34, [POLLO, MILA, HAMB]),
+  ped('Almacén Rosa', '11 5555-4444', 26, [POLLO, MILA, HAMB]),
+  ped('Almacén Rosa', '11 5555-4444', 18, [['Pollo entero', 3, 3000]]),
+  ped('Almacén Rosa', '11 5555-4444', 9, [['Pollo entero', 2, 3000]]),
+
+  // E · YA TIENE PEDIDO EN CURSO: no debe aparecer en la agenda
+  ped('Fiambrería El Rey', '11 5555-5555', 30, [POLLO]),
+  ped('Fiambrería El Rey', '11 5555-5555', 20, [POLLO]),
+  ped('Fiambrería El Rey', '11 5555-5555', 10, [POLLO]),
+  ped('Fiambrería El Rey', '11 5555-5555', -1, [POLLO], 'pendiente'),
+
+  // F · NO ENTREGADO: no cuenta como compra
+  ped('Rotisería Norte', '11 5555-6666', 5, [POLLO], 'no_entregado'),
+];
+
+GDO.Store = {
+  pedidos: () => PEDIDOS,
+  crmClientes: () => [],
+  current: () => ({ nombre: 'Matías Lemos' }),
+  upsertCrmCliente: (x) => x,
+};
+
+const L = [];
+const chk = (cond, txt) => L.push('<div class="' + (cond ? 'ok">✓ ' : 'bad">✗ ') + txt + '</div>');
+
+const fichas = GDO.CRM.fichas();
+const sugs = GDO.CRM.agenda(fichas);
+const de = (nom) => fichas.filter((f) => f.nombre.indexOf(nom) >= 0 || GDO.CRM.norm(f.nombre).indexOf(GDO.CRM.norm(nom)) >= 0)[0];
+const todas = GDO.CRM.sugerencias(fichas);
+const sugDe = (nom, tipo) => todas.filter((s) => GDO.CRM.norm(s.ficha.nombre).indexOf(GDO.CRM.norm(nom)) >= 0 && (!tipo || s.tipo === tipo))[0];
+
+L.push('<h2>1 · Agrupación de clientes</h2>');
+chk(fichas.length === 6, 'Salieron 6 fichas de 22 pedidos (dio ' + fichas.length + ')');
+const A = de('Don Jos');
+chk(!!A && A.nCompras === 6, 'Las 3 escrituras de "Kiosco Don José" quedaron en UNA ficha con 6 compras (dio ' + (A ? A.nCompras : '—') + ')');
+const F = de('Roter');
+chk(!F || F.nCompras === 0, 'El pedido "no entregado" no cuenta como compra');
+
+L.push('<h2>2 · Ritmo de compra</h2>');
+chk(A && A.ritmo === 9, 'Don José: ritmo de 9 días (dio ' + (A ? A.ritmo : '—') + ')');
+chk(A && A.diasDesde === 26, 'Don José: última compra hace 26 días (dio ' + (A ? A.diasDesde : '—') + ')');
+const B = de('Cuñados');
+chk(B && B.ritmo === 7, 'Granja 2 Cuñados: ritmo de 7 días (dio ' + (B ? B.ritmo : '—') + ')');
+
+L.push('<h2>3 · Productos habituales</h2>');
+chk(A && A.habituales.length === 2, 'Don José: 2 productos habituales (dio ' + (A ? A.habituales.map((x) => x.nombre).join(', ') : '—') + ')');
+
+L.push('<h2>4 · Sugerencias detectadas</h2>');
+chk(!!sugDe('Don Jos', 'dormido'), 'Don José aparece como CLIENTE DORMIDO');
+chk(!!sugDe('Cuñados', 'toca'), 'Granja 2 Cuñados aparece como LE TOCA PEDIDO');
+chk(!!sugDe('Estrella', 'sin_segunda'), 'La Estrella aparece como COMPRÓ UNA SOLA VEZ');
+chk(!!sugDe('Rosa', 'dejo'), 'Almacén Rosa aparece como DEJÓ DE LLEVAR');
+chk(!!sugDe('Rosa', 'bajo'), 'Almacén Rosa aparece como BAJÓ EL VOLUMEN');
+chk(!sugDe('Fiambrer'), 'Fiambrería El Rey NO aparece (ya tiene un pedido en curso)');
+
+L.push('<h2>5 · Agrupación: una tarjeta por cliente</h2>');
+const ids = sugs.map((s) => s.clienteId);
+chk(ids.length === new Set(ids).size, 'Ningún cliente aparece dos veces en la agenda (' + sugs.length + ' tarjetas para ' + todas.length + ' avisos)');
+const rosa = sugs.filter((s) => s.ficha.nombre.indexOf('Rosa') >= 0)[0];
+chk(rosa && rosa.otras.length === 2, 'Almacén Rosa: 1 tarjeta con 2 motivos extra (dio ' + (rosa ? rosa.otras.length : '—') + ')');
+
+L.push('<h2>6 · Orden por urgencia</h2>');
+L.push('<pre>' + sugs.map((s, i) => (i + 1) + '. [' + s.prio + '] ' + s.ic + ' ' + s.ficha.nombre + ' — ' + s.titulo
+  + '\n     ' + s.motivo
+  + (s.otras.length ? '\n     También: ' + s.otras.map((o) => o.titulo).join(' · ') : '')
+  + (s.oferta ? '\n     Ofrecele: ' + s.oferta : '')).join('\n') + '</pre>');
+
+L.push('<h2>7 · Mensajes de WhatsApp generados</h2>');
+['dormido', 'toca', 'sin_segunda', 'dejo'].forEach((t) => {
+  const s = todas.filter((x) => x.tipo === t)[0];
+  if (s) L.push('<b>' + t + ' → ' + s.ficha.nombre + '</b><pre>' + s.msg + '</pre>');
+});
+chk(!todas.some((s) => /\$/.test(s.msg)), 'Ningún mensaje inventa un precio (regla GDO)');
+chk(todas.every((s) => !/Hola (Kiosco|Granja|Carnicería|Almacén|Fiambrería)!/.test(s.msg)), 'El saludo usa el nombre completo del comercio, no la primera palabra');
+
+document.getElementById('out').innerHTML = L.join('');
+</script>
+</body></html>

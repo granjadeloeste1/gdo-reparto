@@ -12,7 +12,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const peds = Store.pedidos();
     const cont = (e) => peds.filter((p) => p.estado === e).length;
     const rutasAct = Store.rutas().filter((r) => ['asignada', 'aceptada', 'en_curso'].includes(r.estado));
+    // Aviso del CRM: cuántos clientes hay para contactar hoy. Es lo primero que
+    // conviene ver al abrir la app, porque es lo único que se pierde si nadie mira.
+    let sugs = [];
+    try { sugs = GDO.CRM ? GDO.CRM.agenda() : []; } catch (e) { sugs = []; }
+    const urgentes = sugs.filter((s) => s.prio >= 78);
     c.innerHTML = `
+      ${sugs.length ? `<div class="crm-aviso" id="d-crm">
+        <span class="ic">📞</span>
+        <div class="tx"><b>${sugs.length} cliente${sugs.length === 1 ? '' : 's'} para contactar</b>
+          <span>${urgentes.length ? urgentes.length + ' urgente' + (urgentes.length === 1 ? '' : 's') + ' · ' : ''}${esc(sugs.slice(0, 3).map((s) => s.ficha.nombre).join(', '))}${sugs.length > 3 ? ' y más' : ''}</span></div>
+        <button class="btn btn-primary btn-sm">Ver</button>
+      </div>` : ''}
       <div class="cards" style="margin-bottom:22px">
         <div class="card kpi naranja"><span class="ic">📦</span><span class="num">${peds.length}</span><span class="lbl">Pedidos totales</span></div>
         <div class="card kpi negro"><span class="ic">🕓</span><span class="num">${cont('pendiente')}</span><span class="lbl">Pendientes de asignar</span></div>
@@ -26,6 +37,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Solo pedidos ACTIVOS (los entregados no ensucian el tablero; quedan guardados y se ven en Pedidos → "Entregado").
     renderPedidosTabla(c.querySelector('#d-tabla'), peds.filter((p) => p.estado !== 'entregado').slice(-6).reverse());
     c.querySelector('#d-new').onclick = () => pedidoModal(null, () => GDO.App.render());
+    const crmBox = c.querySelector('#d-crm');
+    if (crmBox) crmBox.onclick = () => { go('#/clientes'); GDO.App.render(); };
   };
 
   /* ---- Exportar pedidos como mensajes de WhatsApp (por día de entrega) ----
