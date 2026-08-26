@@ -66,6 +66,22 @@ const PEDIDOS = [
   ped('Rotisería Norte', '11 5555-6666', 5, [POLLO], 'no_entregado'),
 ];
 
+// ── Casos de UNIFICACIÓN (teléfono / dirección / nombre) ──
+function pedDir(cliente, tel, dir, hace, items, estado) {
+  const p = ped(cliente, tel, hace, items, estado); p.direccion = dir; return p;
+}
+// G · El MISMO cliente: a veces con teléfono, a veces sin. Debe quedar UNA ficha.
+PEDIDOS.push(pedDir('Panadería San Cayetano', '11 5555-7777', 'Av. Vergara 1500, Hurlingham', 40, [POLLO]));
+PEDIDOS.push(pedDir('Panaderia San Cayetano', '', 'Av. Vergara 1500, Hurlingham', 30, [POLLO]));
+// H · Misma dirección, nombre distinto, SIN teléfono: se une por la dirección.
+PEDIDOS.push(pedDir('San Cayetano (el de Vergara)', '', 'Vergara 1500', 20, [POLLO]));
+// I · MISMA DIRECCIÓN pero TELÉFONO DISTINTO: son dos vecinos. NO se deben unir.
+PEDIDOS.push(pedDir('Depto 4B - Marcela', '11 5555-8888', 'Av. Vergara 1500, Hurlingham', 15, [HUEVO]));
+// J · Mismo cliente que se mudó y cambió de número: la app NO puede saberlo sola,
+//     se une a mano con GDO.CRM.unir().
+PEDIDOS.push(pedDir('Pollería del Centro', '11 5555-9001', 'Roca 220, Morón', 60, [POLLO]));
+PEDIDOS.push(pedDir('Polleria del Centro (nueva)', '11 5555-9002', 'Mitre 45, Morón', 12, [POLLO]));
+
 GDO.Store = {
   pedidos: () => PEDIDOS,
   crmClientes: () => [],
@@ -83,7 +99,7 @@ const todas = GDO.CRM.sugerencias(fichas);
 const sugDe = (nom, tipo) => todas.filter((s) => GDO.CRM.norm(s.ficha.nombre).indexOf(GDO.CRM.norm(nom)) >= 0 && (!tipo || s.tipo === tipo))[0];
 
 L.push('<h2>1 · Agrupación de clientes</h2>');
-chk(fichas.length === 6, 'Salieron 6 fichas de 22 pedidos (dio ' + fichas.length + ')');
+chk(fichas.length === 10, 'Salieron 10 fichas de ' + PEDIDOS.length + ' pedidos (dio ' + fichas.length + ')');
 const A = de('Don Jos');
 chk(!!A && A.nCompras === 6, 'Las 3 escrituras de "Kiosco Don José" quedaron en UNA ficha con 6 compras (dio ' + (A ? A.nCompras : '—') + ')');
 const F = de('Roter');
@@ -106,6 +122,35 @@ chk(!!sugDe('Rosa', 'dejo'), 'Almacén Rosa aparece como DEJÓ DE LLEVAR');
 chk(!!sugDe('Rosa', 'bajo'), 'Almacén Rosa aparece como BAJÓ EL VOLUMEN');
 chk(!sugDe('Fiambrer'), 'Fiambrería El Rey NO aparece (ya tiene un pedido en curso)');
 
+L.push('<h2>4b · Unificar por teléfono, dirección o nombre</h2>');
+const pan = fichas.filter((f) => GDO.CRM.norm(f.nombre).indexOf('cayetano') >= 0);
+chk(pan.length === 1, 'Panadería San Cayetano: UNA sola ficha aunque 2 pedidos no traían teléfono (dio ' + pan.length + ')');
+chk(pan[0] && pan[0].nCompras === 3, 'Junta los 3 pedidos: con teléfono, sin teléfono y con la dirección abreviada (dio ' + (pan[0] ? pan[0].nCompras : '—') + ')');
+chk(pan[0] && pan[0].alias.length === 3, 'La ficha guarda las 3 formas en que se escribió el nombre (dio ' + (pan[0] ? pan[0].alias.length : '—') + ')');
+const marcela = fichas.filter((f) => f.nombre.indexOf('Marcela') >= 0)[0];
+chk(!!marcela && marcela.nCompras === 1, 'El vecino de la MISMA dirección con OTRO teléfono queda aparte (no se mezcla)');
+chk(GDO.CRM.dirKey('Av. Pres. Juan D. Perón 6871, Villa Udaondo, Ituzaingó') === GDO.CRM.dirKey('Pres Juan Peron 6871'), 'La dirección se compara sin "Av.", sin iniciales sueltas y sin localidad');
+chk(GDO.CRM.dirKey('Calle 13, Hurlingham') === '', 'Una dirección sin nombre de calle real no sirve para unificar');
+chk(GDO.CRM.nomKey('Consumidor Final') === '', 'Nombres genéricos ("Consumidor Final") no unifican a nadie');
+
+L.push('<h2>4c · Unir a mano dos fichas</h2>');
+const pc = fichas.filter((f) => GDO.CRM.norm(f.nombre).indexOf('centro') >= 0);
+chk(pc.length === 2, 'El cliente que se mudó Y cambió de número queda en 2 fichas: la app no puede saberlo sola (dio ' + pc.length + ')');
+var DOCS = [], seq = 0;
+GDO.Store.crmClientes = function () { return DOCS; };
+GDO.Store.upsertCrmCliente = function (c) {
+  var ex = c.id ? DOCS.filter(function (x) { return x.id === c.id; })[0] : null;
+  if (ex) { Object.assign(ex, c); return ex; }
+  c.id = c.id || ('cli_' + (++seq)); DOCS.push(c); return c;
+};
+GDO.Store.deleteCrmCliente = function (id) { DOCS = DOCS.filter(function (x) { return x.id !== id; }); };
+if (pc.length === 2) GDO.CRM.unir(pc[0], pc[1]);
+const pc2 = GDO.CRM.fichas().filter((f) => GDO.CRM.norm(f.nombre).indexOf('centro') >= 0);
+chk(pc2.length === 1, 'Después de unir a mano: una sola ficha (dio ' + pc2.length + ')');
+chk(pc2[0] && pc2[0].nCompras === 2, 'La ficha unida junta los 2 pedidos, con teléfonos y direcciones distintos (dio ' + (pc2[0] ? pc2[0].nCompras : '—') + ')');
+chk(pc2[0] && pc2[0].telefonos.length === 2, 'Guarda los 2 teléfonos del cliente (dio ' + (pc2[0] ? pc2[0].telefonos.length : '—') + ')');
+chk(DOCS.length === 1, 'La unión deja UN solo documento guardado, no dos (dio ' + DOCS.length + ')');
+
 L.push('<h2>5 · Agrupación: una tarjeta por cliente</h2>');
 const ids = sugs.map((s) => s.clienteId);
 chk(ids.length === new Set(ids).size, 'Ningún cliente aparece dos veces en la agenda (' + sugs.length + ' tarjetas para ' + todas.length + ' avisos)');
@@ -124,7 +169,10 @@ L.push('<h2>7 · Mensajes de WhatsApp generados</h2>');
   if (s) L.push('<b>' + t + ' → ' + s.ficha.nombre + '</b><pre>' + s.msg + '</pre>');
 });
 chk(!todas.some((s) => /\$/.test(s.msg)), 'Ningún mensaje inventa un precio (regla GDO)');
-chk(todas.every((s) => !/Hola (Kiosco|Granja|Carnicería|Almacén|Fiambrería)!/.test(s.msg)), 'El saludo usa el nombre completo del comercio, no la primera palabra');
+chk(todas.every((s) => !/Hola (Kiosco|Granja|Carnicería|Almacén|Fiambrería|San|Panadería|Pollería|Depto)!/.test(s.msg)), 'El saludo usa el nombre completo del comercio, no la primera palabra');
+chk(todas.every((s) => s.msg.indexOf('(el de Vergara)') < 0), 'El saludo saca las aclaraciones entre paréntesis del nombre');
+const idsF = fichas.map((f) => f.id);
+chk(idsF.length === new Set(idsF).size, 'Cada ficha tiene un identificador único (dos vecinos de la misma dirección no se pisan)');
 
 document.getElementById('out').innerHTML = L.join('');
 </script>

@@ -42,9 +42,38 @@ window.GDO = window.GDO || {};
     return d.length >= 8 ? d.slice(-8) : '';
   }
 
-  // Clave con la que agrupamos los pedidos de un mismo cliente. El teléfono manda
-  // (es lo único que no cambia de escritura); si no hay, cae al nombre normalizado.
-  function claveDe(p) { return telKey(p && p.telefono) || norm(p && p.cliente) || ''; }
+  // Dirección normalizada HASTA LA ALTURA, que es lo único estable:
+  // "Av. Pres. Juan D. Perón 6871, Villa Udaondo, Ituzaingó" → "pres juan peron 6871".
+  // Sin altura no sirve como dato para unificar (media Hurlingham vive en "la calle 13").
+  const CALLE_PREF = ['av', 'avda', 'avenida', 'calle', 'ruta', 'pasaje', 'pje', 'psje',
+    'bv', 'blvd', 'boulevard', 'diagonal', 'diag', 'colectora'];
+  function dirKey(d) {
+    const s = norm(String(d == null ? '' : d).split(',')[0]);
+    if (!s || !/\d/.test(s)) return '';
+    let partes = s.split(' ').filter(Boolean);
+    while (partes.length > 1 && CALLE_PREF.indexOf(partes[0]) >= 0) partes.shift();
+    // Fuera las iniciales sueltas ("Juan D. Perón" a veces se escribe sin la D).
+    partes = partes.filter((w) => w.length > 1 || /\d/.test(w));
+    return partes.length >= 2 ? partes.join(' ') : '';
+  }
+
+  // Nombres que no identifican a nadie: no sirven para unificar.
+  const NOMBRE_GENERICO = ['cliente', 'consumidor final', 'sin nombre', 'particular',
+    'vecino', 'mostrador', 'varios', 'contado', 'sin datos'];
+  function nomKey(n) {
+    const s = norm(n);
+    return (s.length >= 3 && NOMBRE_GENERICO.indexOf(s) < 0) ? s : '';
+  }
+
+  // Los tres datos con los que se reconoce a un cliente. Cualquiera de los tres
+  // alcanza para unificar dos pedidos (ver agrupar()).
+  function senales(p) {
+    const out = [];
+    const t = telKey(p && p.telefono); if (t) out.push('t:' + t);
+    const d = dirKey(p && p.direccion); if (d) out.push('d:' + d);
+    const n = nomKey(p && p.cliente); if (n) out.push('n:' + n);
+    return out;
+  }
 
   // Producto normalizado, para poder comparar "Milanesas de pollo" con
   // "milanesa de pollo" (saca acentos, mayúsculas y el plural simple).
@@ -95,68 +124,146 @@ window.GDO = window.GDO || {};
 
   /* ═════════════════ armado de fichas ═════════════════ */
 
+  /* Agrupa los pedidos en clientes.
+
+     Une por CUALQUIERA de los tres datos — teléfono, dirección con altura o
+     nombre — porque el mismo cliente aparece escrito de mil formas y a veces
+     sin teléfono. Encadena: si el pedido A y el B comparten teléfono, y el B y
+     el C comparten dirección, los tres son el mismo cliente.
+
+     LA REGLA QUE FRENA TODO: nunca une dos pedidos con TELÉFONOS DISTINTOS.
+     Eso es lo que evita que dos vecinos del mismo edificio (misma dirección sin
+     depto) o dos "Juan" queden mezclados en una sola ficha. Si los dos tienen
+     teléfono y no es el mismo, son dos clientes, compartan lo que compartan.
+
+     Excepción: si una persona los unió a mano desde la ficha, el documento
+     guardado lleva los dos teléfonos en `claves` y ahí sí quedan juntos. */
+  function agrupar(pedidos, docs) {
+    const grupos = [];        // { sen:{señal:1}, tels:{tel:1}, peds:[], doc }
+    const padre = [];
+    const idx = {};           // señal -> índice de grupo (resolver con raiz())
+    const raiz = (i) => { while (padre[i] !== i) { padre[i] = padre[padre[i]]; i = padre[i]; } return i; };
+
+    function nuevo(doc) {
+      const i = grupos.length;
+      grupos.push({ sen: {}, tels: {}, peds: [], doc: doc || null });
+      padre.push(i);
+      return i;
+    }
+    function marcar(i, sens, tel) {
+      sens.forEach((s) => { grupos[i].sen[s] = 1; if (idx[s] == null) idx[s] = i; });
+      if (tel) grupos[i].tels[tel] = 1;
+    }
+    // ¿Este teléfono contradice a los que ya tiene el grupo?
+    function chocaTel(i, tel) {
+      const ts = Object.keys(grupos[i].tels);
+      if (!tel || !ts.length) return false;
+      return ts.indexOf(tel) < 0;
+    }
+    function chocanGrupos(a, b) {
+      const ta = Object.keys(grupos[a].tels), tb = Object.keys(grupos[b].tels);
+      if (!ta.length || !tb.length) return false;
+      return !ta.some((t) => tb.indexOf(t) >= 0);
+    }
+    function fundir(a, b) {   // b entra en a
+      padre[b] = a;
+      grupos[b].peds.forEach((p) => grupos[a].peds.push(p));
+      Object.keys(grupos[b].sen).forEach((s) => { grupos[a].sen[s] = 1; });
+      Object.keys(grupos[b].tels).forEach((t) => { grupos[a].tels[t] = 1; });
+      if (!grupos[a].doc && grupos[b].doc) grupos[a].doc = grupos[b].doc;
+      grupos[b].peds = []; grupos[b].sen = {}; grupos[b].tels = {};
+    }
+
+    // 1) Primero las fichas guardadas: sus `claves` ya declararon qué datos son
+    //    de este cliente (incluidas las uniones hechas a mano).
+    (docs || []).forEach((d) => {
+      const i = nuevo(d);
+      const sens = (d.claves || []).slice();
+      senales({ cliente: d.nombre, telefono: d.telefono, direccion: d.direccion })
+        .forEach((s) => { if (sens.indexOf(s) < 0) sens.push(s); });
+      sens.forEach((s) => {
+        grupos[i].sen[s] = 1;
+        if (idx[s] == null) idx[s] = i;
+        if (s.indexOf('t:') === 0) grupos[i].tels[s.slice(2)] = 1;
+      });
+    });
+
+    // 2) Después los pedidos, encadenando por los datos que compartan.
+    (pedidos || []).forEach((p) => {
+      const sens = senales(p);
+      if (!sens.length) return;
+      const tel = telKey(p.telefono);
+
+      const cand = [];
+      sens.forEach((s) => {
+        const g = idx[s];
+        if (g == null) return;
+        const r = raiz(g);
+        if (cand.indexOf(r) < 0) cand.push(r);
+      });
+      const ok = cand.filter((g) => !chocaTel(g, tel));
+
+      let dest;
+      if (!ok.length) dest = nuevo(null);
+      else {
+        dest = ok[0];
+        for (let k = 1; k < ok.length; k++) {
+          const r = raiz(ok[k]);
+          if (r !== dest && !chocanGrupos(dest, r)) fundir(dest, r);
+        }
+      }
+      grupos[dest].peds.push(p);
+      marcar(dest, sens, tel);
+    });
+
+    return grupos.filter((g, i) => raiz(i) === i && (g.peds.length || g.doc));
+  }
+
+  // Arma la ficha visible a partir de un grupo: los datos de contacto salen de lo
+  // guardado a mano y, si no hay, del pedido MÁS NUEVO (es el dato más fresco).
+  function armar(g) {
+    const doc = g.doc || null;
+    const peds = g.peds.slice().sort((a, b) => (fechaDe(a) || 0) - (fechaDe(b) || 0));
+    const ult = peds[peds.length - 1] || null;
+    const alias = [], tels = [], dirs = [];
+    peds.forEach((p) => {
+      if (p.cliente && alias.indexOf(p.cliente) < 0) alias.push(p.cliente);
+      if (p.telefono && tels.indexOf(p.telefono) < 0) tels.push(p.telefono);
+      if (p.direccion && dirs.indexOf(p.direccion) < 0) dirs.push(p.direccion);
+    });
+    const claves = Object.keys(g.sen).sort();
+    return {
+      // El id de una ficha sin documento guardado es su JUEGO COMPLETO de señales,
+      // no la primera: dos vecinos de la misma dirección comparten la señal `d:` y
+      // con una sola quedaban con el mismo id (se pisaban en la agenda y al abrir
+      // la ficha). Dos grupos nunca pueden tener el mismo juego completo — si lo
+      // tuvieran, agrupar() ya los habría fusionado.
+      id: doc ? doc.id : ('g:' + claves.join('|')),
+      docId: doc ? doc.id : null,
+      claves: claves,
+      nombre: (doc && doc.nombre) || (ult && ult.cliente) || alias[0] || 'Sin nombre',
+      telefono: (doc && doc.telefono) || (ult && ult.telefono) || tels[tels.length - 1] || '',
+      direccion: (doc && doc.direccion) || (ult && ult.direccion) || dirs[dirs.length - 1] || '',
+      localidad: (doc && doc.localidad) || (ult && ult.localidad) || '',
+      entrecalles: (doc && doc.entrecalles) || (ult && ult.entrecalles) || '',
+      tipo: (doc && doc.tipo) || '',
+      notas: (doc && doc.notas) || '',
+      recordatorio: (doc && doc.recordatorio) || null,
+      snooze: (doc && doc.snooze) || {},
+      ultimoContactoTs: (doc && doc.ultimoContactoTs) || null,
+      pausado: !!(doc && doc.pausado),
+      socio: peds.some((p) => !!p.clienteUid),
+      alias: alias, telefonos: tels, direcciones: dirs,
+      pedidos: peds,
+    };
+  }
+
   // Devuelve TODAS las fichas, calculadas desde los pedidos y mezcladas con lo
   // guardado a mano. Ordenadas por última compra (lo más reciente primero).
   function fichas() {
     const Store = GDO.Store;
-    const guardados = (Store.crmClientes && Store.crmClientes()) || [];
-
-    // clave de agrupación -> doc guardado (una ficha puede tener varias claves
-    // porque el mismo cliente se escribió de más de una forma y las unimos).
-    const porClave = {};
-    guardados.forEach((d) => {
-      const ks = (d.claves && d.claves.length) ? d.claves : [d.clave];
-      ks.forEach((k) => { if (k) porClave[k] = d; });
-    });
-
-    const grupos = {};
-    const idDe = (clave) => (porClave[clave] ? porClave[clave].id : 'k:' + clave);
-
-    (Store.pedidos() || []).forEach((p) => {
-      const clave = claveDe(p);
-      if (!clave) return;
-      const id = idDe(clave);
-      let g = grupos[id];
-      if (!g) {
-        const doc = porClave[clave] || null;
-        g = grupos[id] = {
-          id: id,
-          docId: doc ? doc.id : null,
-          clave: clave,
-          claves: doc ? ((doc.claves && doc.claves.length) ? doc.claves : [doc.clave]) : [clave],
-          nombre: (doc && doc.nombre) || p.cliente || 'Sin nombre',
-          telefono: (doc && doc.telefono) || p.telefono || '',
-          direccion: (doc && doc.direccion) || p.direccion || '',
-          localidad: (doc && doc.localidad) || p.localidad || '',
-          entrecalles: (doc && doc.entrecalles) || p.entrecalles || '',
-          tipo: (doc && doc.tipo) || '',
-          notas: (doc && doc.notas) || '',
-          recordatorio: (doc && doc.recordatorio) || null,
-          snooze: (doc && doc.snooze) || {},
-          ultimoContactoTs: (doc && doc.ultimoContactoTs) || null,
-          pausado: !!(doc && doc.pausado),
-          socio: false,
-          pedidos: [],
-        };
-      }
-      // Si la ficha no tiene teléfono/dirección guardados, los tomamos del pedido
-      // que los traiga (así el botón de WhatsApp funciona sin cargar nada a mano).
-      if (!g.telefono && p.telefono) g.telefono = p.telefono;
-      if (!g.direccion && p.direccion) g.direccion = p.direccion;
-      if (p.clienteUid) g.socio = true;
-      g.pedidos.push(p);
-    });
-
-    // Fichas guardadas que todavía no tienen ningún pedido (alta manual).
-    guardados.forEach((d) => {
-      if (grupos[d.id]) return;
-      grupos[d.id] = Object.assign({
-        docId: d.id, clave: (d.claves || [])[0] || '', claves: d.claves || [],
-        socio: false, pedidos: [],
-      }, d, { id: d.id, snooze: d.snooze || {} });
-    });
-
-    const out = Object.keys(grupos).map((k) => calcular(grupos[k]));
+    const docs = (Store.crmClientes && Store.crmClientes()) || [];
+    const out = agrupar(Store.pedidos() || [], docs).map((g) => calcular(armar(g)));
     out.sort((a, b) => (b.ultima || 0) - (a.ultima || 0));
     return out;
   }
@@ -407,23 +514,24 @@ window.GDO = window.GDO || {};
      Voseo rioplatense, cortos, y SIEMPRE con un paso siguiente concreto.
      Nunca llevan un precio escrito: para eso está la lista viva. */
 
-  // Palabras con las que arranca el nombre de un COMERCIO. Si el cliente es un
-  // comercio hay que saludarlo con el nombre entero ("Hola Kiosco Don José!");
-  // si es una persona, con el nombre de pila ("Hola Juan!"). Cortar siempre por
-  // la primera palabra daba saludos ridículos tipo "Hola Kiosco!".
-  const COMERCIO = ['kiosco', 'kiosko', 'granja', 'carniceria', 'carnicería', 'almacen', 'almacén',
-    'fiambreria', 'fiambrería', 'rotiseria', 'rotisería', 'polleria', 'pollería', 'verduleria',
-    'verdulería', 'despensa', 'super', 'supermercado', 'minimercado', 'mini', 'mercado', 'mercadito',
-    'autoservicio', 'distribuidora', 'deposito', 'depósito', 'restaurante', 'resto', 'bar', 'parrilla',
-    'pizzeria', 'pizzería', 'panaderia', 'panadería', 'comedor', 'buffet', 'club', 'colegio',
-    'escuela', 'hotel', 'catering', 'maxikiosco', 'maxi', 'la', 'el', 'los', 'las', 'don', 'doña'];
+  /* Cómo saludarlo. Cortar siempre por la primera palabra daba saludos ridículos
+     ("Hola Kiosco!", "Hola San!"), así que la regla es al revés: el nombre ENTERO,
+     salvo que parezca claramente el de una persona — exactamente dos palabras y
+     ninguna de comercio ("Juan Pérez" → "Juan"). Ante la duda, nombre entero:
+     nunca queda mal. Las aclaraciones entre paréntesis se sacan. */
+  const COMERCIO = ['kiosco', 'kiosko', 'maxikiosco', 'maxi', 'granja', 'carniceria', 'almacen',
+    'fiambreria', 'rotiseria', 'polleria', 'verduleria', 'despensa', 'super', 'supermercado',
+    'minimercado', 'mini', 'mercado', 'mercadito', 'autoservicio', 'distribuidora', 'deposito',
+    'restaurante', 'resto', 'bar', 'parrilla', 'pizzeria', 'panaderia', 'comedor', 'buffet',
+    'club', 'colegio', 'escuela', 'hotel', 'catering', 'santa', 'san', 'la', 'el', 'los', 'las',
+    'don', 'dona', 'casa', 'lo', 'los'];
 
   function nombrePila(f) {
-    const nom = String(f.nombre || '').trim();
+    const nom = String(f.nombre || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
     if (!nom) return '';
-    const partes = nom.split(/\s+/);
-    if (partes.length === 1) return partes[0];
-    return COMERCIO.indexOf(norm(partes[0])) >= 0 ? nom : partes[0];
+    const partes = nom.split(' ');
+    if (partes.length === 2 && COMERCIO.indexOf(norm(partes[0])) < 0) return partes[0];
+    return nom;
   }
   const yo = () => {
     const u = GDO.Store && GDO.Store.current && GDO.Store.current();
@@ -474,7 +582,7 @@ window.GDO = window.GDO || {};
   // la clave de agrupación (para que la próxima vez se enganche solo).
   function guardar(f, cambios) {
     const base = {
-      claves: (f.claves && f.claves.length) ? f.claves : [f.clave],
+      claves: f.claves || [],
       nombre: f.nombre || '', telefono: f.telefono || '', direccion: f.direccion || '',
       localidad: f.localidad || '', entrecalles: f.entrecalles || '',
       tipo: f.tipo || '', notas: f.notas || '',
@@ -496,6 +604,32 @@ window.GDO = window.GDO || {};
     });
   }
 
+  /* Unir dos fichas A MANO: cuando la app no pudo darse cuenta sola (el cliente
+     se mudó, cambió de teléfono, o cargó dos números distintos). Queda un solo
+     documento con los datos de las dos, y a partir de ahí la unión es permanente:
+     los teléfonos de ambas quedan en `claves`, así que agrupar() ya no las separa
+     aunque los números no coincidan. */
+  function unir(a, b) {
+    const claves = {};
+    (a.claves || []).forEach((k) => { claves[k] = 1; });
+    (b.claves || []).forEach((k) => { claves[k] = 1; });
+    // La ficha con más historia manda: es la que tiene los datos más confiables.
+    const base = (a.nCompras >= b.nCompras) ? a : b;
+    const otro = (base === a) ? b : a;
+    const notas = [base.notas, otro.notas].filter(Boolean).join('\n');
+    const doc = guardar(base, {
+      claves: Object.keys(claves),
+      tipo: base.tipo || otro.tipo || '',
+      telefono: base.telefono || otro.telefono || '',
+      direccion: base.direccion || otro.direccion || '',
+      notas: notas,
+      recordatorio: base.recordatorio || otro.recordatorio || null,
+    });
+    // El documento de la otra ficha ya no hace falta (sus claves quedaron acá).
+    if (otro.docId && doc && otro.docId !== doc.id) GDO.Store.deleteCrmCliente(otro.docId);
+    return doc;
+  }
+
   // Posponer una sugerencia puntual N días (por defecto 7).
   function posponer(f, tipo, dias) {
     const sn = Object.assign({}, f.snooze || {});
@@ -504,7 +638,8 @@ window.GDO = window.GDO || {};
   }
 
   GDO.CRM = {
-    fichas, sugerencias, agenda, guardar, marcarContactado, posponer, dormido,
-    norm, telKey, claveDe, prodKey, fechaDe, montoDe, listaProd, TIPOS, DIAS, LISTA_URL,
+    fichas, sugerencias, agenda, guardar, unir, marcarContactado, posponer, dormido,
+    norm, telKey, dirKey, nomKey, senales, prodKey, fechaDe, montoDe, listaProd,
+    TIPOS, DIAS, LISTA_URL,
   };
 })();

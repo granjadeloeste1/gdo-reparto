@@ -388,6 +388,15 @@ window.GDO = window.GDO || {};
     },
     deleteUser(id) { db.users = db.users.filter((u) => u.id !== id); persist(db); fsDel('users', id); },
     admins: () => db.users.filter((u) => u.roles.includes('admin')),
+    // ¿Este usuario puede ver la ficha de clientes (CRM)? El ADMINISTRADOR siempre;
+    // el resto solo si un administrador se lo habilitó (checkbox en Usuarios y roles).
+    // Son datos personales de terceros y el historial de compras del negocio: no es
+    // algo que tenga que ver cualquiera que carga un pedido.
+    puedeCRM(u) {
+      const x = u || (db.session && db.users.find((y) => y.id === db.session.userId));
+      if (!x || !x.activo) return false;
+      return x.roles.indexOf('admin') >= 0 || !!x.crm;
+    },
 
     // ----- vehículos -----
     vehiculos: () => db.vehiculos,

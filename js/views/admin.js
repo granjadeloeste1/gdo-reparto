@@ -15,7 +15,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Aviso del CRM: cuántos clientes hay para contactar hoy. Es lo primero que
     // conviene ver al abrir la app, porque es lo único que se pierde si nadie mira.
     let sugs = [];
-    try { sugs = GDO.CRM ? GDO.CRM.agenda() : []; } catch (e) { sugs = []; }
+    try { sugs = (GDO.CRM && Store.puedeCRM()) ? GDO.CRM.agenda() : []; } catch (e) { sugs = []; }
     const urgentes = sugs.filter((s) => s.prio >= 78);
     c.innerHTML = `
       ${sugs.length ? `<div class="crm-aviso" id="d-crm">
@@ -811,7 +811,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <th>Nombre</th><th>Email</th><th>Roles</th><th>Estado</th><th></th></tr></thead><tbody>
         ${list.map((u) => `<tr>
           <td><b>${esc(u.nombre)}</b></td><td class="small">${esc(u.email)}</td>
-          <td>${u.roles.map((r) => ROL_CHIP[r]).join(' ')}</td>
+          <td>${u.roles.map((r) => ROL_CHIP[r]).join(' ')}${Store.puedeCRM(u) ? ' <span class="chip crm-t-rev" title="Puede ver la ficha de clientes">📇 Clientes</span>' : ''}</td>
           <td>${u.activo ? '<span class="chip chip-entreg">Activo</span>' : '<span class="chip chip-no">Inactivo</span>'}</td>
           <td class="t-actions">
             <button class="btn btn-ghost btn-sm" data-edit="${u.id}">✎ Roles</button>
@@ -841,6 +841,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field col-2"><label>Roles asignados</label>
             <div class="roles-pick">${rolBox('admin', '👑 Administrador')}${rolBox('vendedor', '🏷️ Vendedor')}${rolBox('cajero', '💳 Cajero')}${rolBox('repartidor', '🚚 Repartidor')}</div>
             <span class="help">Administrador: acceso total · Vendedor: carga pedidos · Cajero: pedidos + Club (cargar puntos y escanear vouchers, con ticket obligatorio; no crea premios ni elimina) · Repartidor: ve sus rutas.</span></div>
+          <div class="field col-2"><label>Permisos extra</label>
+            <div class="roles-pick"><label><input type="checkbox" id="u-crm" ${u && u.crm ? 'checked' : ''}/> 📇 Ver Clientes (CRM)</label></div>
+            <span class="help">La ficha de clientes, el historial de compras y la agenda de contacto. El <b>administrador siempre la ve</b>; al resto se la habilitás acá, uno por uno. Sin esto, la pestaña Clientes ni les aparece.</span></div>
           <div class="field col-2"><label><input type="checkbox" id="u-act" ${!u || u.activo ? 'checked' : ''} style="width:auto"/> Usuario activo (puede ingresar)</label></div>
         </div>`,
       footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save>Guardar</button>`,
@@ -852,7 +855,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const rs = [...node.querySelectorAll('.roles-pick input:checked')].map((x) => x.value);
           if (!nom || !email) { toast('Completá nombre y email', 'err'); return; }
           if (!rs.length) { toast('Asigná al menos un rol', 'err'); return; }
-          Store.upsertUser({ id: u ? u.id : undefined, nombre: nom, email, roles: rs, activo: node.querySelector('#u-act').checked });
+          Store.upsertUser({
+            id: u ? u.id : undefined, nombre: nom, email, roles: rs,
+            crm: node.querySelector('#u-crm').checked,
+            activo: node.querySelector('#u-act').checked,
+          });
           toast('Usuario guardado', 'ok'); close(); after && after();
         };
       },

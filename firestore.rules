@@ -40,6 +40,14 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/Staff/$(request.auth.uid)).data.get('rol', 'admin') == 'admin';
     }
 
+    // CRM (ficha de clientes): el admin siempre; el resto del personal solo si su
+    // doc en /Staff tiene  crm: true. Ver la nota completa en /crm_clientes.
+    function puedeCRM() {
+      return isAdmin()
+        || (isStaff()
+            && get(/databases/$(database)/documents/Staff/$(request.auth.uid)).data.get('crm', false) == true);
+    }
+
     // Validación de un pedido creado por la tienda (sesión anónima o socio
     // logueado). Limita lo que un no-staff puede escribir. Si trae clienteUid,
     // debe ser el del propio usuario (para acreditar puntos a quien corresponde).
@@ -79,8 +87,15 @@ service cloud.firestore {
 
     // CRM: ficha comercial del cliente (tipo, notas, recordatorios, "ya lo
     // contacté"). NO confundir con /clientes, que es la del socio del GDO CLUB.
-    // Datos de contacto de terceros → solo personal, nunca lectura pública.
-    match /crm_clientes/{id}    { allow read, write: if isStaff(); }
+    // Son datos de contacto de terceros + el historial de compras del negocio:
+    // NO lo ve cualquiera que carga un pedido, y nunca hay lectura pública.
+    //
+    // Quién entra: el ADMIN siempre; el resto del personal solo si su doc en
+    // /Staff tiene  crm: true. En la app el permiso se marca en "Usuarios y
+    // roles" (eso decide si le aparece la pestaña); esta regla es el candado de
+    // verdad, del lado del servidor. RETROCOMPATIBLE: un doc /Staff sin 'rol'
+    // cuenta como admin, así que publicar esto no le saca el acceso a nadie hoy.
+    match /crm_clientes/{id}    { allow read, write: if puedeCRM(); }
 
     // ───────── Pedidos ─────────
     // get: el cliente final ve SU pedido por el link de seguimiento (id de 128

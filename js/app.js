@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v67';
+  const VERSION = 'v68';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -27,9 +27,18 @@ window.GDO = window.GDO || {};
     ],
     cajero: [
       { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
+      { hash: '#/clientes', ic: '📇', t: 'Clientes' },
       { hash: '#/club', ic: '⭐', t: 'GDO Club' },
     ],
   };
+
+  // El menú de CLIENTES solo aparece para quien tenga el permiso (admin siempre;
+  // al resto se lo habilita un admin desde "Usuarios y roles"). Si no lo tiene, la
+  // opción no existe y la ruta tampoco: no alcanza con esconder el botón.
+  function navDe(rol) {
+    const base = NAV[rol] || NAV.vendedor;
+    return Store.puedeCRM() ? base : base.filter((n) => n.hash !== '#/clientes');
+  }
 
   function rolesDisponibles(u) { return u.roles; }
 
@@ -92,7 +101,7 @@ window.GDO = window.GDO || {};
       case '#/panel': return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);
       case '#/pedidos': return V.pedidos(c);
       case '#/rutas': return V.rutas(c);
-      case '#/clientes': return (rol === 'admin' || rol === 'vendedor') ? V.clientes(c) : V.pedidos(c);
+      case '#/clientes': return Store.puedeCRM() ? V.clientes(c) : V.pedidos(c);
       case '#/club': return (rol === 'admin' || rol === 'cajero') ? V.club(c) : V.pedidos(c);
       case '#/usuarios': return rol === 'admin' ? V.usuarios(c) : V.pedidos(c);
       case '#/vehiculos': return rol === 'admin' ? V.vehiculos(c) : V.pedidos(c);
@@ -101,7 +110,7 @@ window.GDO = window.GDO || {};
   }
 
   function renderShell(u, rol) {
-    const nav = NAV[rol] || NAV.vendedor;
+    const nav = navDe(rol);
     const hash = location.hash;
     const noLeidas = Store.noLeidas(u.id);
     root().className = '';

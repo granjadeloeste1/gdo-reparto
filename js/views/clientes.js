@@ -284,6 +284,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <span class="help">Para clientes que ya no compran o que atiende otra persona. Sigue apareciendo en la lista, pero no en “Para hacer hoy”.</span></div>
         </div>
 
+        ${(f.alias.length > 1 || f.telefonos.length > 1 || f.direcciones.length > 1) ? `
+        <div class="crm-bloque">
+          <h4>Cómo se unificó</h4>
+          <div class="help" style="margin-bottom:8px">Esta ficha junta <b>${f.pedidos.length} pedidos</b> que estaban cargados con datos distintos. La app los reconoció por el teléfono, la dirección o el nombre.</div>
+          ${f.alias.length > 1 ? `<div class="crm-union"><b>Nombres:</b> ${f.alias.map((x) => '<span>' + esc(x) + '</span>').join('')}</div>` : ''}
+          ${f.telefonos.length > 1 ? `<div class="crm-union"><b>Teléfonos:</b> ${f.telefonos.map((x) => '<span>' + esc(x) + '</span>').join('')}</div>` : ''}
+          ${f.direcciones.length > 1 ? `<div class="crm-union"><b>Direcciones:</b> ${f.direcciones.map((x) => '<span>' + esc(x) + '</span>').join('')}</div>` : ''}
+        </div>` : ''}
+
         ${f.productos.length ? `
         <div class="crm-bloque">
           <h4>Qué compra</h4>
@@ -305,6 +314,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       footHTML: `
         ${tel ? '<button class="btn btn-verde" data-wsp>💬 WhatsApp</button>' : ''}
         <button class="btn btn-dark" data-nuevo>+ Nuevo pedido</button>
+        <button class="btn btn-ghost" data-unir title="Si el mismo cliente quedó dividido en dos fichas">🔗 Unir</button>
         <div class="spacer" style="flex:1"></div>
         <button class="btn btn-ghost" data-cancel>Cerrar</button>
         <button class="btn btn-primary" data-save>Guardar</button>`,
@@ -331,6 +341,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           });
         };
 
+        node.querySelector('[data-unir]').onclick = () => { close(); unirModal(f, after); };
+
         node.querySelector('[data-cancel]').onclick = close;
         node.querySelector('[data-save]').onclick = () => {
           const rfec = node.querySelector('#fi-rfec').value;
@@ -350,4 +362,47 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   GDO.Views.fichaClienteModal = fichaModal;
+
+  /* Unir dos fichas a mano. La app une sola cuando dos pedidos comparten teléfono,
+     dirección o nombre, pero nunca junta dos teléfonos distintos (para no mezclar
+     dos vecinos del mismo edificio). Cuando SÍ es la misma persona con dos números
+     —se cambió de celular, tiene el del local y el personal— se une desde acá. */
+  function unirModal(f, after) {
+    const otras = CRM().fichas().filter((x) => x.id !== f.id);
+    modal({
+      title: 'Unir ' + f.nombre + ' con otra ficha', width: 560,
+      bodyHTML: `
+        <div class="note">Elegí la ficha que en realidad es <b>el mismo cliente</b>. Se juntan los dos historiales en uno solo y la unión queda guardada para siempre (aunque tengan teléfonos distintos).</div>
+        <div class="field"><input type="search" id="un-q" placeholder="Buscar por nombre, teléfono o dirección…"/></div>
+        <div id="un-lista" class="crm-unir-lista"></div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button>`,
+      onMount(node, close) {
+        const lista = node.querySelector('#un-lista');
+        const draw = (q) => {
+          const nq = CRM().norm(q || '');
+          const dig = String(q || '').replace(/\D/g, '');
+          const vis = otras.filter((x) => {
+            if (!nq) return true;
+            if (CRM().norm(x.nombre + ' ' + x.direccion).indexOf(nq) >= 0) return true;
+            return dig.length >= 3 && String(x.telefono || '').replace(/\D/g, '').indexOf(dig) >= 0;
+          }).slice(0, 40);
+          lista.innerHTML = vis.length ? vis.map((x) => `
+            <button class="crm-unir-item" data-id="${esc(x.id)}">
+              <b>${esc(x.nombre)}</b>
+              <span>${x.nCompras} compra${x.nCompras === 1 ? '' : 's'} · ${esc(x.telefono || 'sin teléfono')} · ${esc(x.direccion || 'sin dirección')}</span>
+            </button>`).join('') : '<div class="empty">No hay otras fichas que coincidan.</div>';
+          lista.querySelectorAll('[data-id]').forEach((b) => b.onclick = () => {
+            const otra = otras.filter((x) => x.id === b.dataset.id)[0];
+            confirmDlg(
+              '¿Unir "' + f.nombre + '" con "' + otra.nombre + '"? Van a quedar como un solo cliente, con los ' + (f.nCompras + otra.nCompras) + ' pedidos juntos.',
+              () => { CRM().unir(f, otra); close(); toast('Fichas unidas ✓', 'ok'); after && after(); },
+              'Unir', 'btn-primary');
+          });
+        };
+        draw('');
+        node.querySelector('#un-q').oninput = (e) => draw(e.target.value);
+        node.querySelector('[data-cancel]').onclick = close;
+      },
+    });
+  }
 })();
