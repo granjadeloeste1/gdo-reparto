@@ -168,6 +168,35 @@ chk(GDO.CRM.fechaDe(viejo) === viejo.creado, 'Los pedidos nuevos guardan fecha d
 chk(GDO.CRM.sinFecha().length === 0, 'Con la fecha de alta, no queda ningún pedido huérfano');
 PEDIDOS.pop();
 
+L.push('<h2>4f · Clientes que volvieron pero quedaron partidos</h2>');
+// K · Mismo cliente, misma puerta, dos telefonos (celular y fijo). Se une SOLO.
+PEDIDOS.push(pedDir('Rotiseria El Nono', '11 5533-0001', 'Belgrano 450, Hurlingham', 50, [POLLO]));
+PEDIDOS.push(pedDir('Rotiseria El Nono', '11 5533-0002', 'Belgrano 450, Hurlingham', 25, [POLLO]));
+const nono = GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Nono') >= 0);
+chk(nono.length === 1, 'Mismo nombre Y misma direccion con dos telefonos: se une sola (dio ' + nono.length + ' ficha)');
+chk(nono[0] && nono[0].nCompras === 2, 'Y queda con las 2 compras, o sea aparece como cliente que repite (dio ' + (nono[0] ? nono[0].nCompras : '—') + ')');
+
+// L · Mismo nombre, DIRECCION distinta, telefono distinto: NO se une sola,
+//     pero la app lo propone como posible duplicado.
+PEDIDOS.push(pedDir('Flavia Marisa Gomez', '11 5533-1001', 'Roca 100, Moron', 40, [MILA]));
+PEDIDOS.push(pedDir('Flavia Marisa Gomez', '11 5533-1002', 'Sarmiento 700, Moron', 15, [MILA]));
+const flavias = GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Flavia') >= 0);
+chk(flavias.length === 2, 'Mismo nombre pero otra direccion y otro telefono: NO se une sola (dio ' + flavias.length + ')');
+const dups = GDO.CRM.posiblesDuplicados();
+const parFlavia = dups.filter((d) => d.a.nombre.indexOf('Flavia') >= 0 && d.b.nombre.indexOf('Flavia') >= 0)[0];
+chk(!!parFlavia, 'Pero la app lo detecta y lo propone para unir en un toque');
+chk(parFlavia && parFlavia.motivo.indexOf('telefonos distintos') >= 0 || (parFlavia && parFlavia.motivo.length > 0), 'Y explica por que sospecha: ' + (parFlavia ? parFlavia.motivo : '—'));
+// M · Nombre incompleto vs completo.
+PEDIDOS.push(pedDir('Melanie', '11 5533-2001', 'Mitre 55, Ituzaingo', 44, [POLLO]));
+PEDIDOS.push(pedDir('Melanie Rodriguez', '11 5533-2002', 'Alvear 900, Ituzaingo', 10, [POLLO]));
+const dups2 = GDO.CRM.posiblesDuplicados();
+chk(dups2.some((d) => (d.a.nombre + d.b.nombre).indexOf('Melanie Rodriguez') >= 0 && (d.a.nombre + d.b.nombre).indexOf('Melanie') >= 0),
+  '"Melanie" y "Melanie Rodriguez" tambien se proponen como el mismo');
+// Y no propone cualquier cosa: dos clientes sin nada en comun no aparecen juntos.
+chk(!dups2.some((d) => GDO.CRM.norm(d.a.nombre).indexOf('rosa') >= 0 && GDO.CRM.norm(d.b.nombre).indexOf('cuñados') >= 0),
+  'No propone unir clientes que no tienen nada que ver');
+for (let k = 0; k < 6; k++) PEDIDOS.pop();
+
 L.push('<h2>4e · La agenda no se inunda de primeras compras</h2>');
 // Escenario real de GDO (ago-2026): 78 pedidos, casi todos de clientes que
 // compraron UNA sola vez. Antes eso daba "50 clientes para contactar, 42 urgentes".

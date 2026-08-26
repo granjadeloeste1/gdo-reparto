@@ -215,7 +215,15 @@ window.GDO = window.GDO || {};
         const r = raiz(g);
         if (cand.indexOf(r) < 0) cand.push(r);
       });
-      const ok = cand.filter((g) => !chocaTel(g, tel));
+      const ok = cand.filter((g) => {
+        if (!chocaTel(g, tel)) return true;
+        // Teléfonos distintos: normalmente son dos clientes. La ÚNICA excepción es
+        // que coincidan además el nombre Y la dirección con altura — dos personas
+        // distintas, con el mismo nombre, en la misma puerta, no existen. Pasa
+        // seguido: el mismo cliente pidió una vez con el celular y otra con el fijo.
+        const comp = sens.filter((s) => grupos[g].sen[s]);
+        return comp.some((s) => s.indexOf('n:') === 0) && comp.some((s) => s.indexOf('d:') === 0);
+      });
 
       let dest;
       if (!ok.length) dest = nuevo(null);
@@ -531,6 +539,84 @@ window.GDO = window.GDO || {};
     return out;
   }
 
+  /* POSIBLES DUPLICADOS: fichas que la app dejó separadas pero que probablemente
+     sean el mismo cliente. Casi siempre es esto: el cliente pidió una vez con el
+     celular y otra con el fijo (o le cargaron mal un dígito), así que la regla de
+     "teléfonos distintos = clientes distintos" los separó.
+
+     No los une sola —unir mal es peor que no unir— pero los muestra para que una
+     persona decida en un toque. Cada par trae `motivo` (por qué sospecha) y
+     `fuerza` (para ordenar: primero lo más seguro). */
+  function posiblesDuplicados(lista) {
+    const fs = (lista || fichas()).filter((f) => f.pedidos.length || f.docId);
+    const pares = [];
+    const vistos = {};
+
+    const agregar = (a, b, fuerza, motivo) => {
+      if (a.id === b.id) return;
+      const k = [a.id, b.id].sort().join('~');
+      if (vistos[k]) { if (fuerza > vistos[k].fuerza) { vistos[k].fuerza = fuerza; vistos[k].motivo = motivo; } return; }
+      const par = { a: a, b: b, fuerza: fuerza, motivo: motivo };
+      vistos[k] = par; pares.push(par);
+    };
+
+    // Índices por nombre normalizado y por dirección con altura.
+    const porNom = {}, porDir = {};
+    fs.forEach((f) => {
+      const nomsF = {}, dirsF = {};
+      (f.alias && f.alias.length ? f.alias : [f.nombre]).forEach((n) => { const k = nomKey(n); if (k) nomsF[k] = 1; });
+      (f.direcciones && f.direcciones.length ? f.direcciones : [f.direccion]).forEach((d) => { const k = dirKey(d); if (k) dirsF[k] = 1; });
+      f._noms = Object.keys(nomsF); f._dirs = Object.keys(dirsF);
+      f._noms.forEach((k) => (porNom[k] = porNom[k] || []).push(f));
+      f._dirs.forEach((k) => (porDir[k] = porDir[k] || []).push(f));
+    });
+
+    // 1) Mismo nombre exacto Y misma dirección → prácticamente seguro.
+    // 2) Mismo nombre exacto → muy probable (es el caso de los dos teléfonos).
+    Object.keys(porNom).forEach((k) => {
+      const g = porNom[k];
+      if (g.length < 2 || g.length > 6) return;   // un nombre en 7 fichas es genérico, no un duplicado
+      for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
+        const comparteDir = g[i]._dirs.some((d) => g[j]._dirs.indexOf(d) >= 0);
+        agregar(g[i], g[j], comparteDir ? 100 : 70,
+          comparteDir ? 'Mismo nombre y misma dirección, con teléfonos distintos.' : 'Se llaman igual, pero tienen teléfonos distintos.');
+      }
+    });
+
+    // 3) Misma dirección con altura y nombres parecidos (uno contiene al otro).
+    Object.keys(porDir).forEach((k) => {
+      const g = porDir[k];
+      if (g.length < 2 || g.length > 6) return;
+      for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
+        if (parecidos(g[i]._noms, g[j]._noms)) {
+          agregar(g[i], g[j], 85, 'Misma dirección y el nombre es casi igual.');
+        }
+      }
+    });
+
+    // 4) Nombres donde uno contiene al otro ("Melanie" y "Melanie Rodriguez").
+    //    Solo si el más corto tiene al menos 5 letras, para no juntar a todos los "Ana".
+    for (let i = 0; i < fs.length; i++) for (let j = i + 1; j < fs.length; j++) {
+      if (parecidos(fs[i]._noms, fs[j]._noms)) agregar(fs[i], fs[j], 55, 'Un nombre contiene al otro.');
+    }
+
+    pares.sort((x, y) => (y.fuerza - x.fuerza)
+      || ((y.a.nCompras + y.b.nCompras) - (x.a.nCompras + x.b.nCompras)));
+    return pares.slice(0, 40);
+  }
+
+  // ¿Alguno de estos nombres contiene al otro? ("melanie" ⊂ "melanie rodriguez").
+  function parecidos(as, bs) {
+    for (let i = 0; i < as.length; i++) for (let j = 0; j < bs.length; j++) {
+      const a = as[i], b = bs[j];
+      if (a === b) continue;
+      const corto = a.length <= b.length ? a : b, largo = corto === a ? b : a;
+      if (corto.length < 5) continue;
+      if ((largo + ' ').indexOf(corto + ' ') === 0 || largo.indexOf(' ' + corto) >= 0) return true;
+    }
+    return false;
+  }
+
   /* La agenda partida en DOS, que es la diferencia entre una lista que se usa y
      una que no se mira nunca:
 
@@ -677,7 +763,7 @@ window.GDO = window.GDO || {};
 
   GDO.CRM = {
     fichas, sugerencias, agenda, agendaPartida, guardar, unir, marcarContactado,
-    posponer, dormido, sinFecha,
+    posponer, dormido, sinFecha, posiblesDuplicados,
     norm, telKey, dirKey, nomKey, senales, prodKey, fechaDe, montoDe, listaProd,
     TIPOS, DIAS, LISTA_URL,
   };

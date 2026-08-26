@@ -645,6 +645,67 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
   GDO.Views.wppModal = wppModal;
 
+  /* ---- Buscador de cliente dentro del formulario de pedido ----
+     Al escribir el nombre (o el teléfono) muestra los clientes que ya existen.
+     Al elegir uno completa nombre, dirección, entre calles, localidad y teléfono
+     con los datos EXACTOS de las compras anteriores. Eso es lo que mantiene el
+     historial de cada cliente en una sola ficha en vez de partirlo en varias. */
+  function montarBuscadorCliente(node) {
+    const inp = node.querySelector('#f-cli');
+    const box = node.querySelector('#f-cli-sug');
+    const info = node.querySelector('#f-cli-info');
+    if (!inp || !box || !GDO.CRM) return;
+
+    let fichas = null;                       // se calcula una sola vez, al primer tecleo
+    const cerrar = () => { box.innerHTML = ''; box.classList.remove('on'); };
+
+    const completar = (f) => {
+      inp.value = f.nombre;
+      const set = (sel, v) => { const el = node.querySelector(sel); if (el && v && !el.value) el.value = v; };
+      set('#f-dir', f.direccion); set('#f-loc', f.localidad);
+      set('#f-ec', f.entrecalles); set('#f-tel', f.telefono);
+      info.innerHTML = '✓ Cliente conocido · <b>' + f.nCompras + ' compra' + (f.nCompras === 1 ? '' : 's') + '</b>'
+        + (f.ritmo != null ? ' · compra cada ' + f.ritmo + ' días' : '')
+        + (f.habituales && f.habituales.length ? ' · suele llevar: ' + esc(GDO.CRM.listaProd(f.habituales)) : '');
+      info.style.color = '#1d7a44';
+      cerrar();
+    };
+
+    const buscar = () => {
+      const q = GDO.CRM.norm(inp.value);
+      const dig = inp.value.replace(/\D/g, '');
+      info.innerHTML = ''; info.style.color = '';
+      if (q.length < 2 && dig.length < 3) { cerrar(); return; }
+      if (!fichas) fichas = GDO.CRM.fichas().filter((f) => f.pedidos.length);
+      const hit = fichas.filter((f) => {
+        if (dig.length >= 3 && String(f.telefono || '').replace(/\D/g, '').indexOf(dig) >= 0) return true;
+        if (q.length < 2) return false;
+        return (f.alias || [f.nombre]).some((n) => GDO.CRM.norm(n).indexOf(q) >= 0);
+      }).slice(0, 6);
+      if (!hit.length) { cerrar(); return; }
+      box.innerHTML = hit.map((f, i) => `
+        <button type="button" class="crm-ac-i" data-i="${i}">
+          <b>${esc(f.nombre)}</b>
+          <span>${f.nCompras} compra${f.nCompras === 1 ? '' : 's'} · ${esc(f.telefono || 'sin teléfono')} · ${esc(f.direccion || 'sin dirección')}</span>
+        </button>`).join('');
+      box.classList.add('on');
+      box.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => completar(hit[+b.dataset.i]));
+    };
+
+    inp.addEventListener('input', buscar);
+    inp.addEventListener('focus', buscar);
+    inp.addEventListener('blur', () => setTimeout(cerrar, 180));  // deja llegar el click
+    const tel = node.querySelector('#f-tel');
+    if (tel) tel.addEventListener('blur', () => {
+      // Si cargaron el teléfono primero, avisamos si ese número ya es de alguien.
+      const d = tel.value.replace(/\D/g, '');
+      if (d.length < 6 || inp.value.trim()) return;
+      if (!fichas) fichas = GDO.CRM.fichas().filter((f) => f.pedidos.length);
+      const f = fichas.filter((x) => String(x.telefono || '').replace(/\D/g, '').indexOf(d) >= 0)[0];
+      if (f) completar(f);
+    });
+  }
+
   /* ---- Modal cargar / editar pedido ---- */
   function pedidoModal(id, after, prefill) {
     const p = id ? Store.pedido(id) : null;
@@ -655,7 +716,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       title: p ? 'Editar pedido' : 'Nuevo pedido', width: 680,
       bodyHTML: `
         <div class="form-grid">
-          <div class="field col-2"><label>Cliente *</label><input id="f-cli" value="${esc(p ? p.cliente : (pf.cliente || ''))}" placeholder="Nombre del cliente / comercio"/></div>
+          <div class="field col-2" style="position:relative"><label>Cliente *</label>
+            <input id="f-cli" autocomplete="off" value="${esc(p ? p.cliente : (pf.cliente || ''))}" placeholder="Nombre del cliente / comercio — empezá a escribir y te lo busca"/>
+            <div id="f-cli-sug" class="crm-ac"></div>
+            <span class="help" id="f-cli-info"></span></div>
           <div class="field col-2"><label>Dirección de entrega *</label><input id="f-dir" value="${esc(p ? p.direccion : (pf.direccion || ''))}" placeholder="Calle 1234, Localidad"/></div>
           <div class="field"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : (pf.localidad || ''))}" placeholder="Se completa al elegir la dirección"/></div>
           <div class="field"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : (pf.entrecalles || ''))}" placeholder="Calle A y Calle B"/></div>
@@ -690,6 +754,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>`,
       footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save>${p ? 'Guardar cambios' : 'Crear pedido'}</button>`,
       onMount(node, close) {
+        /* BUSCADOR DE CLIENTE. Es la pieza que evita que el mismo cliente se
+           cargue dos veces con el nombre escrito distinto o con otro teléfono:
+           si lo elegís de la lista, el pedido queda con exactamente los mismos
+           datos que los anteriores y el historial se junta solo. Además avisa
+           "ya compró N veces", que es información útil al tomar el pedido. */
+        montarBuscadorCliente(node);
+
         const itemsBox = node.querySelector('#f-items');
         const drawItems = () => {
           itemsBox.innerHTML = items.map((it, i) => `

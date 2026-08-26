@@ -29,6 +29,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const part = CRM().agendaPartida(fichas);   // { hoy, luego } — una tarjeta por cliente
     const sugs = part.hoy;
     const huerfanos = CRM().sinFecha();         // pedidos que no se pueden ubicar en el tiempo
+    const dobles = CRM().posiblesDuplicados(fichas);  // fichas que serían el mismo cliente
 
     // Los indicadores cuentan la historia del negocio, no el estado de la app:
     // cuántos repiten (la base real), cuántos vinieron una sola vez (la
@@ -46,6 +47,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="card kpi rojo"><span class="ic">😴</span><span class="num">${dormidos}</span><span class="lbl">Se están yendo</span></div>
       </div>
 
+      ${dobles.length ? `<div class="note" id="crm-dobles" style="cursor:pointer;background:#eef4ff;border-color:#c3d6f5;color:#1e3d78">
+        🔍 Hay <b>${dobles.length} cliente${dobles.length === 1 ? '' : 's'} que podría${dobles.length === 1 ? '' : 'n'} estar cargado${dobles.length === 1 ? '' : 's'} dos veces</b> (mismo nombre o misma dirección, con teléfonos distintos).
+        Si son el mismo, al unirlos se le junta el historial y recién ahí se ve que repitió. <b>Tocá acá para revisarlos.</b>
+      </div>` : ''}
+
       ${huerfanos.length ? `<div class="note" id="crm-huerf" style="cursor:pointer">
         ⚠️ Hay <b>${huerfanos.length} pedido${huerfanos.length === 1 ? '' : 's'} sin fecha</b> (se cargaron sin fecha de entrega y nunca se despacharon).
         No cuentan para el historial ni para el ritmo de compra. <b>Tocá acá para verlos y completarlos.</b>
@@ -60,6 +66,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.clientes(c); });
     const hb = c.querySelector('#crm-huerf');
     if (hb) hb.onclick = () => sinFechaModal(huerfanos, () => GDO.Views.clientes(c));
+    const db = c.querySelector('#crm-dobles');
+    if (db) db.onclick = () => duplicadosModal(dobles, () => GDO.Views.clientes(c));
 
     const body = c.querySelector('#crm-body');
     if (tab === 'hoy') renderAgenda(body, part, c);
@@ -409,6 +417,58 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   GDO.Views.fichaClienteModal = fichaModal;
+
+  /* Posibles duplicados: pares de fichas que serían el mismo cliente. La app NO los
+     une sola (unir mal es peor que no unir), pero los muestra lado a lado para
+     decidir en un toque. Es la causa más común de "este cliente volvió a comprar y
+     me aparece con una sola compra". */
+  function duplicadosModal(pares, after) {
+    const fila = (p, i) => `
+      <div class="crm-dup" data-par="${i}">
+        <div class="crm-dup-m">${esc(p.motivo)}</div>
+        <div class="crm-dup-c">
+          <div class="crm-dup-f">
+            <b>${esc(p.a.nombre)}</b>
+            <span>${p.a.nCompras} compra${p.a.nCompras === 1 ? '' : 's'}${p.a.ultima ? ' · última ' + fmtD(p.a.ultima) : ''}</span>
+            <span>${esc(p.a.telefono || 'sin teléfono')}</span>
+            <span>${esc(p.a.direccion || 'sin dirección')}</span>
+          </div>
+          <div class="crm-dup-x">+</div>
+          <div class="crm-dup-f">
+            <b>${esc(p.b.nombre)}</b>
+            <span>${p.b.nCompras} compra${p.b.nCompras === 1 ? '' : 's'}${p.b.ultima ? ' · última ' + fmtD(p.b.ultima) : ''}</span>
+            <span>${esc(p.b.telefono || 'sin teléfono')}</span>
+            <span>${esc(p.b.direccion || 'sin dirección')}</span>
+          </div>
+        </div>
+        <div class="crm-dup-a">
+          <button class="btn btn-primary btn-sm" data-unir>🔗 Es el mismo · unir</button>
+          <button class="btn btn-ghost btn-sm" data-no>Son distintos</button>
+        </div>
+      </div>`;
+
+    modal({
+      title: '¿Son el mismo cliente?', width: 660,
+      bodyHTML: `
+        <div class="note">La app une sola a los clientes cuando comparten teléfono, dirección o nombre, pero <b>nunca junta dos teléfonos distintos</b> — si no, mezclaría vecinos del mismo edificio. Estos quedaron separados por eso. Miralos y decidí vos.</div>
+        <div id="dup-lista">${pares.map(fila).join('')}</div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cerrar</button>`,
+      onMount(node, close) {
+        node.querySelector('[data-cancel]').onclick = close;
+        node.querySelectorAll('[data-par]').forEach((el) => {
+          const p = pares[+el.dataset.par];
+          el.querySelector('[data-unir]').onclick = () => {
+            CRM().unir(p.a, p.b);
+            el.innerHTML = '<div class="crm-dup-ok">✓ Unidos: <b>' + esc(p.a.nombre) + '</b> — ahora tiene ' + (p.a.nCompras + p.b.nCompras) + ' compras</div>';
+            toast('Fichas unidas ✓', 'ok');
+            after && after();
+          };
+          // "Son distintos": no hay nada que guardar, solo sacarlo de la vista.
+          el.querySelector('[data-no]').onclick = () => el.remove();
+        });
+      },
+    });
+  }
 
   /* Pedidos sin fecha: los lista para poder completarlos de a uno (abre el pedido)
      o de una vez con "Usar la fecha de hoy" (para los que ya se entregaron y nadie
