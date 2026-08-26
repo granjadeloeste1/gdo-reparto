@@ -136,6 +136,26 @@ window.GDO = window.GDO || {};
     '': { t: 'Sin clasificar', chip: 'crm-t-none' },
   };
 
+  // Por dónde se lo contactó y en qué quedó. Son listas cortas a propósito: si
+  // registrar un contacto lleva más de 15 segundos, nadie lo registra.
+  const CANALES = {
+    whatsapp: '💬 WhatsApp',
+    llamada: '📞 Llamada',
+    local: '🏪 Vino al local',
+    visita: '🚚 En la entrega',
+    instagram: '📷 Instagram',
+    otro: '· Otro',
+  };
+  const RESULTADOS = {
+    enviado: { t: 'Mensaje enviado, sin respuesta todavía', chip: 'crm-r-esp' },
+    pidio: { t: 'Hizo el pedido', chip: 'crm-r-ok' },
+    pide: { t: 'Va a pedir más adelante', chip: 'crm-r-ok' },
+    nocontesta: { t: 'No contestó', chip: 'crm-r-esp' },
+    nonecesita: { t: 'No necesita por ahora', chip: 'crm-r-neu' },
+    problema: { t: 'Tuvo un problema / se quejó', chip: 'crm-r-mal' },
+    nocompra: { t: 'Ya no nos compra', chip: 'crm-r-mal' },
+  };
+
   /* ═════════════════ armado de fichas ═════════════════ */
 
   /* Agrupa los pedidos en clientes.
@@ -274,6 +294,10 @@ window.GDO = window.GDO || {};
       snooze: (doc && doc.snooze) || {},
       ultimoContactoTs: (doc && doc.ultimoContactoTs) || null,
       pausado: !!(doc && doc.pausado),
+      contactos: (doc && doc.contactos) || [],
+      // Fichas que una persona ya revisó y confirmó que NO son este cliente.
+      // Sin esto, la app volvía a proponer para siempre los mismos duplicados.
+      noUnir: (doc && doc.noUnir) || [],
       socio: peds.some((p) => !!p.clienteUid),
       alias: alias, telefonos: tels, direcciones: dirs,
       pedidos: peds,
@@ -554,6 +578,7 @@ window.GDO = window.GDO || {};
 
     const agregar = (a, b, fuerza, motivo) => {
       if (a.id === b.id) return;
+      if (unionRechazada(a, b)) return;   // ya lo revisó una persona: no molestar más
       const k = [a.id, b.id].sort().join('~');
       if (vistos[k]) { if (fuerza > vistos[k].fuerza) { vistos[k].fuerza = fuerza; vistos[k].motivo = motivo; } return; }
       const par = { a: a, b: b, fuerza: fuerza, motivo: motivo };
@@ -571,50 +596,36 @@ window.GDO = window.GDO || {};
       f._dirs.forEach((k) => (porDir[k] = porDir[k] || []).push(f));
     });
 
-    // 1) Mismo nombre exacto Y misma dirección → prácticamente seguro.
-    // 2) Mismo nombre exacto → muy probable (es el caso de los dos teléfonos).
+    /* SOLO se propone una unión si hay una COINCIDENCIA EXACTA en el nombre
+       completo o en la dirección con altura. Nada de "se parecen": antes se
+       proponía unir "Melanie" con "Melanie Rodriguez" solo porque un nombre
+       contenía al otro, y eso llenaba la lista de sugerencias que no eran.
+       (Por teléfono no hace falta buscar: si dos pedidos comparten el número,
+       agrupar() ya los unió solos y nunca llegan acá como fichas separadas.) */
+
+    // 1) Mismo nombre completo (+ misma dirección = prácticamente seguro).
     Object.keys(porNom).forEach((k) => {
       const g = porNom[k];
       if (g.length < 2 || g.length > 6) return;   // un nombre en 7 fichas es genérico, no un duplicado
       for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
         const comparteDir = g[i]._dirs.some((d) => g[j]._dirs.indexOf(d) >= 0);
         agregar(g[i], g[j], comparteDir ? 100 : 70,
-          comparteDir ? 'Mismo nombre y misma dirección, con teléfonos distintos.' : 'Se llaman igual, pero tienen teléfonos distintos.');
+          comparteDir ? 'Mismo nombre y misma dirección, con teléfonos distintos.' : 'Se llaman exactamente igual, pero tienen teléfonos distintos.');
       }
     });
 
-    // 3) Misma dirección con altura y nombres parecidos (uno contiene al otro).
+    // 2) Misma dirección con altura (aunque el nombre esté escrito distinto).
     Object.keys(porDir).forEach((k) => {
       const g = porDir[k];
       if (g.length < 2 || g.length > 6) return;
       for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
-        if (parecidos(g[i]._noms, g[j]._noms)) {
-          agregar(g[i], g[j], 85, 'Misma dirección y el nombre es casi igual.');
-        }
+        agregar(g[i], g[j], 60, 'Misma dirección, con teléfonos distintos.');
       }
     });
-
-    // 4) Nombres donde uno contiene al otro ("Melanie" y "Melanie Rodriguez").
-    //    Solo si el más corto tiene al menos 5 letras, para no juntar a todos los "Ana".
-    for (let i = 0; i < fs.length; i++) for (let j = i + 1; j < fs.length; j++) {
-      if (parecidos(fs[i]._noms, fs[j]._noms)) agregar(fs[i], fs[j], 55, 'Un nombre contiene al otro.');
-    }
 
     pares.sort((x, y) => (y.fuerza - x.fuerza)
       || ((y.a.nCompras + y.b.nCompras) - (x.a.nCompras + x.b.nCompras)));
     return pares.slice(0, 40);
-  }
-
-  // ¿Alguno de estos nombres contiene al otro? ("melanie" ⊂ "melanie rodriguez").
-  function parecidos(as, bs) {
-    for (let i = 0; i < as.length; i++) for (let j = 0; j < bs.length; j++) {
-      const a = as[i], b = bs[j];
-      if (a === b) continue;
-      const corto = a.length <= b.length ? a : b, largo = corto === a ? b : a;
-      if (corto.length < 5) continue;
-      if ((largo + ' ').indexOf(corto + ' ') === 0 || largo.indexOf(' ' + corto) >= 0) return true;
-    }
-    return false;
   }
 
   /* La agenda partida en DOS, que es la diferencia entre una lista que se usa y
@@ -712,21 +723,72 @@ window.GDO = window.GDO || {};
       tipo: f.tipo || '', notas: f.notas || '',
       recordatorio: f.recordatorio || null, snooze: f.snooze || {},
       ultimoContactoTs: f.ultimoContactoTs || null, pausado: !!f.pausado,
+      contactos: f.contactos || [], noUnir: f.noUnir || [],
     };
     return GDO.Store.upsertCrmCliente(Object.assign({ id: f.docId || null }, base, cambios || {}));
   }
 
-  // "Ya lo contacté": deja constancia y silencia sus avisos hasta la próxima
-  // vuelta de compra (nunca menos de 5 días) para no repetir el mismo llamado.
-  function marcarContactado(f, tipo) {
-    const dias = Math.max(5, Math.round((f.ritmo || 14) * 0.6));
+  /* REGISTRAR UN CONTACTO. Queda asentado quién habló con el cliente, por dónde,
+     en qué quedó y qué dijo. Es lo que permite que el dueño sepa qué hizo cada
+     vendedor sin tener que preguntarle, y que el que atiende mañana sepa qué se
+     habló ayer. Se guarda dentro de la ficha (`contactos`), del más nuevo al más
+     viejo, para que leerla sea leer la historia del cliente.
+
+     datos: { canal, resultado, nota, proximo (fecha ISO o ''), motivoProximo }  */
+  function registrarContacto(f, datos, tipo) {
+    datos = datos || {};
+    const u = (GDO.Store.current && GDO.Store.current()) || null;
+    const c = {
+      ts: Date.now(),
+      canal: datos.canal || 'otro',
+      resultado: datos.resultado || 'enviado',
+      nota: String(datos.nota || '').slice(0, 600),
+      por: u ? u.id : null,
+      porNombre: u ? u.nombre : '',
+      motivo: datos.motivoAviso || (tipo && tipo !== 'manual' ? tipo : ''),
+    };
+    const contactos = [c].concat(f.contactos || []).slice(0, 200);
+
+    // Silenciar: si quedó fecha para volver a hablarle, hasta esa fecha; si no,
+    // hasta la próxima vuelta de compra (nunca menos de 5 días).
     const sn = Object.assign({}, f.snooze || {});
-    sn.todo = Date.now() + dias * DIA;
+    let hasta = Date.now() + Math.max(5, Math.round((f.ritmo || 14) * 0.6)) * DIA;
+    let recordatorio = (tipo === 'recordatorio') ? null : (f.recordatorio || null);
+    if (datos.proximo) {
+      const t = Date.parse(datos.proximo + 'T00:00:00');
+      if (!isNaN(t)) {
+        hasta = t;
+        recordatorio = { fecha: datos.proximo, motivo: datos.motivoProximo || datos.nota || '' };
+      }
+    }
+    sn.todo = hasta;
+
     return guardar(f, {
-      ultimoContactoTs: Date.now(), snooze: sn,
-      recordatorio: tipo === 'recordatorio' ? null : (f.recordatorio || null),
+      contactos: contactos, ultimoContactoTs: c.ts, snooze: sn, recordatorio: recordatorio,
+      // "Ya no nos compra" apaga los avisos de ese cliente: no tiene sentido que
+      // la agenda lo siga proponiendo todas las semanas.
+      pausado: datos.resultado === 'nocompra' ? true : !!f.pausado,
     });
   }
+
+  // Atajo sin formulario (lo usa el botón de WhatsApp): registra que se le mandó
+  // el mensaje. El detalle de qué contestó se puede agregar después desde la ficha.
+  function marcarContactado(f, tipo, canal) {
+    return registrarContacto(f, { canal: canal || 'otro', resultado: 'enviado' }, tipo);
+  }
+
+  /* "Son distintos": guarda que estas dos fichas YA se revisaron y no son el mismo
+     cliente, para no volver a proponerlas. Guardamos las señales de la otra ficha
+     (teléfono/dirección/nombre), no su id: el id cambia si aparece un pedido nuevo,
+     las señales no. */
+  function rechazarUnion(a, b) {
+    const no = (a.noUnir || []).slice();
+    (b.claves || []).forEach((k) => { if (no.indexOf(k) < 0) no.push(k); });
+    return guardar(a, { noUnir: no });
+  }
+  const unionRechazada = (a, b) =>
+    (a.noUnir || []).some((k) => (b.claves || []).indexOf(k) >= 0)
+    || (b.noUnir || []).some((k) => (a.claves || []).indexOf(k) >= 0);
 
   /* Unir dos fichas A MANO: cuando la app no pudo darse cuenta sola (el cliente
      se mudó, cambió de teléfono, o cargó dos números distintos). Queda un solo
@@ -763,8 +825,8 @@ window.GDO = window.GDO || {};
 
   GDO.CRM = {
     fichas, sugerencias, agenda, agendaPartida, guardar, unir, marcarContactado,
-    posponer, dormido, sinFecha, posiblesDuplicados,
+    registrarContacto, rechazarUnion, posponer, dormido, sinFecha, posiblesDuplicados,
     norm, telKey, dirKey, nomKey, senales, prodKey, fechaDe, montoDe, listaProd,
-    TIPOS, DIAS, LISTA_URL,
+    TIPOS, DIAS, LISTA_URL, CANALES, RESULTADOS,
   };
 })();

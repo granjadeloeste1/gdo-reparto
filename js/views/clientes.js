@@ -31,6 +31,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const huerfanos = CRM().sinFecha();         // pedidos que no se pueden ubicar en el tiempo
     const dobles = CRM().posiblesDuplicados(fichas);  // fichas que serían el mismo cliente
 
+    // Todo lo hablado con todos los clientes, del más nuevo al más viejo. Es la
+    // vista que responde "¿qué hizo el vendedor esta semana?" sin preguntarle.
+    const cts = [];
+    fichas.forEach((f) => (f.contactos || []).forEach((ct) => cts.push({ ct: ct, f: f })));
+    cts.sort((a, b) => b.ct.ts - a.ct.ts);
+    const totalCts = cts.length;
+
     // Los indicadores cuentan la historia del negocio, no el estado de la app:
     // cuántos repiten (la base real), cuántos vinieron una sola vez (la
     // oportunidad más grande) y cuántos se están yendo (lo que se pierde hoy).
@@ -60,6 +67,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div class="crm-tabs">
         <button class="crm-tab ${tab === 'hoy' ? 'on' : ''}" data-tab="hoy">📞 Para hacer hoy${sugs.length ? ' <span class="crm-badge">' + sugs.length + '</span>' : ''}</button>
         <button class="crm-tab ${tab === 'lista' ? 'on' : ''}" data-tab="lista">📇 Todos los clientes <span class="crm-badge sec">${fichas.length}</span></button>
+        <button class="crm-tab ${tab === 'contactos' ? 'on' : ''}" data-tab="contactos">📋 Qué se habló${totalCts ? ' <span class="crm-badge sec">' + totalCts + '</span>' : ''}</button>
       </div>
       <div id="crm-body"></div>`;
 
@@ -71,6 +79,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
     const body = c.querySelector('#crm-body');
     if (tab === 'hoy') renderAgenda(body, part, c);
+    else if (tab === 'contactos') renderContactos(body, cts, c);
     else renderLista(body, fichas, c);
   };
 
@@ -132,7 +141,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const s = (ref[0] === 'h' ? hoyVis : luegoVis)[+ref.slice(1)];
       const q = (sel) => el.querySelector(sel);
       const bw = q('[data-wsp]'); if (bw) bw.onclick = () => mensajeModal(s, () => recargar(cont));
-      const bo = q('[data-ok]'); if (bo) bo.onclick = () => { CRM().marcarContactado(s.ficha, s.tipo); toast('Anotado: ya lo contactaste', 'ok'); recargar(cont); };
+      const bo = q('[data-ok]'); if (bo) bo.onclick = () => contactoModal(s.ficha, s, () => recargar(cont));
       const bp = q('[data-snz]'); if (bp) bp.onclick = () => posponerModal(s, () => recargar(cont));
       const bf = q('[data-ficha]'); if (bf) bf.onclick = () => fichaModal(s.ficha.id, () => recargar(cont));
     });
@@ -168,7 +177,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>
         <div class="crm-sug-ac">
           ${tel ? '<button class="btn btn-verde btn-sm" data-wsp>💬 WhatsApp</button>' : '<span class="help">Sin teléfono</span>'}
-          <button class="btn btn-ghost btn-sm" data-ok>✓ Ya lo contacté</button>
+          <button class="btn btn-ghost btn-sm" data-ok>✓ Ya lo contacté…</button>
           <button class="btn btn-ghost btn-sm" data-snz>🕓 Más adelante</button>
           <button class="btn btn-ghost btn-sm" data-ficha>Ver ficha</button>
         </div>
@@ -193,9 +202,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const refresh = () => { send.href = GDO.Wpp.link(f.telefono, ta.value); };
         ta.oninput = refresh; refresh();
         node.querySelector('[data-cancel]').onclick = close;
+        // Abrir WhatsApp ya deja registrado el contacto (canal WhatsApp, "mensaje
+        // enviado"). Lo que contestó se agrega después desde la ficha, cuando se
+        // sepa: obligar a completar un formulario acá frenaría el envío.
         send.onclick = () => {
-          CRM().marcarContactado(f, s.tipo);
-          toast('WhatsApp abierto · queda anotado como contactado', 'ok');
+          CRM().marcarContactado(f, s.tipo, 'whatsapp');
+          toast('Mensaje enviado · queda registrado en la ficha', 'ok');
           setTimeout(() => { close(); after && after(); }, 400);
         };
       },
@@ -223,6 +235,48 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         };
       },
     });
+  }
+
+  /* ─────────────────────── "Qué se habló" ───────────────────────
+     Todo lo registrado con todos los clientes, del más nuevo al más viejo, con
+     quién lo hizo. Es la vista para el dueño: sin esto, saber qué hizo un
+     vendedor implica preguntarle. Se puede filtrar por persona. */
+  let filtroPor = '';
+
+  function renderContactos(box, cts, cont) {
+    if (!cts.length) {
+      box.innerHTML = `<div class="panel"><div class="panel-b"><div class="empty" style="padding:40px 20px">
+        <div style="font-size:34px;margin-bottom:8px">📋</div>
+        <b style="display:block;font-size:16px;color:var(--negro);margin-bottom:6px">Todavía no hay contactos registrados</b>
+        Cada vez que alguien toque <b>WhatsApp</b> o <b>Ya lo contacté…</b> en la lista de hoy, va a quedar acá:
+        con quién habló, por dónde, en qué quedaron y qué dijo el cliente.
+      </div></div></div>`;
+      return;
+    }
+    const personas = [];
+    cts.forEach((x) => { const n = x.ct.porNombre || '—'; if (personas.indexOf(n) < 0) personas.push(n); });
+
+    box.innerHTML = `
+      <div class="toolbar">
+        <select id="ct-por" style="max-width:240px">
+          <option value="">Todo el equipo</option>
+          ${personas.map((n) => `<option value="${esc(n)}"${filtroPor === n ? ' selected' : ''}>${esc(n)}</option>`).join('')}
+        </select>
+        <div class="spacer"></div>
+        <span class="help" id="ct-n"></span>
+      </div>
+      <div class="panel"><div class="panel-b"><div id="ct-lista"></div></div></div>`;
+
+    const draw = () => {
+      const list = (filtroPor ? cts.filter((x) => (x.ct.porNombre || '—') === filtroPor) : cts).slice(0, 200);
+      box.querySelector('#ct-n').textContent = list.length + ' de ' + cts.length;
+      box.querySelector('#ct-lista').innerHTML = list.length
+        ? '<div class="crm-cts">' + list.map((x) => `<div data-ficha="${esc(x.f.id)}" style="cursor:pointer">${lineaContacto(x.ct, x.f.nombre)}</div>`).join('') + '</div>'
+        : '<div class="empty">Sin contactos de esa persona.</div>';
+      box.querySelectorAll('[data-ficha]').forEach((el) => el.onclick = () => fichaModal(el.dataset.ficha, () => recargar(cont)));
+    };
+    draw();
+    box.querySelector('#ct-por').onchange = (e) => { filtroPor = e.target.value; draw(); };
   }
 
   /* ───────────────────── "Todos los clientes" ───────────────────── */
@@ -357,6 +411,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>` : ''}
 
         <div class="crm-bloque">
+          <h4>Contactos (${f.contactos.length})</h4>
+          ${f.contactos.length
+            ? '<div class="crm-cts">' + f.contactos.slice(0, 25).map((ct) => lineaContacto(ct)).join('') + '</div>'
+            : '<div class="help">Todavía no se registró ningún contacto con este cliente.</div>'}
+          <button class="btn btn-ghost btn-sm" data-ct style="margin-top:10px">+ Registrar un contacto</button>
+        </div>
+
+        <div class="crm-bloque">
           <h4>Historial de pedidos (${compras.length})</h4>
           ${compras.length ? `<table class="crm-hist"><tbody>${compras.slice(0, 30).map((c) => `
             <tr data-ped="${esc(c.p.id)}" style="cursor:pointer">
@@ -397,6 +459,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         };
 
         node.querySelector('[data-unir]').onclick = () => { close(); unirModal(f, after); };
+        node.querySelector('[data-ct]').onclick = () => { close(); contactoModal(f, null, after); };
 
         node.querySelector('[data-cancel]').onclick = close;
         node.querySelector('[data-save]').onclick = () => {
@@ -417,6 +480,81 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   GDO.Views.fichaClienteModal = fichaModal;
+
+  /* REGISTRAR CONTACTO. Lo importante acá es que sea corto: dos listas y un
+     campo de texto. Si registrar lleva más de 15 segundos, nadie registra nada
+     y el CRM se vuelve mentira. Queda guardado quién habló, por dónde, en qué
+     quedó y si hay que volver a llamarlo. */
+  function contactoModal(f, sug, after) {
+    const C = CRM().CANALES, R = CRM().RESULTADOS;
+    const canalPorDefecto = (f.telefono && GDO.Wpp.tieneTel(f.telefono)) ? 'whatsapp' : 'llamada';
+    modal({
+      title: 'Contacto con ' + f.nombre, width: 520,
+      bodyHTML: `
+        ${sug && sug.titulo ? `<div class="note" style="margin-bottom:14px">Lo tenías en la lista por: <b>${esc(sug.titulo)}</b> — ${esc(sug.motivo)}</div>` : ''}
+        <div class="form-grid">
+          <div class="field"><label>¿Por dónde lo contactaste?</label>
+            <select id="ct-canal">${Object.keys(C).map((k) => `<option value="${k}"${k === canalPorDefecto ? ' selected' : ''}>${C[k]}</option>`).join('')}</select></div>
+          <div class="field"><label>¿En qué quedaron?</label>
+            <select id="ct-res">${Object.keys(R).map((k) => `<option value="${k}"${k === 'pide' ? ' selected' : ''}>${esc(R[k].t)}</option>`).join('')}</select></div>
+          <div class="field col-2"><label>¿Qué te dijo?</label>
+            <textarea id="ct-nota" rows="3" placeholder="Ej: está con stock hasta el jueves · pidió precio por 20 kg · se quejó de que la milanesa vino chica"></textarea></div>
+          <div class="field"><label>¿Hay que volver a contactarlo?</label>
+            <input id="ct-prox" type="date" value=""/>
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" data-prox="3" type="button">En 3 días</button>
+              <button class="btn btn-ghost btn-sm" data-prox="7" type="button">En 1 semana</button>
+              <button class="btn btn-ghost btn-sm" data-prox="" type="button">No hace falta</button>
+            </div></div>
+          <div class="field"><label>¿Para qué? (opcional)</label>
+            <input id="ct-motivo" placeholder="Ej: pasarle el precio de la milanesa"/></div>
+        </div>
+        <div class="help" id="ct-aviso" style="margin-top:10px"></div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save>Guardar contacto</button>`,
+      onMount(node, close) {
+        const res = node.querySelector('#ct-res');
+        const aviso = node.querySelector('#ct-aviso');
+        const refresh = () => {
+          aviso.innerHTML = res.value === 'nocompra'
+            ? '⚠️ Al guardar, este cliente <b>deja de aparecer</b> en la lista de contactos. Se puede volver a activar desde su ficha.'
+            : 'Si no ponés fecha, la app lo vuelve a proponer sola cuando le toque el próximo pedido.';
+        };
+        res.onchange = refresh; refresh();
+        node.querySelectorAll('[data-prox]').forEach((b) => b.onclick = () => {
+          node.querySelector('#ct-prox').value = b.dataset.prox ? enDias(+b.dataset.prox) : '';
+        });
+        node.querySelector('[data-cancel]').onclick = close;
+        node.querySelector('[data-save]').onclick = () => {
+          CRM().registrarContacto(f, {
+            canal: node.querySelector('#ct-canal').value,
+            resultado: res.value,
+            nota: node.querySelector('#ct-nota').value.trim(),
+            proximo: node.querySelector('#ct-prox').value,
+            motivoProximo: node.querySelector('#ct-motivo').value.trim(),
+            motivoAviso: sug ? sug.titulo : '',
+          }, sug ? sug.tipo : 'manual');
+          toast('Contacto registrado ✓', 'ok');
+          close(); after && after();
+        };
+      },
+    });
+  }
+
+  // Una línea del historial de contactos (se usa en la ficha y en la pestaña Contactos).
+  function lineaContacto(ct, nombreCliente) {
+    const C = CRM().CANALES, R = CRM().RESULTADOS;
+    const r = R[ct.resultado] || { t: ct.resultado, chip: 'crm-r-neu' };
+    return `<div class="crm-ct">
+      <div class="crm-ct-h">
+        ${nombreCliente ? '<b>' + esc(nombreCliente) + '</b> · ' : ''}
+        <span class="crm-ct-f">${fmtD(ct.ts)}</span>
+        <span class="chip ${r.chip}">${esc(r.t)}</span>
+        <span class="crm-ct-c">${C[ct.canal] || ct.canal}</span>
+        ${ct.porNombre ? '<span class="crm-ct-p">por ' + esc(String(ct.porNombre).split(' ')[0]) + '</span>' : ''}
+      </div>
+      ${ct.nota ? '<div class="crm-ct-n">' + esc(ct.nota) + '</div>' : ''}
+    </div>`;
+  }
 
   /* Posibles duplicados: pares de fichas que serían el mismo cliente. La app NO los
      une sola (unir mal es peor que no unir), pero los muestra lado a lado para
@@ -463,8 +601,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             toast('Fichas unidas ✓', 'ok');
             after && after();
           };
-          // "Son distintos": no hay nada que guardar, solo sacarlo de la vista.
-          el.querySelector('[data-no]').onclick = () => el.remove();
+          // "Son distintos": queda GUARDADO en la ficha, si no la app volvía a
+          // proponer el mismo par cada vez que se abría la pantalla.
+          el.querySelector('[data-no]').onclick = () => {
+            CRM().rechazarUnion(p.a, p.b);
+            el.innerHTML = '<div class="crm-dup-ok">✓ Anotado: son clientes distintos. No te lo vuelve a proponer.</div>';
+            after && after();
+          };
         });
       },
     });

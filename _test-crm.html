@@ -186,15 +186,56 @@ const dups = GDO.CRM.posiblesDuplicados();
 const parFlavia = dups.filter((d) => d.a.nombre.indexOf('Flavia') >= 0 && d.b.nombre.indexOf('Flavia') >= 0)[0];
 chk(!!parFlavia, 'Pero la app lo detecta y lo propone para unir en un toque');
 chk(parFlavia && parFlavia.motivo.indexOf('telefonos distintos') >= 0 || (parFlavia && parFlavia.motivo.length > 0), 'Y explica por que sospecha: ' + (parFlavia ? parFlavia.motivo : '—'));
-// M · Nombre incompleto vs completo.
+// M · Nombre PARECIDO pero no igual, sin nada mas en comun: NO se debe proponer.
 PEDIDOS.push(pedDir('Melanie', '11 5533-2001', 'Mitre 55, Ituzaingo', 44, [POLLO]));
 PEDIDOS.push(pedDir('Melanie Rodriguez', '11 5533-2002', 'Alvear 900, Ituzaingo', 10, [POLLO]));
 const dups2 = GDO.CRM.posiblesDuplicados();
-chk(dups2.some((d) => (d.a.nombre + d.b.nombre).indexOf('Melanie Rodriguez') >= 0 && (d.a.nombre + d.b.nombre).indexOf('Melanie') >= 0),
-  '"Melanie" y "Melanie Rodriguez" tambien se proponen como el mismo');
-// Y no propone cualquier cosa: dos clientes sin nada en comun no aparecen juntos.
+chk(!dups2.some((d) => (d.a.nombre === 'Melanie' && d.b.nombre === 'Melanie Rodriguez') || (d.b.nombre === 'Melanie' && d.a.nombre === 'Melanie Rodriguez')),
+  '"Melanie" y "Melanie Rodriguez" NO se proponen: el nombre no coincide completo ni comparten direccion');
 chk(!dups2.some((d) => GDO.CRM.norm(d.a.nombre).indexOf('rosa') >= 0 && GDO.CRM.norm(d.b.nombre).indexOf('cuñados') >= 0),
   'No propone unir clientes que no tienen nada que ver');
+chk(dups2.every((d) => {
+  const nomIgual = (d.a.alias || [d.a.nombre]).some((x) => (d.b.alias || [d.b.nombre]).some((y) => GDO.CRM.nomKey(x) && GDO.CRM.nomKey(x) === GDO.CRM.nomKey(y)));
+  const dirIgual = (d.a.direcciones || []).some((x) => (d.b.direcciones || []).some((y) => GDO.CRM.dirKey(x) && GDO.CRM.dirKey(x) === GDO.CRM.dirKey(y)));
+  return nomIgual || dirIgual;
+}), 'Toda sugerencia tiene coincidencia EXACTA de nombre completo o de direccion');
+
+// N · "Son distintos" queda guardado y no se vuelve a proponer.
+var DOCS = [], seq = 0;
+GDO.Store.crmClientes = function () { return DOCS; };
+GDO.Store.upsertCrmCliente = function (c) {
+  var ex = c.id ? DOCS.filter(function (x) { return x.id === c.id; })[0] : null;
+  if (ex) { Object.assign(ex, c); return ex; }
+  c.id = c.id || ('cli_' + (++seq)); DOCS.push(c); return c;
+};
+GDO.Store.deleteCrmCliente = function (id) { DOCS = DOCS.filter(function (x) { return x.id !== id; }); };
+const parF = GDO.CRM.posiblesDuplicados().filter((d) => d.a.nombre.indexOf('Flavia') >= 0)[0];
+chk(!!parF, 'Las dos "Flavia Marisa Gomez" se proponen (nombre completo identico)');
+GDO.CRM.rechazarUnion(parF.a, parF.b);
+chk(!GDO.CRM.posiblesDuplicados().some((d) => d.a.nombre.indexOf('Flavia') >= 0 && d.b.nombre.indexOf('Flavia') >= 0),
+  'Tras marcar "son distintos", NO se vuelve a proponer ese par');
+
+L.push('<h2>4g · Registro de contactos</h2>');
+GDO.Store.current = function () { return { id: 'u9', nombre: 'Gonzalo Vendedor' }; };
+let fc = GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Kiosco Don') >= 0)[0];
+GDO.CRM.registrarContacto(fc, { canal: 'llamada', resultado: 'pide', nota: 'Esta con stock hasta el jueves, lo llamo despues.', proximo: new Date(hoy + 4 * DIA).toISOString().slice(0, 10), motivoProximo: 'pasarle precio de milanesa' }, 'dormido');
+fc = GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Kiosco Don') >= 0)[0];
+chk(fc.contactos.length === 1, 'El contacto queda guardado en la ficha');
+chk(fc.contactos[0].porNombre === 'Gonzalo Vendedor', 'Queda registrado QUIEN lo contacto (dio ' + fc.contactos[0].porNombre + ')');
+chk(fc.contactos[0].canal === 'llamada' && fc.contactos[0].resultado === 'pide', 'Queda el canal y en que quedaron');
+chk(fc.contactos[0].nota.indexOf('jueves') >= 0, 'Queda lo que dijo el cliente');
+chk(fc.recordatorio && fc.recordatorio.motivo.indexOf('milanesa') >= 0, '"Volver a contactarlo" se convierte en recordatorio con su motivo');
+chk(!GDO.CRM.agenda().some((s) => s.clienteId === fc.id), 'Y mientras tanto sale de la lista de hoy (no se repite el llamado)');
+// "Ya no nos compra" apaga los avisos.
+let fx = GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Cuñados') >= 0)[0];
+GDO.CRM.registrarContacto(fx, { canal: 'whatsapp', resultado: 'nocompra', nota: 'Cerro el local.' }, 'toca');
+fx = GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Cuñados') >= 0)[0];
+chk(fx.pausado === true, '"Ya no nos compra" apaga los avisos de ese cliente');
+chk(!GDO.CRM.agenda().some((s) => s.clienteId === fx.id), 'Y deja de aparecer en la agenda');
+DOCS = []; seq = 0;
+GDO.Store.crmClientes = function () { return []; };
+GDO.Store.upsertCrmCliente = function (c) { return c; };
+GDO.Store.current = function () { return { nombre: 'Matías Lemos' }; };
 for (let k = 0; k < 6; k++) PEDIDOS.pop();
 
 L.push('<h2>4e · La agenda no se inunda de primeras compras</h2>');

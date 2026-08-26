@@ -377,3 +377,16 @@ textarea{resize:vertical;min-height:74px}
 .crm-ac-i:hover{background:#fffaf4}
 .crm-ac-i b{font-size:14px}
 .crm-ac-i span{font-size:12px;color:var(--gris);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Historial de contactos */
+.crm-cts{display:flex;flex-direction:column}
+.crm-ct{padding:10px 0;border-bottom:1px solid var(--gris-bd)}
+.crm-ct:last-child{border-bottom:0}
+.crm-ct-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.crm-ct-f{color:var(--gris);font-size:12.5px}
+.crm-ct-c{color:var(--gris);font-size:12.5px}
+.crm-ct-p{color:var(--gris);font-size:12px;font-style:italic}
+.crm-ct-n{font-size:13.5px;margin-top:4px;line-height:1.45;color:#2b2b2e}
+.crm-r-ok{background:#e3f5ea;color:#1d7a44}
+.crm-r-esp{background:#eef2f7;color:#4b5563}
+.crm-r-neu{background:#fff7da;color:#9a7400}
+.crm-r-mal{background:#fde4e4;color:#b32020}
