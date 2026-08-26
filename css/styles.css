@@ -351,3 +351,7 @@ textarea{resize:vertical;min-height:74px}
 .crm-unir-item:hover{background:#fffaf4;border-color:var(--naranja)}
 .crm-unir-item b{font-size:14.5px}
 .crm-unir-item span{font-size:12.5px;color:var(--gris)}
+.crm-sec{margin:22px 0 12px}
+.crm-sec h3{font-size:17px;margin-bottom:4px}
+.crm-sec p{font-size:13px;color:var(--gris);margin:0;line-height:1.45}
+.crm-sec:first-of-type{margin-top:4px}

@@ -168,6 +168,21 @@ chk(GDO.CRM.fechaDe(viejo) === viejo.creado, 'Los pedidos nuevos guardan fecha d
 chk(GDO.CRM.sinFecha().length === 0, 'Con la fecha de alta, no queda ningún pedido huérfano');
 PEDIDOS.pop();
 
+L.push('<h2>4e · La agenda no se inunda de primeras compras</h2>');
+// Escenario real de GDO (ago-2026): 78 pedidos, casi todos de clientes que
+// compraron UNA sola vez. Antes eso daba "50 clientes para contactar, 42 urgentes".
+for (let k = 0; k < 40; k++) PEDIDOS.push(ped('Cliente Suelto ' + k, '11 5544-' + (1000 + k), 30 + k, [POLLO]));
+const part = GDO.CRM.agendaPartida();
+chk(part.hoy.length <= 10 || true, 'Hoy: ' + part.hoy.length + ' · Para cuando tengas un rato: ' + part.luego.length);
+chk(part.hoy.every((s) => s.ficha.nCompras >= 2), 'En "Hoy" solo entran clientes que ya venían comprando (2 compras o más)');
+chk(part.luego.filter((s) => s.tipo === 'sin_segunda').length >= 40 && !part.hoy.some((s) => s.tipo === 'sin_segunda'),
+  'Todas las primeras compras sin repetir van al segundo grupo, ninguna a "Hoy" (dio ' + part.luego.filter((s) => s.tipo === 'sin_segunda').length + ' en el segundo grupo)');
+chk(part.hoy.length < 10, 'La lista de hoy queda corta y hacible (dio ' + part.hoy.length + ')');
+// Orden por plata: a igual urgencia, primero el que más deja.
+const tocaHoy = part.hoy.filter((s) => s.prio === 78).map((s) => s.ficha.total);
+chk(tocaHoy.every((v, i) => i === 0 || tocaHoy[i - 1] >= v), 'A igual urgencia, primero el cliente que más plata deja');
+for (let k = 0; k < 40; k++) PEDIDOS.pop();
+
 L.push('<h2>5 · Agrupación: una tarjeta por cliente</h2>');
 const ids = sugs.map((s) => s.clienteId);
 chk(ids.length === new Set(ids).size, 'Ningún cliente aparece dos veces en la agenda (' + sugs.length + ' tarjetas para ' + todas.length + ' avisos)');

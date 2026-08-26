@@ -14,14 +14,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const rutasAct = Store.rutas().filter((r) => ['asignada', 'aceptada', 'en_curso'].includes(r.estado));
     // Aviso del CRM: cuántos clientes hay para contactar hoy. Es lo primero que
     // conviene ver al abrir la app, porque es lo único que se pierde si nadie mira.
+    // El aviso cuenta SOLO lo urgente (clientes que ya compraban y algo cambió).
+    // Si sumáramos las primeras compras sin repetir, el número sería enorme todos
+    // los días y dejaría de significar nada.
     let sugs = [];
-    try { sugs = (GDO.CRM && Store.puedeCRM()) ? GDO.CRM.agenda() : []; } catch (e) { sugs = []; }
-    const urgentes = sugs.filter((s) => s.prio >= 78);
+    try { sugs = (GDO.CRM && Store.puedeCRM()) ? GDO.CRM.agendaPartida().hoy : []; } catch (e) { sugs = []; }
     c.innerHTML = `
       ${sugs.length ? `<div class="crm-aviso" id="d-crm">
         <span class="ic">📞</span>
-        <div class="tx"><b>${sugs.length} cliente${sugs.length === 1 ? '' : 's'} para contactar</b>
-          <span>${urgentes.length ? urgentes.length + ' urgente' + (urgentes.length === 1 ? '' : 's') + ' · ' : ''}${esc(sugs.slice(0, 3).map((s) => s.ficha.nombre).join(', '))}${sugs.length > 3 ? ' y más' : ''}</span></div>
+        <div class="tx"><b>${sugs.length} cliente${sugs.length === 1 ? '' : 's'} para contactar hoy</b>
+          <span>${esc(sugs.slice(0, 3).map((s) => s.ficha.nombre).join(', '))}${sugs.length > 3 ? ' y ' + (sugs.length - 3) + ' más' : ''}</span></div>
         <button class="btn btn-primary btn-sm">Ver</button>
       </div>` : ''}
       <div class="cards" style="margin-bottom:22px">

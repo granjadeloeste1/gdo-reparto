@@ -399,7 +399,7 @@ window.GDO = window.GDO || {};
         const t = Date.parse(f.recordatorio.fecha + 'T00:00:00');
         if (!isNaN(t) && t <= hoy) {
           push({
-            tipo: 'recordatorio', prio: 100, ic: '🔔',
+            tipo: 'recordatorio', grupo: 'hoy', prio: 100, ic: '🔔',
             titulo: 'Recordatorio para hoy',
             motivo: f.recordatorio.motivo || 'Tenías anotado contactarlo.',
             oferta: '', msg: msgRecordatorio(f),
@@ -412,7 +412,7 @@ window.GDO = window.GDO || {};
       /* 2 · CLIENTE DORMIDO — el que se está yendo sin avisar. */
       if (dormido(f)) {
         push({
-          tipo: 'dormido', prio: 92, ic: '😴',
+          tipo: 'dormido', grupo: 'hoy', prio: 92, ic: '😴',
           titulo: 'Se está yendo',
           motivo: 'Compraba cada ' + f.ritmo + ' días y hace ' + f.diasDesde + ' que no pide.',
           oferta: listaProd(f.habituales), msg: msgDormido(f),
@@ -420,7 +420,7 @@ window.GDO = window.GDO || {};
       } else if (f.ritmo != null && f.diasDesde != null && f.diasDesde >= Math.round(f.ritmo * 1.15)) {
         /* 3 · LE TOCA PEDIDO — el recordatorio de rutina, el que más plata hace. */
         push({
-          tipo: 'toca', prio: 78, ic: '🔁',
+          tipo: 'toca', grupo: 'hoy', prio: 78, ic: '🔁',
           titulo: 'Le toca pedido',
           motivo: 'Compra cada ' + f.ritmo + ' días · el último fue hace ' + f.diasDesde + '.',
           oferta: listaProd(f.habituales), msg: msgToca(f),
@@ -430,7 +430,7 @@ window.GDO = window.GDO || {};
       /* 4 · PRIMERA COMPRA SIN SEGUNDA — la venta más fácil de recuperar. */
       if (f.nCompras === 1 && f.diasDesde >= 12 && f.diasDesde <= 90) {
         push({
-          tipo: 'sin_segunda', prio: 80, ic: '🌱',
+          tipo: 'sin_segunda', grupo: 'seguimiento', prio: 55, ic: '🌱',
           titulo: 'Compró una sola vez',
           motivo: 'Primera y única compra hace ' + f.diasDesde + ' días. Nunca volvió.',
           oferta: listaProd(f.productos.slice(0, 2)), msg: msgSinSegunda(f),
@@ -446,7 +446,7 @@ window.GDO = window.GDO || {};
         const cayo = f.habituales.filter((h) => !enUlt2[h.key]);
         if (cayo.length) {
           push({
-            tipo: 'dejo', prio: 68, ic: '📉',
+            tipo: 'dejo', grupo: 'hoy', prio: 68, ic: '📉',
             titulo: 'Dejó de llevar ' + cayo[0].nombre,
             motivo: 'Lo llevaba en ' + cayo[0].n + ' de sus ' + f.nCompras + ' compras y en las últimas 2 no.',
             oferta: cayo.slice(0, 3).map((x) => x.nombre).join(', '), msg: msgDejo(f, cayo[0]),
@@ -461,7 +461,7 @@ window.GDO = window.GDO || {};
         const pa = prom(f._compras.slice(-5, -2).map((c) => montoDe(c.p)));
         if (pa > 0 && pu > 0 && pu < pa * 0.7) {
           push({
-            tipo: 'bajo', prio: 72, ic: '⚠️',
+            tipo: 'bajo', grupo: 'hoy', prio: 72, ic: '⚠️',
             titulo: 'Bajó lo que compra',
             motivo: 'Sus últimos pedidos son ' + Math.round((1 - pu / pa) * 100) + '% más chicos que los anteriores.',
             oferta: listaProd(f.habituales), msg: msgBajo(f),
@@ -482,7 +482,7 @@ window.GDO = window.GDO || {};
           if (cand.length) {
             const nom = r.prod[cand[0]].nombre;
             push({
-              tipo: 'probar', prio: 45, ic: '💡',
+              tipo: 'probar', grupo: 'seguimiento', prio: 45, ic: '💡',
               titulo: 'Nunca probó ' + nom,
               motivo: 'Lo lleva el ' + Math.round(r.prod[cand[0]].n / r.n * 100) + '% de los clientes como él.',
               oferta: nom, msg: msgProbar(f, nom),
@@ -494,7 +494,7 @@ window.GDO = window.GDO || {};
       /* 8 · SIN TELÉFONO — no es una venta, pero sin esto no hay CRM posible. */
       if (!f.telefono && f.nCompras >= 2) {
         push({
-          tipo: 'sin_tel', prio: 20, ic: '📵',
+          tipo: 'sin_tel', grupo: 'seguimiento', prio: 20, ic: '📵',
           titulo: 'Sin teléfono cargado',
           motivo: 'Compró ' + f.nCompras + ' veces y no lo podemos contactar.',
           oferta: '', msg: '',
@@ -502,7 +502,14 @@ window.GDO = window.GDO || {};
       }
     });
 
-    out.sort((a, b) => (b.prio - a.prio) || ((b.ficha.diasDesde || 0) - (a.ficha.diasDesde || 0)));
+    /* Orden: primero la urgencia, y a igual urgencia LOS QUE MÁS PLATA DEJAN.
+       Antes desempataba por antigüedad, y eso ponía arriba al que compró poco
+       hace mucho. Si no hay precios cargados, el desempate es cuántas veces
+       compró (un cliente que volvió 6 veces vale más que uno que vino una). */
+    const valor = (f) => (f.total || 0) * 1000 + (f.nCompras || 0);
+    out.sort((a, b) => (b.prio - a.prio)
+      || (valor(b.ficha) - valor(a.ficha))
+      || ((b.ficha.diasDesde || 0) - (a.ficha.diasDesde || 0)));
     return out;
   }
 
@@ -522,6 +529,23 @@ window.GDO = window.GDO || {};
       out.push(item);
     });
     return out;
+  }
+
+  /* La agenda partida en DOS, que es la diferencia entre una lista que se usa y
+     una que no se mira nunca:
+
+     · HOY  — clientes que ya te venían comprando y algo cambió: se están yendo,
+              les toca pedido, bajaron el volumen, dejaron de llevar algo. Son
+              pocos y cada uno es plata concreta que se está por perder.
+     · LUEGO — trabajo de fondo, sobre todo primeras compras que nunca repitieron.
+              Vale mucho, pero es una tanda para cuando tengas un rato, no algo
+              para hacer hoy. Mezclado con lo de arriba tapaba todo. */
+  function agendaPartida(lista) {
+    const todo = agenda(lista);
+    return {
+      hoy: todo.filter((s) => s.grupo === 'hoy'),
+      luego: todo.filter((s) => s.grupo !== 'hoy'),
+    };
   }
 
   /* ═════════════════ mensajes de WhatsApp ═════════════════
@@ -652,7 +676,8 @@ window.GDO = window.GDO || {};
   }
 
   GDO.CRM = {
-    fichas, sugerencias, agenda, guardar, unir, marcarContactado, posponer, dormido, sinFecha,
+    fichas, sugerencias, agenda, agendaPartida, guardar, unir, marcarContactado,
+    posponer, dormido, sinFecha,
     norm, telKey, dirKey, nomKey, senales, prodKey, fechaDe, montoDe, listaProd,
     TIPOS, DIAS, LISTA_URL,
   };

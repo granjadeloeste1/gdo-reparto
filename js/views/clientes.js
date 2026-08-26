@@ -26,19 +26,24 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   GDO.Views.clientes = function (c) {
     const fichas = CRM().fichas();
-    const sugs = CRM().agenda(fichas);   // una tarjeta por cliente, no una por aviso
-    const huerfanos = CRM().sinFecha();  // pedidos que no se pueden ubicar en el tiempo
+    const part = CRM().agendaPartida(fichas);   // { hoy, luego } — una tarjeta por cliente
+    const sugs = part.hoy;
+    const huerfanos = CRM().sinFecha();         // pedidos que no se pueden ubicar en el tiempo
 
+    // Los indicadores cuentan la historia del negocio, no el estado de la app:
+    // cuántos repiten (la base real), cuántos vinieron una sola vez (la
+    // oportunidad más grande) y cuántos se están yendo (lo que se pierde hoy).
     const conCompras = fichas.filter((f) => f.nCompras > 0);
+    const repiten = conCompras.filter((f) => f.nCompras >= 2);
+    const unaVez = conCompras.length - repiten.length;
     const dormidos = conCompras.filter((f) => CRM().dormido(f)).length;
-    const activos = conCompras.length - dormidos;
 
     c.innerHTML = `
       <div class="cards" style="margin-bottom:20px">
         <div class="card kpi naranja"><span class="ic">📇</span><span class="num">${conCompras.length}</span><span class="lbl">Clientes con compras</span></div>
-        <div class="card kpi negro"><span class="ic">✅</span><span class="num">${activos}</span><span class="lbl">Al día</span></div>
+        <div class="card kpi negro"><span class="ic">🔁</span><span class="num">${repiten.length}</span><span class="lbl">Repiten (2 compras o más)</span></div>
+        <div class="card kpi amarillo"><span class="ic">🌱</span><span class="num">${unaVez}</span><span class="lbl">Compraron una sola vez</span></div>
         <div class="card kpi rojo"><span class="ic">😴</span><span class="num">${dormidos}</span><span class="lbl">Se están yendo</span></div>
-        <div class="card kpi amarillo"><span class="ic">📞</span><span class="num">${sugs.length}</span><span class="lbl">Cosas para hacer</span></div>
       </div>
 
       ${huerfanos.length ? `<div class="note" id="crm-huerf" style="cursor:pointer">
@@ -57,7 +62,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (hb) hb.onclick = () => sinFechaModal(huerfanos, () => GDO.Views.clientes(c));
 
     const body = c.querySelector('#crm-body');
-    if (tab === 'hoy') renderAgenda(body, sugs, c);
+    if (tab === 'hoy') renderAgenda(body, part, c);
     else renderLista(body, fichas, c);
   };
 
@@ -65,8 +70,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   /* ─────────────────────── "Para hacer hoy" ─────────────────────── */
 
-  function renderAgenda(box, sugs, cont) {
-    if (!sugs.length) {
+  let verTodoHoy = false, verTodoLuego = false;
+  const TOPE = 10;   // una agenda de más de 10 llamados no se hace: no se mira
+
+  function renderAgenda(box, part, cont) {
+    const hoy = part.hoy, luego = part.luego;
+    const todas = hoy.concat(luego);
+
+    if (!todas.length) {
       box.innerHTML = `<div class="panel"><div class="panel-b">
         <div class="empty" style="padding:44px 20px">
           <div style="font-size:38px;margin-bottom:8px">✅</div>
@@ -77,12 +88,40 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       return;
     }
 
+    const hoyVis = verTodoHoy ? hoy : hoy.slice(0, TOPE);
+    const luegoVis = verTodoLuego ? luego : luego.slice(0, TOPE);
+
     box.innerHTML = `
       <div class="note">Esta lista se arma <b>sola</b> con los pedidos ya cargados: ritmo de compra de cada cliente, qué dejó de llevar y qué nunca probó. Tocá <b>WhatsApp</b> y el mensaje ya sale escrito (podés editarlo antes de enviar).</div>
-      <div class="crm-sugs">${sugs.map(tarjeta).join('')}</div>`;
+
+      <div class="crm-sec">
+        <h3>📞 Hoy${hoy.length ? ' · ' + hoy.length : ''}</h3>
+        <p>Clientes que <b>ya te venían comprando</b> y algo cambió. Es lo que se pierde si nadie llama.</p>
+      </div>
+      ${hoy.length
+        ? `<div class="crm-sugs">${hoyVis.map((s, i) => tarjeta(s, i, 'h')).join('')}</div>
+           ${hoy.length > TOPE ? `<button class="btn btn-ghost btn-block" data-mas="hoy" style="margin-bottom:20px">${verTodoHoy ? 'Mostrar solo los ' + TOPE + ' primeros' : 'Ver los ' + (hoy.length - TOPE) + ' restantes'}</button>` : ''}`
+        : `<div class="panel"><div class="panel-b"><div class="empty" style="padding:26px 20px">
+             <b style="color:var(--negro)">Nada urgente hoy</b><br>Ningún cliente que compra seguido está atrasado.
+           </div></div></div>`}
+
+      ${luego.length ? `
+      <div class="crm-sec">
+        <h3>🌱 Para cuando tengas un rato · ${luego.length}</h3>
+        <p>Sobre todo <b>primeras compras que nunca repitieron</b>. Vale mucho recuperarlas, pero es una tanda para hacer de a poco — no algo de hoy.</p>
+      </div>
+      <div class="crm-sugs">${luegoVis.map((s, i) => tarjeta(s, i, 'l')).join('')}</div>
+      ${luego.length > TOPE ? `<button class="btn btn-ghost btn-block" data-mas="luego">${verTodoLuego ? 'Mostrar solo los ' + TOPE + ' primeros' : 'Ver los ' + (luego.length - TOPE) + ' restantes'}</button>` : ''}
+      ` : ''}`;
+
+    box.querySelectorAll('[data-mas]').forEach((b) => b.onclick = () => {
+      if (b.dataset.mas === 'hoy') verTodoHoy = !verTodoHoy; else verTodoLuego = !verTodoLuego;
+      recargar(cont);
+    });
 
     box.querySelectorAll('[data-sug]').forEach((el) => {
-      const s = sugs[+el.dataset.sug];
+      const ref = el.dataset.sug;
+      const s = (ref[0] === 'h' ? hoyVis : luegoVis)[+ref.slice(1)];
       const q = (sel) => el.querySelector(sel);
       const bw = q('[data-wsp]'); if (bw) bw.onclick = () => mensajeModal(s, () => recargar(cont));
       const bo = q('[data-ok]'); if (bo) bo.onclick = () => { CRM().marcarContactado(s.ficha, s.tipo); toast('Anotado: ya lo contactaste', 'ok'); recargar(cont); };
@@ -102,11 +141,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return Object.keys(vistos).map((k) => vistos[k]).slice(0, 4).join(', ');
   }
 
-  function tarjeta(s, i) {
+  function tarjeta(s, i, pref) {
     const f = s.ficha;
     const tel = f.telefono && GDO.Wpp.tieneTel(f.telefono);
     return `
-      <div class="crm-sug prio-${s.prio >= 90 ? 'alta' : (s.prio >= 65 ? 'media' : 'baja')}" data-sug="${i}">
+      <div class="crm-sug prio-${s.prio >= 90 ? 'alta' : (s.prio >= 65 ? 'media' : 'baja')}" data-sug="${(pref || '') + i}">
         <div class="crm-sug-ic">${s.ic}</div>
         <div class="crm-sug-tx">
           <div class="crm-sug-h">
