@@ -22,6 +22,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const MAX_LADO = 1080;      // px del lado más largo (alto, en las verticales)
   const CALIDAD = 0.65;
   const MAX_BYTES = 700 * 1024;
+  const SEG_DEF = 5;          // segundos por imagen si nunca se configuró
   const kb = (s) => Math.round(String(s || '').length * 0.75 / 1024);  // dataURL → KB reales
 
   let cache = [];
@@ -29,11 +30,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   GDO.Views.promos = function (c) {
     c.innerHTML = `
       <div class="section-title"><h2>Promos de la tienda</h2></div>
-      <div class="note">Estas imágenes van rotando arriba de la lista de precios, en
-        <b>lista.granjadeloeste.com</b>. Son las mismas piezas <b>verticales</b> que subís a los
-        estados de WhatsApp (formato 9:16). El cliente las ve chicas y, si toca una, se abre en
-        pantalla completa. Si no hay ninguna activa, la tienda muestra el banner de siempre.</div>
+      <div class="note">Estas imágenes se muestran en el <b>menú inicial</b> de
+        <b>lista.granjadeloeste.com</b>, antes de que el cliente elija la lista. Son las mismas
+        piezas <b>verticales</b> que subís a los estados de WhatsApp (formato 9:16).
+        Se ven <b>de a dos</b> y se corren solas de derecha a izquierda; el cliente también las
+        puede pasar con las flechitas. Si toca una, se abre en pantalla completa.
+        Si no hay ninguna activa, no se muestra nada.</div>
       <div class="toolbar">
+        <label class="pr-seg">⏱️ Cada imagen se ve
+          <select id="pr-seg">${[3, 4, 5, 6, 8, 10, 15].map((s) => `<option value="${s}">${s} segundos</option>`).join('')}</select>
+        </label>
         <div class="spacer"></div>
         <button class="btn btn-primary" id="pr-new">+ Subir promo</button>
       </div>
@@ -41,8 +47,27 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
     const cont = c.querySelector('#pr-cont');
     c.querySelector('#pr-new').onclick = () => promoModal(null, () => cargar(cont));
+    montarSegundos(c.querySelector('#pr-seg'));
     cargar(cont);
   };
+
+  /* Cuántos segundos se ve cada promo antes de pasar a la siguiente. Vive en un
+     documento aparte, `promos/_config`, que NO tiene imagen — por eso la tienda
+     lo saltea al armar el carrusel y nunca se dibuja como una promo más. */
+  function montarSegundos(sel) {
+    const fdb = db();
+    if (!fdb || !sel) return;
+    fdb.collection('promos').doc('_config').get().then((d) => {
+      const s = (d.exists && d.data().segundos) || SEG_DEF;
+      sel.value = String(s);
+    }).catch(() => { sel.value = String(SEG_DEF); });
+
+    sel.onchange = () => {
+      fdb.collection('promos').doc('_config').set({ segundos: +sel.value }, { merge: true })
+        .then(() => toast('Listo: cada imagen se ve ' + sel.value + ' segundos', 'ok'))
+        .catch(() => toast('No se pudo guardar el tiempo', 'err'));
+    };
+  }
 
   function cargar(cont) {
     const fdb = db();
@@ -51,7 +76,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       return;
     }
     fdb.collection('promos').get().then((snap) => {
-      cache = snap.docs.map((d) => Object.assign({}, d.data(), { id: d.id }));
+      // `_config` guarda el tiempo por imagen, no es una promo: fuera de la grilla.
+      cache = snap.docs.filter((d) => d.id !== '_config').map((d) => Object.assign({}, d.data(), { id: d.id }));
       cache.sort((a, b) => (a.orden || 0) - (b.orden || 0));
       dibujar(cont);
     }).catch((e) => {
