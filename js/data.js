@@ -302,6 +302,16 @@ window.GDO = window.GDO || {};
   let db = load();
   if (drainInbox(db)) persist(db);
 
+  /* Permisos extra (además de los roles). El ADMINISTRADOR los tiene todos; al
+     resto se los habilita un admin de a uno desde "Usuarios y roles". Un usuario
+     inactivo no tiene ninguno, aunque los tenga marcados. Sin argumento,
+     responde por el usuario que está usando la app ahora. */
+  function tienePermiso(u, clave) {
+    const x = u || (db.session && db.users.find((y) => y.id === db.session.userId));
+    if (!x || !x.activo) return false;
+    return x.roles.indexOf('admin') >= 0 || !!x[clave];
+  }
+
   const Store = {
     DEPOT,
     raw: () => db,
@@ -389,15 +399,16 @@ window.GDO = window.GDO || {};
     },
     deleteUser(id) { db.users = db.users.filter((u) => u.id !== id); persist(db); fsDel('users', id); },
     admins: () => db.users.filter((u) => u.roles.includes('admin')),
-    // ¿Este usuario puede ver la ficha de clientes (CRM)? El ADMINISTRADOR siempre;
+    // ¿Este usuario tiene la ficha de clientes (CRM)? El ADMINISTRADOR siempre;
     // el resto solo si un administrador se lo habilitó (checkbox en Usuarios y roles).
     // Son datos personales de terceros y el historial de compras del negocio: no es
     // algo que tenga que ver cualquiera que carga un pedido.
-    puedeCRM(u) {
-      const x = u || (db.session && db.users.find((y) => y.id === db.session.userId));
-      if (!x || !x.activo) return false;
-      return x.roles.indexOf('admin') >= 0 || !!x.crm;
-    },
+    puedeCRM(u) { return tienePermiso(u, 'crm'); },
+
+    // ¿Puede cargar las promos de la tienda? Mismo criterio, pero ojo: esto NO es
+    // mirar datos, es PUBLICAR. Lo que se activa acá lo ve todo el que entra a la
+    // lista de precios, al instante. Darlo con más cuidado que el CRM.
+    puedePromos(u) { return tienePermiso(u, 'promos'); },
 
     // ----- vehículos -----
     vehiculos: () => db.vehiculos,

@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v74';
+  const VERSION = 'v75';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -22,23 +22,33 @@ window.GDO = window.GDO || {};
       { hash: '#/usuarios', ic: '👥', t: 'Usuarios y roles' },
       { hash: '#/vehiculos', ic: '🚚', t: 'Vehículos' },
     ],
+    // Clientes y Promos figuran acá, pero navDe() los saca si esa persona no
+    // tiene el permiso. Si no estuvieran listados, habilitarle el permiso a un
+    // vendedor no le mostraría nada.
     vendedor: [
       { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
+      { hash: '#/promos', ic: '🖼️', t: 'Promos de la tienda' },
     ],
     cajero: [
       { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
       { hash: '#/club', ic: '⭐', t: 'GDO Club' },
+      { hash: '#/promos', ic: '🖼️', t: 'Promos de la tienda' },
     ],
   };
 
-  // El menú de CLIENTES solo aparece para quien tenga el permiso (admin siempre;
-  // al resto se lo habilita un admin desde "Usuarios y roles"). Si no lo tiene, la
-  // opción no existe y la ruta tampoco: no alcanza con esconder el botón.
+  /* Las secciones con permiso extra (Clientes y Promos) solo aparecen para quien
+     lo tenga: el admin siempre, y el resto si un admin se lo habilitó desde
+     "Usuarios y roles". Si no lo tiene, la opción no existe Y la ruta tampoco
+     (ver routeContent): no alcanza con esconder el botón del menú. */
+  const CON_PERMISO = {
+    '#/clientes': () => Store.puedeCRM(),
+    '#/promos': () => Store.puedePromos(),
+  };
   function navDe(rol) {
     const base = NAV[rol] || NAV.vendedor;
-    return Store.puedeCRM() ? base : base.filter((n) => n.hash !== '#/clientes');
+    return base.filter((n) => !CON_PERMISO[n.hash] || CON_PERMISO[n.hash]());
   }
 
   function rolesDisponibles(u) { return u.roles; }
@@ -104,7 +114,7 @@ window.GDO = window.GDO || {};
       case '#/rutas': return V.rutas(c);
       case '#/clientes': return Store.puedeCRM() ? V.clientes(c) : V.pedidos(c);
       case '#/club': return (rol === 'admin' || rol === 'cajero') ? V.club(c) : V.pedidos(c);
-      case '#/promos': return rol === 'admin' ? V.promos(c) : V.pedidos(c);
+      case '#/promos': return Store.puedePromos() ? V.promos(c) : V.pedidos(c);
       case '#/usuarios': return rol === 'admin' ? V.usuarios(c) : V.pedidos(c);
       case '#/vehiculos': return rol === 'admin' ? V.vehiculos(c) : V.pedidos(c);
       default: return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);

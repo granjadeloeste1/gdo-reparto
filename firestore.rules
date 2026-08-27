@@ -48,6 +48,15 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/Staff/$(request.auth.uid)).data.get('crm', false) == true);
     }
 
+    // PROMOS de la tienda: mismo criterio, con  promos: true  en /Staff.
+    // Ojo: esto no es mirar datos, es PUBLICAR. Lo que active esa persona lo ve
+    // todo el que entra a la lista de precios, al instante.
+    function puedePromos() {
+      return isAdmin()
+        || (isStaff()
+            && get(/databases/$(database)/documents/Staff/$(request.auth.uid)).data.get('promos', false) == true);
+    }
+
     // Validación de un pedido creado por la tienda (sesión anónima o socio
     // logueado). Limita lo que un no-staff puede escribir. Si trae clienteUid,
     // debe ser el del propio usuario (para acreditar puntos a quien corresponde).
@@ -101,12 +110,16 @@ service cloud.firestore {
     // Las imágenes verticales (formato estado de WhatsApp) que rotan arriba de la
     // lista de precios. LECTURA PÚBLICA a propósito: son piezas de publicidad,
     // hechas para que las vea cualquiera, y la lista se abre sin login. No hay
-    // ningún dato personal acá. Subirlas y borrarlas: solo el ADMIN.
+    // ningún dato personal acá.
+    //
+    // Subirlas y borrarlas: el ADMIN siempre, y el resto del personal solo si su
+    // doc en /Staff tiene  promos: true  (en la app el permiso se marca en
+    // "Usuarios y roles"; esta regla es el candado del lado del servidor).
     // La imagen va embebida como dataURL dentro del documento (Firebase Storage
     // no entra en el plan gratis), por eso se comprime a ~150 KB antes de subir.
     match /promos/{id} {
       allow read:  if true;
-      allow write: if isAdmin();
+      allow write: if puedePromos();
     }
 
     // ───────── Pedidos ─────────

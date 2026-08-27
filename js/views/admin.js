@@ -884,7 +884,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <th>Nombre</th><th>Email</th><th>Roles</th><th>Estado</th><th></th></tr></thead><tbody>
         ${list.map((u) => `<tr>
           <td><b>${esc(u.nombre)}</b></td><td class="small">${esc(u.email)}</td>
-          <td>${u.roles.map((r) => ROL_CHIP[r]).join(' ')}${Store.puedeCRM(u) ? ' <span class="chip crm-t-rev" title="Puede ver la ficha de clientes">📇 Clientes</span>' : ''}</td>
+          <td>${u.roles.map((r) => ROL_CHIP[r]).join(' ')}${Store.puedeCRM(u) ? ' <span class="chip crm-t-rev" title="Puede ver la ficha de clientes">📇 Clientes</span>' : ''}${Store.puedePromos(u) ? ' <span class="chip crm-t-vol" title="Puede publicar promos en la tienda">🖼️ Promos</span>' : ''}</td>
           <td>${u.activo ? '<span class="chip chip-entreg">Activo</span>' : '<span class="chip chip-no">Inactivo</span>'}</td>
           <td class="t-actions">
             <button class="btn btn-ghost btn-sm" data-edit="${u.id}">✎ Roles</button>
@@ -915,8 +915,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <div class="roles-pick">${rolBox('admin', '👑 Administrador')}${rolBox('vendedor', '🏷️ Vendedor')}${rolBox('cajero', '💳 Cajero')}${rolBox('repartidor', '🚚 Repartidor')}</div>
             <span class="help">Administrador: acceso total · Vendedor: carga pedidos · Cajero: pedidos + Club (cargar puntos y escanear vouchers, con ticket obligatorio; no crea premios ni elimina) · Repartidor: ve sus rutas.</span></div>
           <div class="field col-2"><label>Permisos extra</label>
-            <div class="roles-pick"><label><input type="checkbox" id="u-crm" ${u && u.crm ? 'checked' : ''}/> 📇 Ver Clientes (CRM)</label></div>
-            <span class="help">La ficha de clientes, el historial de compras y la agenda de contacto. El <b>administrador siempre la ve</b>; al resto se la habilitás acá, uno por uno. Sin esto, la pestaña Clientes ni les aparece.</span></div>
+            <div class="roles-pick">
+              <label><input type="checkbox" id="u-crm" ${u && u.crm ? 'checked' : ''}/> 📇 Ver Clientes (CRM)</label>
+              <label><input type="checkbox" id="u-promos" ${u && u.promos ? 'checked' : ''}/> 🖼️ Cargar promos</label>
+            </div>
+            <span class="help">El <b>administrador siempre los tiene</b>; al resto se los habilitás acá, uno por uno. Sin el permiso, esa pestaña ni les aparece.<br>
+              <b>Clientes:</b> la ficha de cada cliente, su historial de compras y la agenda de contacto.<br>
+              <b>Promos:</b> las imágenes del menú inicial de la tienda. ⚠️ Ojo con este: lo que active esa persona <b>lo ve todo el que entra a la lista de precios</b>, al instante.</span></div>
           <div class="field col-2"><label><input type="checkbox" id="u-act" ${!u || u.activo ? 'checked' : ''} style="width:auto"/> Usuario activo (puede ingresar)</label></div>
         </div>`,
       footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save>Guardar</button>`,
@@ -931,6 +936,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           Store.upsertUser({
             id: u ? u.id : undefined, nombre: nom, email, roles: rs,
             crm: node.querySelector('#u-crm').checked,
+            promos: node.querySelector('#u-promos').checked,
             activo: node.querySelector('#u-act').checked,
           });
           toast('Usuario guardado', 'ok'); close(); after && after();
