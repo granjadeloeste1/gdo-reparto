@@ -97,6 +97,18 @@ service cloud.firestore {
     // cuenta como admin, así que publicar esto no le saca el acceso a nadie hoy.
     match /crm_clientes/{id}    { allow read, write: if puedeCRM(); }
 
+    // ───────── Promos de la tienda ─────────
+    // Las imágenes verticales (formato estado de WhatsApp) que rotan arriba de la
+    // lista de precios. LECTURA PÚBLICA a propósito: son piezas de publicidad,
+    // hechas para que las vea cualquiera, y la lista se abre sin login. No hay
+    // ningún dato personal acá. Subirlas y borrarlas: solo el ADMIN.
+    // La imagen va embebida como dataURL dentro del documento (Firebase Storage
+    // no entra en el plan gratis), por eso se comprime a ~150 KB antes de subir.
+    match /promos/{id} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
     // ───────── Pedidos ─────────
     // get: el cliente final ve SU pedido por el link de seguimiento (id de 128
     //      bits, no adivinable). create: personal (cualquier origen) o tienda
