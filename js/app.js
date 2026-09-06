@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v76';
+  const VERSION = 'v77';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -51,7 +51,52 @@ window.GDO = window.GDO || {};
     return base.filter((n) => !CON_PERMISO[n.hash] || CON_PERMISO[n.hash]());
   }
 
-  function rolesDisponibles(u) { return u.roles; }
+  /* ---------- CAMBIAR DE MODO (solo administrador) ----------
+     Un admin que además es repartidor puede asignarse una ruta y salir a repartir
+     sin cerrar sesión: cambia el "modo" con el que ve la app. Es SOLO para el
+     administrador — un vendedor/cajero con varios roles no elige, entra siempre
+     con el suyo. El modo se guarda en la sesión (Store.setRolActivo) y sobrevive
+     al recargar, así que el chofer-admin no lo pierde a mitad del reparto.
+     OJO: esto NO da permisos extra; los permisos reales los siguen decidiendo los
+     roles del usuario y las reglas de Firestore. */
+  const MODO = {
+    admin:      { ic: '👑', t: 'Administrador', d: 'Tablero, pedidos, rutas, Club y usuarios.' },
+    vendedor:   { ic: '🏷️', t: 'Vendedor', d: 'Carga de pedidos.' },
+    cajero:     { ic: '💳', t: 'Cajero', d: 'Pedidos y GDO Club (mostrador).' },
+    repartidor: { ic: '🚚', t: 'Repartidor', d: 'Solo tus rutas asignadas, como en el celular del chofer.' },
+  };
+  function puedeCambiarModo(u) { return !!(u && u.roles && u.roles.includes('admin') && u.roles.length > 1); }
+
+  function cambiarModo() {
+    const u = Store.current();
+    if (!u || !u.roles || u.roles.length < 2) return;
+    const actual = Store.rolActivo();
+    GDO.UI.modal({
+      title: 'Cambiar de modo', width: 420,
+      bodyHTML:
+        `<p class="small muted" style="margin:0 0 12px">Elegí cómo querés ver la app. Podés volver cuando quieras: no se cierra la sesión.</p>` +
+        u.roles.map((r) => {
+          const m = MODO[r] || { ic: '•', t: r, d: '' };
+          const on = r === actual;
+          return `<button class="btn btn-ghost btn-block" data-rol="${r}" style="display:flex;align-items:flex-start;gap:12px;text-align:left;padding:13px 14px;margin-bottom:8px;white-space:normal;${on ? 'border-color:var(--naranja);background:#fff7ef' : ''}">
+            <span style="font-size:22px;line-height:1;flex:none">${m.ic}</span>
+            <span style="flex:1;min-width:0">
+              <b style="display:block;font-size:15px">${m.t}${on ? ' <span class="chip chip-rol" style="vertical-align:middle">Estás acá</span>' : ''}</b>
+              <span class="small muted" style="display:block;margin-top:2px;font-weight:400">${m.d}</span>
+            </span></button>`;
+        }).join(''),
+      footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button>`,
+      onMount(m, close) {
+        m.querySelector('[data-no]').onclick = close;
+        m.querySelectorAll('[data-rol]').forEach((b) => b.onclick = () => {
+          close();
+          if (b.dataset.rol === actual) return;
+          Store.setRolActivo(b.dataset.rol);
+          afterLogin();                       // lleva a la pantalla inicial de ese modo
+        });
+      },
+    });
+  }
 
   function go(hash) { location.hash = hash; }
 
@@ -61,6 +106,8 @@ window.GDO = window.GDO || {};
     logout() { Store.logout(); location.reload(); },
     render,
     go,
+    cambiarModo,
+    puedeCambiarModo,
   };
   GDO.App = App;
 
@@ -136,7 +183,7 @@ window.GDO = window.GDO || {};
           <div class="user-box">
             <div class="name">${esc(u.nombre)}</div>
             <div style="margin:6px 0">${u.roles.map((r) => GDO.UI.ROL_CHIP[r]).join(' ')}</div>
-            ${u.roles.length > 1 ? `<select id="rol-sw" style="margin-top:6px">${u.roles.map((r) => `<option value="${r}"${r===rol?' selected':''}>Ver como: ${r}</option>`).join('')}</select>` : ''}
+            ${u.roles.length > 1 ? `<button class="btn btn-ghost btn-sm btn-block" id="sb-modo" style="margin-top:6px;color:#fff;border-color:#3a3a3d">⇄ Modo: ${(MODO[rol] || {}).t || rol}</button>` : ''}
             <button class="btn btn-ghost btn-sm btn-block" id="sb-logout" style="margin-top:10px;color:#fff;border-color:#3a3a3d">Cerrar sesión</button>
           </div>
         </aside>
@@ -145,6 +192,7 @@ window.GDO = window.GDO || {};
             <h1 id="tb-title">${titleFor(hash, rol)}</h1>
             <div class="actions">
               <span class="tb-user" title="Sesión activa">${esc(u.nombre.split(' ')[0])}</span>
+              ${puedeCambiarModo(u) ? `<button class="bell" id="tb-modo" title="Cambiar de modo (${(MODO[rol] || {}).t || rol})" aria-label="Cambiar de modo">⇄</button>` : ''}
               <button class="bell" id="bell">🔔${noLeidas ? `<span class="badge">${noLeidas}</span>` : ''}</button>
               <button class="bell tb-logout" id="tb-logout" title="Cerrar sesión" aria-label="Cerrar sesión">🚪</button>
             </div>
@@ -161,8 +209,8 @@ window.GDO = window.GDO || {};
     root().querySelector('#sb-logout').onclick = () => App.logout();
     const tbLo = root().querySelector('#tb-logout');
     if (tbLo) tbLo.onclick = () => App.logout();
-    const sw = root().querySelector('#rol-sw');
-    if (sw) sw.onchange = () => { Store.setRolActivo(sw.value); afterLogin(); };
+    const sbM = root().querySelector('#sb-modo'); if (sbM) sbM.onclick = cambiarModo;
+    const tbM = root().querySelector('#tb-modo'); if (tbM) tbM.onclick = cambiarModo;
     root().querySelector('#bell').onclick = (e) => { e.stopPropagation(); toggleNotif(u); };
   }
 

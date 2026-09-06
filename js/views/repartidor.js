@@ -91,15 +91,21 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   };
 
   function driverTop(me, back) {
+    // El ADMIN que también es repartidor sale a repartir con su misma cuenta: acá
+    // tiene el botón para volver al modo administrador sin cerrar sesión. Para un
+    // chofer común no aparece (no tiene otro modo al que ir).
+    const modo = GDO.App && GDO.App.puedeCambiarModo && GDO.App.puedeCambiarModo(me)
+      ? '<button class="logout" id="d-modo" title="Cambiar de modo">⇄ Modo</button>' : '';
     return `<div class="driver-top">
       ${back ? '<button class="logout" id="d-back">← Atrás</button>' : '<img src="assets/logo-horizontal-blanco.svg" alt="GDO"/>'}
       <span style="font-weight:700;font-size:14px">${back ? '' : esc(me.nombre.split(' ')[0])}</span>
-      <button class="logout" id="d-logout">Salir</button>
+      <span style="display:flex;gap:8px">${modo}<button class="logout" id="d-logout">Salir</button></span>
     </div>`;
   }
   function wireTop(mount) {
     const lo = mount.querySelector('#d-logout'); if (lo) lo.onclick = () => GDO.App.logout();
     const bk = mount.querySelector('#d-back'); if (bk) bk.onclick = () => go('#/mis-rutas');
+    const md = mount.querySelector('#d-modo'); if (md) md.onclick = () => GDO.App.cambiarModo();
   }
 
   /* ---------- Ejecución de ruta ---------- */
