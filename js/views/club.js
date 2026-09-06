@@ -402,7 +402,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     modal({
       title: `Socio N° ${padNro(s.nroSocio)}`, width: 440,
       bodyHTML:
-        `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">
           <div style="font-size:13px;color:#6b7280">Puntos</div>
           <div style="font-weight:900;color:#F58220;font-size:20px">${fmt(s.puntos)}</div>
           ${esCajero() ? '' : '<button class="btn btn-ghost btn-sm" data-edit style="margin-left:auto">✎ Editar datos</button>'}
@@ -414,7 +414,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         filaDato('Email', s.email) +
         filaDato('Dirección', s.direccion) +
         filaDato('Socio desde', fechaCorta(s.creado)),
-      footHTML: `<button class="btn btn-ghost" data-no>Cerrar</button>${esCajero() ? '' : '<button class="btn btn-ghost" data-del style="color:#c0392b">🗑 Eliminar</button>'}<button class="btn btn-ghost" data-juego>🎮 Habilitar partida</button><button class="btn" data-pts>＋ Cargar puntos</button>`,
+      // ORDEN: "Eliminar" va PRIMERO en el HTML → en escritorio queda pegado a la
+      // izquierda (margin-right:auto) y en el celular, donde el pie se apila al revés,
+      // cae último: la acción destructiva nunca queda arriba ni fuera de la pantalla.
+      footHTML: `${esCajero() ? '' : '<button class="btn btn-ghost" data-del style="color:#c0392b;margin-right:auto">🗑 Eliminar</button>'}<button class="btn btn-ghost" data-no>Cerrar</button><button class="btn btn-ghost" data-juego>🎮 Habilitar partida</button><button class="btn" data-pts>＋ Cargar puntos</button>`,
       onMount(m, close) {
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-pts]').onclick = () => { close(); cargarPuntos(s); };
@@ -755,6 +758,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     }).catch(() => {});
   }
 
+  /* Los CANJES no pasan por /puntos_log: los hace el propio socio desde club.html y
+     las reglas no lo dejan escribir la auditoría (eso es solo del personal). El
+     descuento quedaba únicamente en /canjes y por eso el historial no lo mostraba.
+     Acá los leemos aparte y los MEZCLAMOS en la misma línea de tiempo. Si un canje
+     viejo ya tiene su renglón en puntos_log (flujo anterior, aprobado por staff), se
+     omite para no contarlo dos veces. */
+  function estadoCanje(c) {
+    if (c.usado) return '<span class="chip chip-entreg">Usado</span>';
+    if (c.venceMs && c.venceMs < Date.now()) return '<span class="chip chip-no">Vencido</span>';
+    return '<span class="chip chip-ruta">Sin usar</span>';
+  }
+
   function historialPuntos(s) {
     if (!s) return;
     const m = modal({
@@ -767,28 +782,62 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       },
     });
     const box = m.node.querySelector('#hp-body');
-    db().collection('puntos_log').where('clienteUid', '==', s._id).limit(300).get().then((snap) => {
-      const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
-      arr.sort((a, b) => ((b.ts && b.ts.toMillis ? b.ts.toMillis() : 0) - (a.ts && a.ts.toMillis ? a.ts.toMillis() : 0)));
+    const tms = (t) => (t && t.toMillis ? t.toMillis() : (t ? +new Date(t) : 0));
+
+    Promise.all([
+      db().collection('puntos_log').where('clienteUid', '==', s._id).limit(300).get(),
+      db().collection('canjes').where('clienteUid', '==', s._id).limit(300).get().catch(() => null),
+    ]).then((res) => {
+      const logSnap = res[0], cjSnap = res[1];
+      const logs = []; logSnap.forEach((d) => { const x = d.data(); x._id = d.id; logs.push(x); });
+      const yaEnLog = {};
+      logs.forEach((x) => { if (x.canjeId) yaEnLog[x.canjeId] = 1; });
+
+      const arr = logs.map((x) => ({
+        ms: tms(x.ts),
+        fechaTxt: fechaHora(x.ts),
+        motivo: esc(x.motivo || ((x.delta || 0) < 0 ? 'Canje' : 'Carga')),
+        ref: x.ticketNro ? esc(x.ticketNro) : '—',
+        compra: x.monto ? '$' + fmt(x.monto) : '—',
+        delta: x.delta || 0,
+        saldo: fmt(x.saldo),
+        por: esc(nombreStaff(x.por)),
+      }));
+
+      if (cjSnap) cjSnap.forEach((d) => {
+        const c = d.data();
+        if (yaEnLog[d.id]) return;                    // ya figura por puntos_log
+        arr.push({
+          ms: tms(c.ts),
+          fechaTxt: fechaHora(c.ts),
+          motivo: `${esc(c.premioIco || '🎁')} ${esc(c.premioNombre || 'Canje')} ${estadoCanje(c)}` +
+                  (c.origen === 'juego' ? ' <span class="chip" style="background:#eef2ff;color:#3730a3">🎮 juego</span>' : ''),
+          ref: esc(c.codigo || d.id.slice(0, 8)),
+          compra: '—',
+          delta: -(c.costo || 0),
+          saldo: '—',
+          por: (c.costo || 0) ? 'el socio' : '—',
+        });
+      });
+
       if (!arr.length) { box.innerHTML = '<div class="empty">Este socio todavía no tiene movimientos de puntos.</div>'; return; }
-      const sumas = arr.filter((x) => (x.delta || 0) > 0).reduce((t, x) => t + x.delta, 0);
-      const restas = arr.filter((x) => (x.delta || 0) < 0).reduce((t, x) => t - x.delta, 0);
+      arr.sort((a, b) => b.ms - a.ms);
+
+      const sumas = arr.filter((x) => x.delta > 0).reduce((t, x) => t + x.delta, 0);
+      const restas = arr.filter((x) => x.delta < 0).reduce((t, x) => t - x.delta, 0);
       box.innerHTML =
         `<div class="small muted" style="margin-bottom:10px">${arr.length} movimiento${arr.length === 1 ? '' : 's'} · sumados <b style="color:#2e9e5b">+${fmt(sumas)}</b> · canjeados <b style="color:#c0392b">−${fmt(restas)}</b> · saldo actual <b style="color:#F58220">${fmt(s.puntos)}</b></div>` +
-        `<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Motivo</th><th>Ticket</th><th>Compra</th><th>Puntos</th><th>Saldo</th><th>Cargó</th></tr></thead><tbody>` +
-        arr.map((x) => {
-          const d = x.delta || 0;
-          return `<tr>
-            <td class="small">${fechaHora(x.ts)}</td>
-            <td>${esc(x.motivo || (d < 0 ? 'Canje' : 'Carga'))}</td>
-            <td class="small">${x.ticketNro ? esc(x.ticketNro) : '—'}</td>
-            <td class="small">${x.monto ? '$' + fmt(x.monto) : '—'}</td>
-            <td><b style="color:${d < 0 ? '#c0392b' : '#2e9e5b'}">${d < 0 ? '−' : '+'}${fmt(Math.abs(d))}</b></td>
-            <td class="small">${fmt(x.saldo)}</td>
-            <td class="small">${esc(nombreStaff(x.por))}</td>
-          </tr>`;
-        }).join('') + `</tbody></table></div>` +
-        `<div class="small muted" style="margin-top:8px">La columna <b>Compra</b> aparece en las cargas hechas desde esta versión. En las anteriores el monto está en el ticket.` +
+        `<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Motivo</th><th>Ticket / código</th><th>Compra</th><th>Puntos</th><th>Saldo</th><th>Cargó</th></tr></thead><tbody>` +
+        arr.map((x) => `<tr>
+            <td class="small">${x.fechaTxt}</td>
+            <td>${x.motivo}</td>
+            <td class="small">${x.ref}</td>
+            <td class="small">${x.compra}</td>
+            <td><b style="color:${x.delta < 0 ? '#c0392b' : '#2e9e5b'}">${x.delta < 0 ? '−' : '+'}${fmt(Math.abs(x.delta))}</b></td>
+            <td class="small">${x.saldo}</td>
+            <td class="small">${x.por}</td>
+          </tr>`).join('') + `</tbody></table></div>` +
+        `<div class="small muted" style="margin-top:8px">Los <b>canjes</b> los hace el socio desde su celular: por eso no tienen “saldo” ni quién los cargó — el respaldo es el código del voucher. La columna <b>Compra</b> aparece en las cargas hechas desde esta versión.` +
         (arr.length >= 300 ? ' Se muestran los primeros 300 movimientos.' : '') + `</div>` +
         `<div id="hp-juego"></div>`;
       partidasDelSocio(s, box.querySelector('#hp-juego'));

@@ -158,7 +158,16 @@ textarea{resize:vertical;min-height:74px}
 .modal-h{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--gris-bd)}
 .modal-h h3{font-size:19px}
 .modal-b{padding:20px}
-.modal-f{padding:16px 20px;border-top:1px solid var(--gris-bd);display:flex;justify-content:flex-end;gap:10px}
+.modal-f{padding:16px 20px;border-top:1px solid var(--gris-bd);display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+/* CELULAR: los pies con varios botones (ej. la ficha del socio: Cerrar / Eliminar /
+   Habilitar partida / Cargar puntos) se salían de la pantalla porque iban todos en
+   una fila sin cortar. Acá se apilan a lo ancho, con la acción principal arriba
+   (column-reverse: el último del HTML queda primero) y "Cerrar" abajo. */
+@media (max-width:560px){
+  .modal-bg{padding:16px 12px}
+  .modal-f{flex-direction:column-reverse;align-items:stretch;gap:8px;padding:14px 16px}
+  .modal-f .btn{width:100%;margin:0 !important;white-space:normal}
+}
 .x{background:none;border:0;font-size:22px;cursor:pointer;color:var(--gris);line-height:1}
 
 /* ---------- Toast ---------- */
