@@ -119,9 +119,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     (p.items || []).forEach((it, i) => {
       const cant = (it.cantidad != null) ? it.cantidad : (it.cant || 0);
       const pr = it.precio || 0, u = it.unidad || it.u || 'un';
-      const st = cant * pr; sub += st;
-      L.push('*' + (i + 1) + ') ' + (it.producto || it.nombre || '') + '*');
-      L.push('    ' + cant + ' ' + u + (pr ? (' × ' + m(pr) + ' = *' + m(st) + '*') : ''));
+      // montoItem: los renglones por pieza viejos traían el precio del kilo.
+      const st = GDO.Lista ? GDO.Lista.montoItem(it) : cant * pr; sub += st;
+      L.push('*' + (i + 1) + ') ' + (GDO.Lista ? GDO.Lista.nombreItem(it) : (it.producto || it.nombre || '')) + '*');
+      L.push('    ' + cant + ' ' + u + (pr ? (' × ' + m(cant ? st / cant : pr) + ' = *' + m(st) + '*') : ''));
     });
     L.push('━━━━━━━━━━━━━━');
     L.push('💰 *TOTAL: ' + m(p.totalEstimado || sub) + '*');
@@ -680,7 +681,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
   GDO.Views.renderRetirosTabla = renderRetirosTabla;
 
-  const resumenItems = (items) => (items || []).map((i) => `${i.cantidad}× ${i.producto}`).join(', ');
+  const resumenItems = (items) => (items || []).map((i) => `${i.cantidad}× ${GDO.Lista ? GDO.Lista.nombreItem(i) : i.producto}`).join(', ');
 
   // Si el pedido ya forma parte de un reparto, muestra una carpeta-enlace 🗂️
   // junto al estado. Al tocarla se abre una ventana con la ruta, el chofer y
@@ -990,7 +991,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         // El mínimo de la lista manda (el trozado se vende por 5 kg).
         if (o.min && (Number(it.cantidad) || 0) < o.min) it.cantidad = o.min;
         const r = GDO.Lista.renglon(o, it.cantidad || 1);
-        it.producto = r.producto; it.unidad = r.unidad; it.precio = r.precio; it.kg = r.kg;
+        it.producto = r.producto; it.unidad = r.unidad; it.precio = r.precio; it.kg = r.kg; it.precioKg = r.precioKg;
         it._op = o;
         cerrar();
         redraw(); if (onTotal) onTotal();
@@ -1150,7 +1151,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
         const itemsBox = node.querySelector('#f-items');
         const fmtP = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
-        const totalItems = () => items.reduce((a, it) => a + (Number(it.cantidad) || 0) * (Number(it.precio) || 0), 0);
+        const totalItems = () => items.reduce((a, it) => a + (GDO.Lista ? GDO.Lista.montoItem(it) : (Number(it.cantidad) || 0) * (Number(it.precio) || 0)), 0);
         const pintarTotal = () => {
           const t = node.querySelector('#f-items-total');
           const tot = totalItems();
@@ -1258,8 +1259,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             // El trabajo de preparación (fileteado, en cubos, trozado) se cobra
             // $500 el kilo, igual que en la lista mayorista. El producto tal cual
             // no paga nada.
-            x.precio = GDO.Lista.precioPorEscalon(x._op.tiers, x._op.kgPor ? tot * x._op.kgPor : tot)
+            // Por pieza la planilla cotiza el KILO; el renglón lleva el de la pieza.
+            const pu = GDO.Lista.precioPorEscalon(x._op.tiers, x._op.kgPor ? tot * x._op.kgPor : tot);
+            x.precio = (x._op.kgPor ? pu * x._op.kgPor : pu)
               + GDO.Lista.prepRecargo(x.producto, x.preparacion, lista);
+            x.precioKg = x._op.kgPor ? pu : undefined;
             const pe = itemsBox.querySelector('[data-it-pre="' + i + '"]');
             if (pe) pe.value = x.precio || '';
             refrescarSub(i);
@@ -1273,7 +1277,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (it.preparacion) partes.push('✂️ ' + esc(it.preparacion));
           // Los kilos solo aportan si la unidad NO es el kilo (ahí ya se dijeron).
           if (it.kg && String(it.unidad).toLowerCase() !== 'kg') partes.push(it.kg + ' kg');
-          if (it.precio) partes.push(fmtP(it.precio) + ' c/' + esc(it.unidad || 'un') + ' = <b>' + fmtP(c * it.precio) + '</b>');
+          if (it.precio) {
+            const st = GDO.Lista ? GDO.Lista.montoItem(it) : c * it.precio;
+            partes.push(fmtP(c ? st / c : it.precio) + ' c/' + esc(it.unidad || 'un') + ' = <b>' + fmtP(st) + '</b>');
+          }
           return partes.join(' · ');
         }
         function refrescarSub(i) {
@@ -1369,6 +1376,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             if (i.unidad) it.unidad = String(i.unidad).trim();
             if (i.precio) it.precio = Number(i.precio) || 0;
             if (i.kg) it.kg = Number(i.kg) || 0;
+            if (i.precioKg) it.precioKg = Number(i.precioKg) || 0;
             if (i.preparacion) it.preparacion = String(i.preparacion).trim();
             if (i.nota) it.nota = String(i.nota).trim();
             return it;
@@ -1376,7 +1384,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           // Total del pedido con los precios de la lista: es lo que hace que
           // este pedido cuente en la facturación de Métricas (antes, un pedido
           // cargado a mano quedaba sin precio y no sumaba).
-          const totalCalc = clean.reduce((a, i) => a + (i.cantidad || 0) * (i.precio || 0), 0);
+          const totalCalc = clean.reduce((a, i) => a + (GDO.Lista ? GDO.Lista.montoItem(i) : (i.cantidad || 0) * (i.precio || 0)), 0);
           const data = {
             id: p ? p.id : undefined, cliente: cli, direccion: dir,
             localidad: node.querySelector('#f-loc').value.trim(),

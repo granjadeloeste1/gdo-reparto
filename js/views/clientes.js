@@ -433,7 +433,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           ${compras.length ? `<table class="crm-hist"><tbody>${compras.slice(0, 30).map((c) => `
             <tr data-ped="${esc(c.p.id)}" style="cursor:pointer">
               <td style="white-space:nowrap">${fmtD(c.ts)}<div class="small muted">${GDO.UI.esRetiro(c.p) ? '🏪 retiro' : '🚚 envío'}</div></td>
-              <td>${esc((c.p.items || []).map((i) => (i.cantidad || 1) + ' ' + (i.producto || i.nombre || '')).join(', ')) || '<span class="help">Sin detalle</span>'}</td>
+              <td>${esc((c.p.items || []).map((i) => (i.cantidad || 1) + ' ' + (GDO.Lista ? GDO.Lista.nombreItem(i) : (i.producto || i.nombre || ''))).join(', ')) || '<span class="help">Sin detalle</span>'}</td>
               <td style="white-space:nowrap;text-align:right">${GDO.CRM.montoDe(c.p) ? fmtM(GDO.CRM.montoDe(c.p)) : ''}</td>
               <td>${GDO.UI.estadoChip(c.p)}</td>
             </tr>`).join('')}</tbody></table>` : '<div class="empty">Todavía no tiene compras registradas.</div>'}
@@ -635,7 +635,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="crm-unir-lista">${lista.map((p) => `
           <button class="crm-unir-item" data-ped="${esc(p.id)}">
             <b>${esc(p.cliente || 'Sin nombre')}</b>
-            <span>${esc(p.direccion || 'sin dirección')} · ${esc((p.items || []).map((i) => (i.cantidad || 1) + ' ' + (i.producto || i.nombre || '')).join(', ') || 'sin detalle')}</span>
+            <span>${esc(p.direccion || 'sin dirección')} · ${esc((p.items || []).map((i) => (i.cantidad || 1) + ' ' + (GDO.Lista ? GDO.Lista.nombreItem(i) : (i.producto || i.nombre || ''))).join(', ') || 'sin detalle')}</span>
           </button>`).join('')}</div>`,
       footHTML: `<button class="btn btn-ghost" data-cancel>Cerrar</button><button class="btn btn-primary" data-todos>Ponerles la fecha de hoy</button>`,
       onMount(node, close) {

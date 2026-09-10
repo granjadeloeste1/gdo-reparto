@@ -101,18 +101,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const items = p.items || [];
     if (!items.length) return [];
     const cants = items.map((it) => Number(it.cantidad != null ? it.cantidad : it.cant) || 0);
-    const propios = items.map((it, i) => cants[i] * (Number(it.precio) || 0));
+    const propios = items.map((it, i) => (GDO.Lista ? GDO.Lista.montoItem(it) : cants[i] * (Number(it.precio) || 0)));
     // Si TODOS los renglones traen su precio, no hay nada que reconstruir.
     if (items.every((it) => Number(it.precio) > 0)) return propios.map((v) => ({ monto: v, aprox: false }));
     const total = Number(p.totalEstimado) || 0;
     if (!total || !GDO.Lista) return propios.map((v) => ({ monto: v, aprox: false }));
     // Valor de referencia de cada renglón con la lista de hoy.
     const ref = items.map((it, i) => {
-      if (it.precio) return cants[i] * Number(it.precio);
-      const op = GDO.Lista.opcionPara(it.producto || it.nombre || '', p.lista);
+      if (it.precio) return GDO.Lista.montoItem(it);
+      const op = GDO.Lista.opcionPara(GDO.Lista.nombreItem(it), p.lista);
       if (!op) return 0;
+      // Por pieza la planilla cotiza el KILO: el valor son los kilos × ese precio.
       const c = op.kgPor ? cants[i] * op.kgPor : cants[i];
-      return cants[i] * GDO.Lista.precioPorEscalon(op.tiers, c);
+      return c * GDO.Lista.precioPorEscalon(op.tiers, c);
     });
     const suma = ref.reduce((a, v) => a + v, 0);
     if (!suma) return propios.map((v) => ({ monto: v, aprox: false }));
@@ -465,7 +466,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     vs.forEach((v) => {
       const vals = valoresDe(v.p);
       (v.p.items || []).forEach((it, idx) => {
-        const nom = String(it.producto || it.nombre || '').trim();
+        const nom = GDO.Lista ? GDO.Lista.nombreItem(it) : String(it.producto || it.nombre || '').trim();
         if (!nom) return;
         const uni = uniDe(it);
         const k = GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase();
@@ -558,7 +559,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         esRetiro(p) ? 'Retiro en sucursal' : 'Envío a domicilio',
         esRetiro(p) && p.estado === 'entregado' ? 'retirado' : (p.estado || ''),
         localidadDe(p),
-        (p.items || []).map((it) => (it.cantidad || 1) + '× ' + (it.producto || it.nombre || '')).join(' | '),
+        (p.items || []).map((it) => (it.cantidad || 1) + '× ' + (GDO.Lista ? GDO.Lista.nombreItem(it) : (it.producto || it.nombre || ''))).join(' | '),
         uds, Math.round(v.monto), p.origen || 'panel',
       ].map(q).join(';'));
     });

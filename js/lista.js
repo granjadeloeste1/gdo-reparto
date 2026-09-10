@@ -106,11 +106,15 @@ window.GDO = window.GDO || {};
             // Se vende POR PIEZA cuando la unidad secundaria trae un solo escalón
             // con peso fijo: el precio de la planilla es por kilo y cada pieza pesa eso.
             const kgPor = (gi > 0 && tiers.length === 1 && tiers[0].pesoKg > 1) ? tiers[0].pesoKg : 0;
+            const unidad = kgPor ? 'pieza' : u;
             out.push({
-              nombre: row.p,
+              // Las formas SUELTAS (pieza, paquete, kilo) llevan nombre propio: el de
+              // la fila describe la CAJA. Mismo nombre que arma la tienda.
+              nombre: gi > 0 ? nombreOpcion(row.p, unidad, kgPor) : row.p,
+              fila: row.p,                  // el nombre tal cual de la planilla
               marca: tbl.brand || '',
               seccion: sec.title || '',
-              unidad: kgPor ? 'pieza' : u,
+              unidad: unidad,
               kgPor: kgPor,
               tiers: tiers,
               min: /TROZADO/i.test(sec.title || '') ? 5 : 0,   // el trozado es por 5 kg mínimo
@@ -137,7 +141,8 @@ window.GDO = window.GDO || {};
   function unidadDeVariedad(v) {
     const t = String(v || '').trim();
     if (!t) return 'unidad';
-    const m = /^\s*\d+(?:[.,]\d+)?\s*([a-zá-úñ]+)/i.exec(t);
+    // El número es opcional: "PIEZA ENTERA…" y "Caja de 20 kg" también dicen la unidad.
+    const m = /^\s*(?:\d+(?:[.,]\d+)?\s*)?([a-zá-úñ]+)/i.exec(t);
     if (!m) return 'unidad';                       // un sabor, no una unidad
     const u = m[1].toLowerCase();
     return SINONIMOS[u] || SINONIMOS[u.replace(/e?s$/, '')] || 'unidad';
@@ -266,7 +271,8 @@ window.GDO = window.GDO || {};
     bolsa: 'bolsa', bolsas: 'bolsa',
     pieza: 'pieza', piezas: 'pieza',
   };
-  const RE_ENVASE_UNO = /\(\s*1\s*(kgs?|kilos?|cajones?|caj[oó]n|cajas?|maples?|paquetes?|bandejas?|bolsas?|piezas?|unidad(?:es)?)\s*\)\s*$/i;
+  // También "(1 Caja x 80 unidades)": la caja de tequeños no son 2 "unidades".
+  const RE_ENVASE_UNO = /\(\s*1\s*(kgs?|kilos?|cajones?|caj[oó]n|cajas?|maples?|paquetes?|bandejas?|bolsas?|piezas?|unidad(?:es)?)(?:\s*x\s*\d+\s*unidad(?:es)?)?\s*\)\s*$/i;
   function unidadDeItem(it) {
     if (!it) return '';
     const cruda = String(it.unidad || it.u || '').trim().toLowerCase();
@@ -296,11 +302,80 @@ window.GDO = window.GDO || {};
     if (it.kg) return Number(it.kg) || 0;
     const c = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
     if (!c) return 0;
-    const u = String(it.unidad || '').toLowerCase();
+    const u = unidadDeItem(it);
     if (u === 'kg') return c;
-    const m = String(it.producto || it.nombre || '').toUpperCase().match(/(\d+(?:[.,]\d+)?)\s*KGS?\b/);
+    // "($7700 kg)" es un PRECIO por kilo, no un peso: sin esto, 3 bondiolas de la
+    // minorista daban 23.100 kg.
+    const nom = String(it.producto || it.nombre || '').toUpperCase().replace(/\$\s*[\d.,]+\s*(KGS?|KILOS?)?/g, ' ');
+    // Lo que se pide SUELTO no pesa lo que la caja del nombre: un paquete de
+    // "PAPA … X 15 KG (6 X 2,5 KG)" son 2,5 kg, y una pieza de "BONDIOLA … X CAJA
+    // DE 20 KG" no son 20.
+    if (u === 'pieza' || u === 'paquete') {
+      const env = /\(\s*\d+\s*X\s*(\d+(?:[.,]\d+)?)\s*KGS?\s*\)/.exec(nom);
+      if (env) return c * (parseFloat(env[1].replace(',', '.')) || 0);
+      if (/\b(CAJAS?|CAJ[OÓ]N(ES)?|BOLSAS?)\s*(DE\s*)?\d/.test(nom)) return 0;
+    }
+    const m = nom.match(/(\d+(?:[.,]\d+)?)\s*KGS?\b/);
     if (m) return c * (parseFloat(m[1].replace(',', '.')) || 0);
     return 0;
+  }
+
+  /* NOMBRE de la forma SUELTA de pedir un producto (pieza, paquete, kilo).
+     COPIA de nombreOpcion() de gdo-tienda/index.html: si se cambia una, cambiar
+     la otra. El nombre de la fila describe la CAJA ("BONDIOLA … X CAJA DE 20
+     KG"); si viaja tal cual, la comanda dice "3 piezas · … X CAJA DE 20 KG" y se
+     preparan 3 cajas en vez de 3 piezas. */
+  function nombreOpcion(nombre, unidad, kgPor) {
+    const s = String(nombre || '');
+    if (s.indexOf(' · ') >= 0) return s;                       // ya convertido
+    const inner = /\(\s*\d+\s*X\s*(\d+(?:[.,]\d+)?)\s*(KGS?|UNI(?:DADES)?)\s*\)/i.exec(s);
+    let t = s.replace(/\s*\([^)]*\d[^)]*\)/g, '')
+      .replace(/\s*\bX?\s*(?:CAJA|CAJ[OÓ]N|BOLSA)\s*(?:DE\s*)?\d+(?:[.,]\d+)?\s*KGS?\b/i, '')
+      .replace(/\s*\bX?\s*\d+(?:[.,]\d+)?\s*KGS?\b/i, '');
+    if (inner) t = t.replace(/\s*\bX?\s*\d+\s*UNIDADES?\b/i, '');
+    t = t.replace(/\s+/g, ' ').replace(/\s*\bX\s*$/i, '').trim();
+    let suf;
+    if (kgPor) suf = 'PIEZA SUELTA (~' + kgPor + ' KG)';
+    else if (unidad === 'kg') suf = 'POR KG';
+    else if (inner) suf = String(unidad).toUpperCase() + ' DE ' + inner[1] + (/^K/i.test(inner[2]) ? ' KG' : ' UNIDADES');
+    else suf = 'POR ' + String(unidad).toUpperCase();
+    return t + ' · ' + suf;
+  }
+
+  // Opciones de una lista sin esperar la red (de la copia guardada, si hay).
+  function opsDe(lista) {
+    const c = cat(lista);
+    if (!c.ops) { const g = leerCache(c); if (g) c.ops = c.aplanar(g.data); }
+    return c.ops || [];
+  }
+
+  /* Nombre para MOSTRAR un renglón. Los pedidos guardados antes del arreglo
+     traen el nombre de la fila ("BONDIOLA … X CAJA DE 20 KG") aunque se hayan
+     pedido por pieza: se busca en la lista la forma suelta con esa unidad y se
+     muestra su nombre. Sin tocar los pedidos guardados. */
+  function nombreItem(it) {
+    const nom = String((it && (it.producto || it.nombre)) || '').trim();
+    if (!nom || nom.indexOf(' · ') >= 0) return nom;
+    const u = unidadDeItem(it);
+    const op = opsDe('mayorista').find((o) => o.fila && o.fila !== o.nombre && o.fila === nom && o.unidad === u);
+    if (op) return op.nombre;
+    if (u === 'pieza' && /\b(CAJAS?|CAJ[OÓ]N(ES)?|BOLSAS?)\s*(DE\s*)?\d/i.test(nom)) {
+      const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
+      return nombreOpcion(nom, 'pieza', (it.kg && cant) ? Math.round(it.kg / cant) : 0);
+    }
+    return nom;
+  }
+
+  /* PLATA de un renglón: cantidad × precio, porque `precio` es por la unidad del
+     renglón. Excepción: los renglones POR PIEZA guardados antes del 2026-09-10
+     traían el precio del KILO (y no traen precioKg): 3 piezas × $6.400 daba
+     $19.200 cuando eran 9 kg × $6.400 = $57.600. */
+  function montoItem(it) {
+    if (!it) return 0;
+    const c = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
+    const p = Number(it.precio) || 0;
+    if (p && it.kg && it.precioKg == null && unidadDeItem(it) === 'pieza') return p * (Number(it.kg) || 0);
+    return c * p;
   }
 
   /* Busca el producto de un renglón de pedido en los catálogos (primero donde
@@ -322,16 +397,20 @@ window.GDO = window.GDO || {};
   // Cómo queda una opción convertida en renglón de pedido, con la cantidad dada.
   function renglon(op, cant) {
     const c = Number(cant) || 0;
+    // OJO: el escalón de precio se busca con la cantidad EN LA UNIDAD EN QUE SE
+    // VENDE (5 cajas, 60 kg), no en kilos — salvo en lo que se vende por pieza,
+    // donde la planilla cotiza por kilo.
+    const pu = precioPorEscalon(op.tiers, op.kgPor ? c * op.kgPor : c);
     const base = {
       producto: op.nombre + (op.marca ? ' (' + op.marca + ')' : ''),
       cantidad: c,
       unidad: op.unidad,
-      // OJO: el escalón de precio se busca con la cantidad EN LA UNIDAD EN QUE SE
-      // VENDE (5 cajas, 60 kg), no en kilos — salvo en lo que se vende por pieza,
-      // donde la planilla cotiza por kilo.
-      precio: precioPorEscalon(op.tiers, op.kgPor ? c * op.kgPor : c),
+      // `precio` es por la unidad del renglón (cantidad × precio = total): en lo
+      // que va por pieza es el de la PIEZA, y el del kilo va aparte.
+      precio: op.kgPor ? pu * op.kgPor : pu,
     };
-    base.kg = kgDeItem(base) || null;
+    if (op.kgPor) base.precioKg = pu;
+    base.kg = (op.kgPor ? c * op.kgPor : kgDeItem(base)) || null;
     return base;
   }
 
@@ -389,6 +468,7 @@ window.GDO = window.GDO || {};
   GDO.Lista = {
     prepDe, PREPS, unidadDeItem, prepConTrabajo, prepRecargo, RECARGO_KG, opcionPara,
     cargar, buscar, renglon, precioPorEscalon, etiqueta, plural, kgDeItem,
+    nombreOpcion, nombreItem, montoItem,
     UNIDADES: TODAS,
     opciones: () => _opciones || [],
     hay: () => !!(_opciones && _opciones.length),

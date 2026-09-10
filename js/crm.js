@@ -118,6 +118,7 @@ window.GDO = window.GDO || {};
   function montoDe(p) {
     if (p.totalEstimado) return Number(p.totalEstimado) || 0;
     return (p.items || []).reduce((a, it) => {
+      if (GDO.Lista) return a + GDO.Lista.montoItem(it);   // sabe de los renglones por pieza
       const c = (it.cantidad != null ? it.cantidad : it.cant) || 0;
       return a + c * (Number(it.precio) || 0);
     }, 0);
@@ -383,7 +384,7 @@ window.GDO = window.GDO || {};
     compras.forEach((c) => {
       const vistos = {};
       (c.p.items || []).forEach((it) => {
-        const nom = String(it.producto || it.nombre || '').trim();
+        const nom = GDO.Lista ? GDO.Lista.nombreItem(it) : String(it.producto || it.nombre || '').trim();
         const k = prodKey(nom);
         if (!k || vistos[k]) return;      // una sola vez por pedido
         vistos[k] = 1;
@@ -494,7 +495,7 @@ window.GDO = window.GDO || {};
       if (f.nCompras >= 4 && !dormido(f)) {
         const enUlt2 = {};
         f._compras.slice(-2).forEach((c) => (c.p.items || []).forEach((it) => {
-          enUlt2[prodKey(it.producto || it.nombre || '')] = 1;
+          enUlt2[prodKey(GDO.Lista ? GDO.Lista.nombreItem(it) : (it.producto || it.nombre || ''))] = 1;
         }));
         const cayo = f.habituales.filter((h) => !enUlt2[h.key]);
         if (cayo.length) {

@@ -38,6 +38,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      sumas absurdas como "27 u + 1 un"), y si la unidad guardada no dice nada
      pero el nombre declara el envase ("… (1 caja)"), esa es la unidad real. */
   const uniDe = (it) => (GDO.Lista ? GDO.Lista.unidadDeItem(it) : String((it && (it.unidad || it.u)) || '').trim());
+  /* NOMBRE del producto. Lo que se pide suelto (una pieza de bondiola) tiene que
+     decirlo: con el nombre de la fila ("… X CAJA DE 20 KG") la comanda mandaba a
+     preparar cajas en vez de piezas. Ver GDO.Lista.nombreItem. */
+  const nomDe = (it) => (GDO.Lista ? GDO.Lista.nombreItem(it) : String((it && (it.producto || it.nombre)) || '').trim());
   const largo = (isoStr) => {
     if (!isoStr) return '';
     const d = new Date(isoStr + 'T00:00:00');
@@ -77,7 +81,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const g = {};
     list.forEach((p) => {
       (p.items || []).forEach((it) => {
-        const nom = String(it.producto || it.nombre || '').trim();
+        const nom = nomDe(it);
         if (!nom) return;
         const uni = uniDe(it);
         const clave = GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase();
@@ -125,7 +129,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const kg = uni.toLowerCase() === 'kg' ? 0 : kgDe(it);
     const prep = String(it.preparacion || '').trim();
     return nUm(cant) + ' ' + unidadTxt(uni, cant) + (kg ? ' (' + nUm(kg) + ' kg)' : '')
-      + ' · ' + String(it.producto || it.nombre || '')
+      + ' · ' + nomDe(it)
       + (prep ? ' — ✂️ ' + prep : '');
   };
 
@@ -325,7 +329,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (!(p.items || []).length) { filas.push(base.concat(['(sin detalle)', '', '', '', '', ''], cola)); return; }
       (p.items || []).forEach((it) => {
         filas.push(base.concat([
-          it.producto || it.nombre || '',
+          nomDe(it),
           String(it.preparacion || '').trim(),
           (it.cantidad != null ? it.cantidad : it.cant) || 0,
           unidadTxt(uniDe(it), Number(it.cantidad != null ? it.cantidad : it.cant) || 0),
