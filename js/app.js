@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v77';
+  const VERSION = 'v78';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -18,6 +18,9 @@ window.GDO = window.GDO || {};
       { hash: '#/rutas', ic: '🗺️', t: 'Rutas' },
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
       { hash: '#/club', ic: '⭐', t: 'GDO Club' },
+      // Métricas va DESPUÉS del Club a propósito: la barra de abajo del celular
+      // muestra los 5 primeros, y el Club se usa en el mostrador todos los días.
+      { hash: '#/metricas', ic: '📈', t: 'Métricas' },
       { hash: '#/promos', ic: '🖼️', t: 'Promos de la tienda' },
       { hash: '#/usuarios', ic: '👥', t: 'Usuarios y roles' },
       { hash: '#/vehiculos', ic: '🚚', t: 'Vehículos' },
@@ -160,6 +163,7 @@ window.GDO = window.GDO || {};
       case '#/pedidos': return V.pedidos(c);
       case '#/rutas': return V.rutas(c);
       case '#/clientes': return Store.puedeCRM() ? V.clientes(c) : V.pedidos(c);
+      case '#/metricas': return rol === 'admin' ? V.metricas(c) : V.pedidos(c);
       case '#/club': return (rol === 'admin' || rol === 'cajero') ? V.club(c) : V.pedidos(c);
       case '#/promos': return Store.puedePromos() ? V.promos(c) : V.pedidos(c);
       case '#/usuarios': return rol === 'admin' ? V.usuarios(c) : V.pedidos(c);
@@ -216,7 +220,7 @@ window.GDO = window.GDO || {};
 
   function titleFor(hash, rol) {
     if (hash.startsWith('#/rutas/')) return 'Armador de ruta';
-    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/club': 'GDO Club', '#/promos': 'Promos de la tienda', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
+    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/metricas': 'Métricas', '#/club': 'GDO Club', '#/promos': 'Promos de la tienda', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
     return map[hash] || 'Granja del Oeste';
   }
 

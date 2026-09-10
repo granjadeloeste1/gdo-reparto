@@ -102,7 +102,8 @@ window.GDO = window.GDO || {};
     const f = p.fechaEntrega || (p.diaEntrega && GDO.UI ? GDO.UI.proximoDiaFecha(p.diaEntrega) : '');
     if (f) { const t = Date.parse(f + 'T12:00:00'); if (!isNaN(t)) return t; }
     if (hist[0] && hist[0].ts) return hist[0].ts;
-    return p.creado || null;
+    // `ts` es el alta que escribe la tienda online (equivale a `creado`).
+    return p.creado || p.ts || null;
   }
 
   // Pedidos que la app no puede ubicar en el tiempo: no suman al historial ni al
@@ -350,6 +351,26 @@ window.GDO = window.GDO || {};
       let mejor = null;
       Object.keys(cont).forEach((d) => { if (mejor === null || cont[d] > cont[mejor]) mejor = d; });
       if (mejor !== null && cont[mejor] / ult.length >= 0.5) g.diaHabitual = Number(mejor);
+    }
+
+    /* CÓMO RECIBE LOS PEDIDOS: cuántos se le llevaron a domicilio y cuántos pasó
+       a buscar por el local. Sirve para dos cosas concretas: saber a quién hay
+       que rutearle (y a quién no) y, en el que retira, QUÉ DÍA suele venir —
+       ese es el día en el que conviene tenerle la mercadería lista y el mejor
+       momento para ofrecerle algo. */
+    const retiros = compras.filter((c) => c.p.modalidad === 'retiro');
+    g.nRetiros = retiros.length;
+    g.nEnvios = compras.length - g.nRetiros;
+    g.modalidadHabitual = !compras.length ? '' : (g.nRetiros > g.nEnvios ? 'retiro' : (g.nEnvios > g.nRetiros ? 'envio' : 'mixto'));
+    g.ultimoRetiro = retiros.length ? retiros[retiros.length - 1].ts : null;
+    // Día de la semana en el que suele pasar a retirar (si repite en la mitad o más).
+    g.diaRetiroHabitual = null;
+    if (retiros.length >= 2) {
+      const cr = {};
+      retiros.slice(-8).forEach((c) => { const d = new Date(c.ts).getDay(); cr[d] = (cr[d] || 0) + 1; });
+      let mej = null;
+      Object.keys(cr).forEach((d) => { if (mej === null || cr[d] > cr[mej]) mej = d; });
+      if (mej !== null && cr[mej] / Math.min(retiros.length, 8) >= 0.5) g.diaRetiroHabitual = Number(mej);
     }
 
     // Plata

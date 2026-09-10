@@ -195,6 +195,18 @@ window.GDO = window.GDO || {};
   // Vuelca los pedidos cargados por la tienda online (cola INBOX) hacia la
   // base de la app. Devuelve true si entró algún pedido nuevo. En producción
   // esto lo hace un listener de Firestore sobre la colección de pedidos.
+  // Texto del aviso de pedido nuevo de la tienda. Un pedido de RETIRO no lleva
+  // chofer: lo que hay que hacer es prepararlo para el día que el cliente pasa.
+  function msgPedidoTienda(p) {
+    const quien = (p && p.cliente) || 'cliente';
+    if (p && p.modalidad === 'retiro') {
+      const f = p.fechaEntrega || '';
+      const dia = f && GDO.UI ? (GDO.UI.diaSemanaDe(f) + ' ' + GDO.UI.fmtFecha(f)) : (p.diaEntrega || '');
+      return '🏪 Nuevo pedido para RETIRO en sucursal: ' + quien + (dia ? ' — pasa el ' + dia : '');
+    }
+    return '🛒 Nuevo pedido de la tienda online: ' + quien + ' — falta asignar chofer';
+  }
+
   function drainInbox(d) {
     let inbox = [];
     try { inbox = JSON.parse(localStorage.getItem(INBOX) || '[]'); } catch (e) { inbox = []; }
@@ -206,9 +218,14 @@ window.GDO = window.GDO || {};
         id: o.id, cliente: o.cliente || 'Cliente', direccion: o.direccion || '',
         localidad: o.localidad || '', entrecalles: o.entrecalles || '', lat: o.lat == null ? null : o.lat,
         lng: o.lng == null ? null : o.lng, items: Array.isArray(o.items) ? o.items : [],
-        fechaEntrega: o.fechaEntrega || '',
+        fechaEntrega: o.fechaEntrega || '', diaEntrega: o.diaEntrega || '',
         especificaciones: o.especificaciones || '', prioridad: o.prioridad || 'normal',
         formaPago: o.formaPago || '',
+        // Retiro en sucursal vs envío a domicilio. Sin dato = envío (así eran
+        // todos los pedidos hasta ahora). Ver GDO.UI.esRetiro.
+        modalidad: o.modalidad === 'retiro' ? 'retiro' : 'envio',
+        zona: o.zona || '', envio: o.envio || 0, totalEstimado: o.totalEstimado || 0,
+        clienteUid: o.clienteUid || null, puntos: o.puntos || 0,
         estado: 'pendiente', creadoPor: o.creadoPor || null, rutaId: null,
         ventana: o.ventana || '', telefono: o.telefono || '', origen: 'tienda', historia: [],
         creado: o.creado || Date.now(),
@@ -218,7 +235,7 @@ window.GDO = window.GDO || {};
       changed = true;
       d.users.filter((u) => u.roles.includes('admin')).forEach((a) => {
         const n = { id: uid('n'), paraUserId: a.id, leida: false, ts: Date.now(),
-          mensaje: '🛒 Nuevo pedido de la tienda online: ' + (o.cliente || 'cliente') + ' — falta asignar chofer' };
+          mensaje: msgPedidoTienda(nuevo) };
         d.notificaciones.push(n); fsSet('notificaciones', n);
       });
     });
@@ -258,7 +275,7 @@ window.GDO = window.GDO || {};
       const id = 'n_t_' + p.id + '_' + a.id;
       if (db.notificaciones.some((x) => x.id === id)) return;
       const n = { id, paraUserId: a.id, leida: false, ts: Date.now(), tipo: 'cambio', pedidoId: p.id,
-        mensaje: '🛒 Nuevo pedido de la tienda online: ' + (p.cliente || 'cliente') + ' — falta asignar chofer' };
+        mensaje: msgPedidoTienda(p) };
       db.notificaciones.push(n); fsSet('notificaciones', n);
     });
   }
@@ -495,6 +512,60 @@ window.GDO = window.GDO || {};
       return antes - db.pedidos.length;
     },
     pedidosPendientes: () => db.pedidos.filter((p) => p.estado === 'pendiente'),
+
+    // ----- retiro en sucursal -----
+    // Los pedidos de RETIRO no pasan por una ruta ni por el celular del chofer:
+    // el cliente los viene a buscar al local. Por eso el cierre lo hace el
+    // mostrador desde el panel. Queda como 'entregado' (mismo estado que una
+    // entrega) para que cuente igual en el CRM y en las métricas; el detalle
+    // "Retirado en sucursal" queda en la historia del pedido.
+    esRetiro: (p) => !!(p && p.modalidad === 'retiro'),
+    pedidosRetiro: () => db.pedidos.filter((p) => p.modalidad === 'retiro'),
+    marcarRetirado(id, quienRecibe) {
+      const p = db.pedidos.find((x) => x.id === id);
+      if (!p) return null;
+      p.estado = 'entregado';
+      p.modalidad = 'retiro';
+      p.rutaId = null;
+      p.historia = p.historia || [];
+      p.historia.push({ ts: Date.now(), est: 'entregado',
+        detalle: 'Retirado en sucursal' + (quienRecibe ? ' por ' + quienRecibe : ''),
+        por: db.session ? db.session.userId : null });
+      persist(db); fsSet('pedidos', p);
+      return p;
+    },
+    // Cambia envío ⇄ retiro. Al pasar a RETIRO se lo saca de cualquier ruta (ya
+    // no hay nada que repartir); al pasar a ENVÍO queda pendiente y disponible
+    // para el armado de rutas, con la dirección/fecha que se le carguen.
+    setModalidad(id, modalidad, extra) {
+      const p = db.pedidos.find((x) => x.id === id);
+      if (!p) return null;
+      const nueva = modalidad === 'retiro' ? 'retiro' : 'envio';
+      const antes = p.modalidad === 'retiro' ? 'retiro' : 'envio';
+      if (nueva === 'retiro' && p.rutaId) {
+        const r = db.rutas.find((x) => x.id === p.rutaId);
+        if (r) {
+          r.pedidoIds = (r.pedidoIds || []).filter((x) => x !== id);
+          if (Array.isArray(r.orden)) r.orden = r.orden.filter((x) => x !== id);
+          if (r.coords) delete r.coords[id];
+          if (r.progreso) delete r.progreso[id];
+          if (r.demoraPorId) delete r.demoraPorId[id];
+          fsSet('rutas', r);
+        }
+        p.rutaId = null; p.salteado = false;
+        if (!['entregado', 'no_entregado'].includes(p.estado)) p.estado = 'pendiente';
+      }
+      Object.assign(p, extra || {});
+      p.modalidad = nueva;
+      if (antes !== nueva) {
+        p.historia = p.historia || [];
+        p.historia.push({ ts: Date.now(), est: 'modalidad',
+          detalle: nueva === 'retiro' ? 'Pasó a retiro en sucursal' : 'Pasó a envío a domicilio',
+          por: db.session ? db.session.userId : null });
+      }
+      persist(db); fsSet('pedidos', p);
+      return p;
+    },
 
     // Reabre un pedido (p. ej. uno marcado "no entregado") para volver a
     // asignarlo: lo saca de su ruta actual y lo deja "pendiente" en el tablero,

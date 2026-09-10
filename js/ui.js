@@ -88,6 +88,30 @@ window.GDO = window.GDO || {};
     return new Date(ts).toLocaleDateString('es-AR');
   }
 
+  /* ---------- Modalidad del pedido: envío a domicilio o retiro en sucursal ----------
+     Un pedido SIN el campo `modalidad` es de ENVÍO: así se comportaban todos los
+     pedidos hasta ahora, y no hay que tocar nada de lo ya cargado.
+     Los de RETIRO no entran nunca al armado de rutas (no hay nada que rutear),
+     pero sí figuran en el tablero, en Pedidos, en la ficha del cliente y en las
+     métricas: son ventas iguales que las demás. */
+  const esRetiro = (p) => !!(p && p.modalidad === 'retiro');
+  const modalidadDe = (p) => (esRetiro(p) ? 'retiro' : 'envio');
+  const MODALIDAD_CHIP = {
+    retiro: '<span class="chip chip-retiro">🏪 Retiro en sucursal</span>',
+    envio: '<span class="chip chip-envio">🚚 Envío a domicilio</span>',
+  };
+  const MODALIDAD_T = { retiro: 'Retiro en sucursal', envio: 'Envío a domicilio' };
+  const modalidadChip = (p) => MODALIDAD_CHIP[modalidadDe(p)];
+
+  /* Fecha EFECTIVA del pedido (ISO): la cargada, o la derivada del día que el
+     cliente eligió en la tienda (próximo ese día). En un pedido de retiro es el
+     día que el cliente dijo que pasa a buscarlo; en uno de envío, el de entrega.
+     Es UN solo campo a propósito: así el orden de la lista, el CRM y las métricas
+     leen siempre lo mismo y solo cambia la palabra que se muestra. */
+  function fechaEfectiva(p) {
+    return (p && p.fechaEntrega) || (p && p.diaEntrega ? proximoDiaFecha(p.diaEntrega) : '');
+  }
+
   const ESTADO_CHIP = {
     pendiente: '<span class="chip chip-pend">Pendiente</span>',
     asignado: '<span class="chip chip-asig">Asignado</span>',
@@ -96,6 +120,13 @@ window.GDO = window.GDO || {};
     no_entregado: '<span class="chip chip-no">✕ No entregado</span>',
     salteado: '<span class="chip chip-salt">↷ Salteado</span>',
   };
+  /* Chip de estado que entiende la modalidad: en un pedido de retiro, "entregado"
+     se lee RETIRADO (el cliente lo pasó a buscar, no se lo llevó nadie). */
+  function estadoChip(p) {
+    if (!p) return '';
+    if (esRetiro(p) && p.estado === 'entregado') return '<span class="chip chip-entreg">✓ Retirado</span>';
+    return ESTADO_CHIP[p.estado] || p.estado || '';
+  }
   const ROL_CHIP = {
     admin: '<span class="chip chip-rol">Administrador</span>',
     vendedor: '<span class="chip chip-rol vendedor">Vendedor</span>',
@@ -103,5 +134,6 @@ window.GDO = window.GDO || {};
     cajero: '<span class="chip chip-rol cajero">Cajero</span>',
   };
 
-  GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe, ESTADO_CHIP, ROL_CHIP };
+  GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
+    ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, fechaEfectiva };
 })();

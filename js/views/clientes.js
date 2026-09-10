@@ -360,6 +360,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div><span class="n">${f.total ? fmtM(f.total) : '—'}</span><span class="l">total comprado</span></div>
         </div>
 
+        ${f.nCompras ? `<div class="crm-bloque">
+          <h4>Cómo recibe los pedidos</h4>
+          <div class="crm-prods">
+            <span class="chip chip-envio">🚚 Envío a domicilio <b>×${f.nEnvios}</b></span>
+            <span class="chip chip-retiro">🏪 Retiro en sucursal <b>×${f.nRetiros}</b></span>
+          </div>
+          ${f.diaRetiroHabitual != null ? `<div class="help" style="margin-top:8px">Suele pasar a retirar los <b>${esc(GDO.CRM.DIAS[f.diaRetiroHabitual])}</b>: ese es el día para tenerle el pedido listo.</div>` : ''}
+          ${f.nRetiros && f.ultimoRetiro ? `<div class="help" style="margin-top:4px">Último retiro: <b>${fmtD(f.ultimoRetiro)}</b>.</div>` : ''}
+        </div>` : ''}
+
         <div class="form-grid" style="margin-top:16px">
           <div class="field"><label>Tipo de cliente</label>
             <select id="fi-tipo">
@@ -422,10 +432,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <h4>Historial de pedidos (${compras.length})</h4>
           ${compras.length ? `<table class="crm-hist"><tbody>${compras.slice(0, 30).map((c) => `
             <tr data-ped="${esc(c.p.id)}" style="cursor:pointer">
-              <td style="white-space:nowrap">${fmtD(c.ts)}</td>
+              <td style="white-space:nowrap">${fmtD(c.ts)}<div class="small muted">${GDO.UI.esRetiro(c.p) ? '🏪 retiro' : '🚚 envío'}</div></td>
               <td>${esc((c.p.items || []).map((i) => (i.cantidad || 1) + ' ' + (i.producto || i.nombre || '')).join(', ')) || '<span class="help">Sin detalle</span>'}</td>
               <td style="white-space:nowrap;text-align:right">${GDO.CRM.montoDe(c.p) ? fmtM(GDO.CRM.montoDe(c.p)) : ''}</td>
-              <td>${ESTADO_CHIP[c.p.estado] || ''}</td>
+              <td>${GDO.UI.estadoChip(c.p)}</td>
             </tr>`).join('')}</tbody></table>` : '<div class="empty">Todavía no tiene compras registradas.</div>'}
         </div>`,
       footHTML: `

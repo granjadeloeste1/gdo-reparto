@@ -60,6 +60,9 @@ button{font-family:inherit}
 .chip-entreg{background:#e3f5ea;color:#1d7a44}
 .chip-no{background:#fde4e4;color:#b32020}
 .chip-salt{background:#fff7da;color:#9a7400}
+/* Modalidad del pedido: retiro en sucursal / envío a domicilio */
+.chip-retiro{background:#e8f0fe;color:#1a5fb4;border:1px solid #c3d8f7}
+.chip-envio{background:#fff4e3;color:#b4600a;border:1px solid #f3d9a8}
 .chip-rol{background:var(--negro);color:#fff}
 .chip-rol.vendedor{background:var(--naranja)}
 .chip-rol.repartidor{background:#374151}
@@ -141,6 +144,14 @@ input,select,textarea{
 input:focus,select:focus,textarea:focus{outline:2px solid var(--naranja);border-color:var(--naranja)}
 textarea{resize:vertical;min-height:74px}
 .help{font-size:12px;color:var(--gris)}
+/* Selector de modalidad (envío / retiro) dentro del formulario de pedido */
+.modsel{display:flex;gap:8px;flex-wrap:wrap}
+.modsel button{
+  flex:1;min-width:150px;padding:11px 12px;border:1px solid var(--gris-bd);background:#fff;
+  border-radius:10px;font-size:14px;font-weight:700;color:#374151;cursor:pointer;
+}
+.modsel button.on{border-color:var(--naranja);background:#fff7ef;color:var(--naranja-osc);box-shadow:0 0 0 1px var(--naranja) inset}
+
 .roles-pick{display:flex;gap:8px;flex-wrap:wrap}
 .roles-pick label{display:flex;align-items:center;gap:7px;border:1px solid var(--gris-bd);border-radius:10px;padding:9px 12px;cursor:pointer;font-weight:600}
 .roles-pick input{width:auto}
@@ -417,3 +428,42 @@ textarea{resize:vertical;min-height:74px}
 .pr-seg{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;
   background:#fff;border:1px solid var(--gris-bd);border-radius:10px;padding:6px 12px}
 .pr-seg select{width:auto;min-width:118px;margin:0}
+
+/* ---------- Métricas ---------- */
+.mx-filtros{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.mx-chips{display:flex;gap:7px;flex-wrap:wrap}
+.mx-chips button{
+  border:1px solid var(--gris-bd);background:#fff;color:#374151;border-radius:999px;
+  padding:8px 14px;font-size:13.5px;font-weight:600;cursor:pointer;
+}
+.mx-chips button:hover{border-color:#c9cdd3}
+.mx-chips button.on{background:var(--negro);border-color:var(--negro);color:#fff}
+.mx-fechas{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px}
+.mx-fechas label{display:flex;flex-direction:column;gap:5px;font-size:12.5px}
+.mx-fechas input{min-width:160px}
+.mx-rotulo{font-size:13px;color:var(--gris);font-weight:600}
+
+.mx-tabs{display:flex;gap:4px;flex-wrap:wrap}
+.mx-tabs button{
+  border:0;background:transparent;color:var(--gris);border-radius:9px;
+  padding:8px 12px;font-size:14px;font-weight:700;cursor:pointer;
+}
+.mx-tabs button:hover{background:var(--gris-cl)}
+.mx-tabs button.on{background:#fff7ef;color:var(--naranja-osc);box-shadow:0 0 0 1px var(--naranja) inset}
+
+/* barra proporcional dentro de una celda de tabla */
+.mx-barra{height:6px;background:var(--gris-cl);border-radius:999px;overflow:hidden;margin-top:5px}
+.mx-barra span{display:block;height:100%;background:var(--naranja);border-radius:999px}
+
+/* gráfico de barras verticales (por día / por mes) */
+.mx-graf{display:flex;align-items:flex-end;gap:8px;overflow-x:auto;padding:8px 2px 0;min-height:230px}
+.mx-col{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:38px;flex:1}
+.mx-col .mx-val{font-size:11px;color:var(--gris);font-weight:700;height:14px;white-space:nowrap}
+.mx-bar{width:100%;max-width:46px;height:160px;background:var(--gris-cl);border-radius:8px;display:flex;align-items:flex-end;overflow:hidden}
+.mx-bar span{width:100%;background:linear-gradient(180deg,var(--naranja),var(--naranja-osc));border-radius:8px 8px 0 0;transition:height .25s}
+.mx-col .mx-rot{font-size:11px;color:var(--gris);white-space:nowrap;font-weight:600}
+
+@media (max-width:760px){
+  .mx-bar{height:130px}
+  .mx-col{min-width:34px}
+}

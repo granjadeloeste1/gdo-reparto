@@ -112,7 +112,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // disponibles si se elimina/edita esa ruta o se reabren con "↻ Reasignar".
     // Fecha efectiva de entrega (la cargada o la del día elegido en la tienda).
     const efFecha = (p) => (p && p.fechaEntrega) || (p && p.diaEntrega ? proximoDiaFecha(p.diaEntrega) : '');
-    const elegibles = Store.pedidos().filter((p) =>
+    // RETIRO EN SUCURSAL: nunca entra al armado de rutas. Es una venta que el
+    // cliente viene a buscar al local, así que no hay parada que hacer. Se ve en
+    // el Tablero y en Pedidos con su cartel "🏪 Retiro en sucursal". Si un pedido
+    // de retiro en realidad necesita envío, se lo pasa a envío desde el panel
+    // (botón 🚚) y recién ahí aparece acá.
+    // (si uno quedó dentro de esta ruta de antes, se sigue mostrando para poder destildarlo)
+    const elegibles = Store.pedidos().filter((p) => !GDO.UI.esRetiro(p) || ruta.pedidoIds.includes(p.id)).filter((p) =>
       ruta.pedidoIds.includes(p.id) ||
       (p.estado === 'pendiente' && (!p.rutaId || p.rutaId === ruta.id)) ||
       // Red de seguridad: pedido que quedó apuntando a una ruta que YA NO existe

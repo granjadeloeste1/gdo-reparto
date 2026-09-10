@@ -293,8 +293,16 @@ window.GDO = window.GDO || {};
       const geocoder = new google.maps.Geocoder();
       const dentro = (lat, lng) => lat >= b.minLat && lat <= b.maxLat && lng >= b.minLng && lng <= b.maxLng;
       return await new Promise((resolve) => {
+        // RED DE SEGURIDAD: si la clave de Google rechaza el dominio
+        // (RefererNotAllowedMapError) o la red se corta, el callback del
+        // geocoder NO se llama NUNCA y la promesa queda colgada para siempre.
+        // Eso dejaba el botón "Guardar" del pedido en "Ubicando…" sin salida y
+        // el pedido sin cargarse. A los 6 segundos seguimos con Georef/OSM.
+        let listo = false;
+        const fin = (v) => { if (!listo) { listo = true; resolve(v); } };
+        setTimeout(() => fin(null), 6000);
         geocoder.geocode({ address: q, bounds, region: 'ar', componentRestrictions: { country: 'AR' } }, (results, status) => {
-          if (status !== 'OK' || !results || !results.length) { resolve(null); return; }
+          if (status !== 'OK' || !results || !results.length) { fin(null); return; }
           // Preferimos un resultado dentro de la zona de reparto, pero si la
           // dirección cae AFUERA igual la aceptamos: Google ya está restringido a
           // Argentina y es preciso en todo el AMBA. (Antes la rechazábamos y la
@@ -307,7 +315,7 @@ window.GDO = window.GDO || {};
           (r.address_components || []).forEach((c) => {
             if (!loc && (c.types.indexOf('locality') >= 0 || c.types.indexOf('sublocality') >= 0)) loc = c.long_name;
           });
-          resolve({ lat, lng, display: r.formatted_address, localidad: loc, partido: '', aprox });
+          fin({ lat, lng, display: r.formatted_address, localidad: loc, partido: '', aprox });
         });
       });
     } catch (e) { return null; }

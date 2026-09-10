@@ -2,10 +2,18 @@
 window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 (function () {
   const { Store } = GDO;
-  const { esc, h, toast, modal, confirmDlg, fmtFecha, proximoDiaFecha, diaSemanaDe, ESTADO_CHIP, ROL_CHIP } = GDO.UI;
+  const { esc, h, toast, modal, confirmDlg, fmtFecha, proximoDiaFecha, diaSemanaDe, ESTADO_CHIP, ROL_CHIP,
+          estadoChip, esRetiro, modalidadChip } = GDO.UI;
   // Exponemos el detalle del pedido para poder abrirlo desde otras vistas (rutas) al tocar el pedido.
   GDO.pedidoModal = function (id, after, prefill) { return pedidoModal(id, after, prefill); };
   const go = (hash) => { location.hash = hash; };
+  // Fecha de HOY en formato ISO, con la hora LOCAL (no UTC): con toISOString(),
+  // después de las 21 hs de Argentina el "hoy" saltaba al día siguiente.
+  function isoHoy(d) {
+    const x = d ? new Date(d) : new Date();
+    return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+  }
+  GDO.isoHoy = isoHoy;
 
   /* ---------------- Tablero ---------------- */
   GDO.Views.dashboard = function (c) {
@@ -19,6 +27,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // los días y dejaría de significar nada.
     let sugs = [];
     try { sugs = (GDO.CRM && Store.puedeCRM()) ? GDO.CRM.agendaPartida().hoy : []; } catch (e) { sugs = []; }
+    // RETIROS EN SUCURSAL: no van a ninguna ruta, así que si no tuvieran su propio
+    // lugar en el tablero no se verían hasta que alguien entre a Pedidos. Van
+    // ordenados por el día que el cliente dijo que pasa (lo de hoy, primero).
+    const retiros = peds.filter((p) => esRetiro(p) && p.estado !== 'entregado')
+      .sort((a, b) => {
+        const fa = efFechaEntrega(a), fb = efFechaEntrega(b);
+        if (fa && fb) return fa < fb ? -1 : (fa > fb ? 1 : 0);
+        return fa ? -1 : (fb ? 1 : 0);
+      });
+    const retirosHoy = retiros.filter((p) => efFechaEntrega(p) === isoHoy()).length;
     c.innerHTML = `
       ${sugs.length ? `<div class="crm-aviso" id="d-crm">
         <span class="ic">📞</span>
@@ -30,14 +48,29 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="card kpi naranja"><span class="ic">📦</span><span class="num">${peds.length}</span><span class="lbl">Pedidos totales</span></div>
         <div class="card kpi negro"><span class="ic">🕓</span><span class="num">${cont('pendiente')}</span><span class="lbl">Pendientes de asignar</span></div>
         <div class="card kpi amarillo"><span class="ic">🚚</span><span class="num">${rutasAct.length}</span><span class="lbl">Rutas activas</span></div>
+        <div class="card kpi negro" id="d-kpi-ret" style="cursor:pointer" title="Ver los retiros en sucursal"><span class="ic">🏪</span><span class="num">${retiros.length}</span><span class="lbl">Retiros en sucursal${retirosHoy ? ' · ' + retirosHoy + ' hoy' : ''}</span></div>
         <div class="card kpi rojo"><span class="ic">⚠️</span><span class="num">${cont('no_entregado')}</span><span class="lbl">No entregados</span></div>
       </div>
+      ${retiros.length ? `<div class="panel" id="d-retiros">
+        <div class="panel-h"><h3>🏪 Retiro en sucursal</h3><span class="chip chip-retiro">${retiros.length} pedido${retiros.length === 1 ? '' : 's'} esperando</span></div>
+        <div class="panel-b flush"><div id="d-tabla-ret"></div></div>
+      </div>` : ''}
       <div class="panel">
         <div class="panel-h"><h3>Pedidos recientes</h3><button class="btn btn-primary btn-sm" id="d-new">+ Nuevo pedido</button></div>
         <div class="panel-b flush"><div id="d-tabla"></div></div>
       </div>`;
     // Solo pedidos ACTIVOS (los entregados no ensucian el tablero; quedan guardados y se ven en Pedidos → "Entregado").
     renderPedidosTabla(c.querySelector('#d-tabla'), peds.filter((p) => p.estado !== 'entregado').slice(-6).reverse());
+    // Los retiros van APARTE, con la fecha en la que el cliente dijo que pasa: es
+    // lo que hay que tener preparado en el mostrador, no algo para rutear.
+    const boxRet = c.querySelector('#d-tabla-ret');
+    if (boxRet) renderRetirosTabla(boxRet, retiros.slice(0, 10));
+    const kpiRet = c.querySelector('#d-kpi-ret');
+    if (kpiRet) kpiRet.onclick = () => {
+      const t = c.querySelector('#d-retiros');
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else { go('#/pedidos'); GDO.App.render(); }
+    };
     c.querySelector('#d-new').onclick = () => pedidoModal(null, () => GDO.App.render());
     const crmBox = c.querySelector('#d-crm');
     if (crmBox) crmBox.onclick = () => { go('#/clientes'); GDO.App.render(); };
@@ -49,18 +82,24 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const m = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
     const f = efFechaEntrega(p);
     const L = [];
-    L.push('🛒 *NUEVO PEDIDO MINORISTA*');
+    const ret = esRetiro(p);
+    L.push(ret ? '🏪 *PEDIDO PARA RETIRAR*' : '🛒 *NUEVO PEDIDO MINORISTA*');
     L.push('*Granja del Oeste*');
     L.push('━━━━━━━━━━━━━━');
     L.push('👤 *DATOS DEL CLIENTE*');
     L.push('• *Nombre:* ' + (p.cliente || ''));
     if (p.telefono) L.push('• *Teléfono:* ' + p.telefono);
-    L.push('• *Modalidad:* Envío a domicilio');
-    if (p.zona) L.push('• *Zona:* ' + p.zona);
-    if (f) L.push('• *Día de entrega:* ' + diaSemanaDe(f) + ' ' + fmtFecha(f));
-    L.push('• *Dirección:* ' + (p.direccion || ''));
-    if (p.localidad) L.push('• *Localidad:* ' + p.localidad);
-    if (p.entrecalles) L.push('• *Entre calles:* ' + p.entrecalles);
+    L.push('• *Modalidad:* ' + (ret ? 'Retiro en sucursal' : 'Envío a domicilio'));
+    if (ret) {
+      L.push('• *Retiro en:* Acuña 1334, Villa Tesei');
+      if (f) L.push('• *Día de retiro:* ' + diaSemanaDe(f) + ' ' + fmtFecha(f));
+    } else {
+      if (p.zona) L.push('• *Zona:* ' + p.zona);
+      if (f) L.push('• *Día de entrega:* ' + diaSemanaDe(f) + ' ' + fmtFecha(f));
+      L.push('• *Dirección:* ' + (p.direccion || ''));
+      if (p.localidad) L.push('• *Localidad:* ' + p.localidad);
+      if (p.entrecalles) L.push('• *Entre calles:* ' + p.entrecalles);
+    }
     if (p.formaPago) L.push('• *Forma de pago:* ' + p.formaPago);
     L.push('━━━━━━━━━━━━━━');
     L.push('📦 *DETALLE DEL PEDIDO*');
@@ -129,6 +168,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <option value="en_ruta">En ruta</option><option value="entregado">Entregado</option>
           <option value="no_entregado">No entregado</option><option value="salteado">Salteado</option>
         </select>
+        <select id="p-mod" title="Envío a domicilio o retiro en sucursal">
+          <option value="">Envíos y retiros</option>
+          <option value="envio">🚚 Solo envíos a domicilio</option>
+          <option value="retiro">🏪 Solo retiros en sucursal</option>
+        </select>
         <div class="spacer"></div>
         <a class="btn btn-ghost" href="tienda/index.html" target="_blank">🛒 Tienda online ↗</a>
         <button class="btn btn-ghost" id="p-wsp">📋 WhatsApp del día</button>
@@ -136,7 +180,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-ghost" id="p-import">📥 Importar</button>
         <button class="btn btn-primary" id="p-new">+ Nuevo pedido</button>
       </div>
-      <div class="note">Los pedidos hechos por los clientes en la <b>tienda online</b> entran acá automáticamente como “pendientes”. Solo resta ubicarlos en el mapa y asignarles chofer. El panel muestra los <b>pedidos activos</b>; los <b>entregados</b> quedan guardados (con su comprobante) y los ves eligiendo “Entregado” o “Todos”.</div>
+      <div class="note">Los pedidos hechos por los clientes en la <b>tienda online</b> entran acá automáticamente como “pendientes”. Solo resta ubicarlos en el mapa y asignarles chofer. El panel muestra los <b>pedidos activos</b>; los <b>entregados</b> quedan guardados (con su comprobante) y los ves eligiendo “Entregado” o “Todos”.<br>Los de <b>🏪 retiro en sucursal</b> no entran al armado de rutas: se cierran acá con <b>✓</b> cuando el cliente los pasa a buscar, o se pasan a envío con <b>🚚</b> si hace falta llevárselos.</div>
       <div id="p-bulk" class="toolbar" style="display:none;align-items:center;background:var(--gris-cl);border:1px solid var(--gris-bd);border-radius:10px;padding:8px 12px;margin-bottom:10px">
         <b id="p-bulk-n">0 seleccionados</b>
         <div class="spacer"></div>
@@ -167,6 +211,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (q) list = list.filter((p) => (p.cliente + ' ' + p.direccion + ' ' + (p.localidad || '')).toLowerCase().includes(q));
       if (est === 'activos') list = list.filter((p) => p.estado !== 'entregado');
       else if (est) list = list.filter((p) => p.estado === est);
+      const mod = c.querySelector('#p-mod').value;
+      if (mod === 'retiro') list = list.filter((p) => esRetiro(p));
+      else if (mod === 'envio') list = list.filter((p) => !esRetiro(p));
       // Mantenemos tildado solo lo que se sigue viendo (al cambiar filtro/busqueda).
       const visibles = new Set(list.map((p) => p.id));
       [...sel].forEach((id) => { if (!visibles.has(id)) sel.delete(id); });
@@ -175,6 +222,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     };
     c.querySelector('#p-q').oninput = draw;
     c.querySelector('#p-est').onchange = () => { sel.clear(); draw(); };
+    c.querySelector('#p-mod').onchange = () => { sel.clear(); draw(); };
     c.querySelector('#p-new').onclick = () => pedidoModal(null, draw);
     c.querySelector('#p-ocr').onclick = () => ocrPedidoModal(draw);
     c.querySelector('#p-import').onclick = () => importModal(draw);
@@ -475,12 +523,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   // Fecha de entrega EFECTIVA: la cargada, o la derivada del día elegido en la tienda
   // (próximo ese día). Permite ordenar y mostrar aunque falte la fecha exacta.
-  function efFechaEntrega(p) { return (p && p.fechaEntrega) || (p && p.diaEntrega ? proximoDiaFecha(p.diaEntrega) : ''); }
+  function efFechaEntrega(p) { return GDO.UI.fechaEfectiva(p); }
   // Celda "Entrega": día de la semana (resaltado) + fecha, para armar rutas ordenado.
+  // En un pedido de retiro es el día que el cliente dijo que pasa a buscarlo.
   function celdaEntrega(p) {
     const f = efFechaEntrega(p);
-    if (!f) return '<span class="chip chip-pend" style="font-size:10px">A asignar</span>';
-    return '<b>' + esc(diaSemanaDe(f)) + '</b><div class="small muted">' + fmtFecha(f) + '</div>';
+    if (!f) return '<span class="chip chip-pend" style="font-size:10px">' + (esRetiro(p) ? 'Día a coordinar' : 'A asignar') + '</span>';
+    return '<b>' + esc(diaSemanaDe(f)) + '</b><div class="small muted">' + fmtFecha(f)
+      + (esRetiro(p) ? ' · retira' : '') + '</div>';
   }
   function renderPedidosTabla(box, list, opts) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }
@@ -494,12 +544,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </tr></thead><tbody>${list.map((p) => `
         <tr${checkable && sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
           ${checkable ? `<td><input type="checkbox" data-sel="${p.id}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
-          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
-          <td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : ''}</td>
+          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
+          <td class="small">${esRetiro(p) ? '<span class="muted">🏪 Retira en el local</span>' : esc(p.direccion) + (p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : '')}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${celdaEntrega(p)}</td>
-          <td>${ESTADO_CHIP[p.estado] || p.estado}${asignacionInfo(p)}</td>
+          <td>${estadoChip(p)}${asignacionInfo(p)}</td>
           <td class="t-actions">
+            ${esRetiro(p) && p.estado === 'pendiente' ? `<button class="btn btn-ghost btn-sm" data-retirado="${p.id}" title="Marcar como retirado por el cliente">✓</button>` : ''}
+            ${esRetiro(p) ? `<button class="btn btn-ghost btn-sm" data-modo="${p.id}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>` : ''}
             ${p.estado === 'no_entregado' || p.estado === 'salteado' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
             ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${p.id}" title="Ver comprobante de entrega">🧾</button>` : ''}
             ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
@@ -530,6 +582,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         Store.reasignarPedido(p.id); toast('Pedido reabierto · ya podés reasignarlo', 'ok'); GDO.App.render();
       }, 'Reabrir');
     });
+    box.querySelectorAll('[data-retirado]').forEach((b) => b.onclick = () => retiradoModal(Store.pedido(b.dataset.retirado)));
+    box.querySelectorAll('[data-modo]').forEach((b) => b.onclick = () => modalidadModal(Store.pedido(b.dataset.modo)));
     box.querySelectorAll('[data-asig]').forEach((b) => b.onclick = () => asignacionModal(Store.pedido(b.dataset.asig)));
     box.querySelectorAll('[data-pod]').forEach((b) => b.onclick = () => podModal(Store.pedido(b.dataset.pod)));
     box.querySelectorAll('[data-wpp]').forEach((b) => b.onclick = () => wppModal(Store.pedido(b.dataset.wpp)));
@@ -540,6 +594,45 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       confirmDlg(`¿Eliminar el pedido de "${p.cliente}"?`, () => { Store.deletePedido(p.id); toast('Pedido eliminado', 'ok'); GDO.App.render(); });
     });
   }
+  /* ---- Tabla de RETIROS EN SUCURSAL (tablero) ----
+     Mira otra cosa que la tabla de pedidos: acá no importa la dirección ni el
+     chofer, importa QUÉ hay que preparar y PARA CUÁNDO dijo el cliente que pasa. */
+  function renderRetirosTabla(box, list) {
+    if (!list.length) { box.innerHTML = `<div class="empty">No hay retiros pendientes.</div>`; return; }
+    const hoy = isoHoy();
+    const fmtM = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+    const cuando = (p) => {
+      const f = efFechaEntrega(p);
+      if (!f) return '<span class="chip chip-pend" style="font-size:10px">A coordinar</span>';
+      const marca = f === hoy ? ' <span class="chip chip-retiro" style="font-size:10px">hoy</span>'
+        : (f < hoy ? ' <span class="chip chip-no" style="font-size:10px">vencido</span>' : '');
+      return '<b>' + esc(diaSemanaDe(f)) + '</b> ' + fmtFecha(f) + marca;
+    };
+    box.innerHTML = `<table><thead><tr>
+        <th>Cliente</th><th>Pedido</th><th>Pasa a retirar</th><th>Total</th><th></th>
+      </tr></thead><tbody>${list.map((p) => `
+        <tr>
+          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>
+            ${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}
+            <div class="small muted">${esc(p.telefono || '')}</div></td>
+          <td class="small">${esc(resumenItems(p.items)) || '<span class="muted">Sin detalle</span>'}</td>
+          <td class="small">${cuando(p)}</td>
+          <td class="small">${p.totalEstimado ? fmtM(p.totalEstimado) : '<span class="muted">—</span>'}</td>
+          <td class="t-actions">
+            <button class="btn btn-verde btn-sm" data-retirado="${p.id}" title="El cliente ya lo retiró">✓ Retirado</button>
+            <button class="btn btn-ghost btn-sm" data-modo="${p.id}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>
+            ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+    box.querySelectorAll('[data-retirado]').forEach((b) => b.onclick = () => retiradoModal(Store.pedido(b.dataset.retirado)));
+    box.querySelectorAll('[data-modo]').forEach((b) => b.onclick = () => modalidadModal(Store.pedido(b.dataset.modo)));
+    box.querySelectorAll('[data-wpp]').forEach((b) => b.onclick = () => wppModal(Store.pedido(b.dataset.wpp)));
+    box.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => pedidoModal(b.dataset.edit, () => GDO.App.render()));
+    box.querySelectorAll('[data-ver]').forEach((b) => b.onclick = () => pedidoModal(b.dataset.ver, () => GDO.App.render()));
+  }
+  GDO.Views.renderRetirosTabla = renderRetirosTabla;
+
   const resumenItems = (items) => (items || []).map((i) => `${i.cantidad}× ${i.producto}`).join(', ');
 
   // Si el pedido ya forma parte de un reparto, muestra una carpeta-enlace 🗂️
@@ -581,6 +674,114 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   GDO.Views.asignacionModal = asignacionModal;
+
+  /* ---- Cerrar un pedido de RETIRO: el cliente lo pasó a buscar ----
+     Es el equivalente al "Entregado" del chofer, pero lo hace el mostrador: en
+     un retiro no hay ruta ni celular del repartidor que lo marque. Queda como
+     'entregado' para que cuente como venta en el CRM y en las métricas. */
+  function retiradoModal(p) {
+    if (!p) return;
+    const f = efFechaEntrega(p);
+    modal({
+      title: 'Retiro en sucursal — ' + esc(p.cliente), width: 460,
+      bodyHTML: `
+        <div class="note">Confirmá que <b>${esc(p.cliente)}</b> pasó por el local y se llevó el pedido.
+        ${f ? ' Había quedado para el <b>' + esc(diaSemanaDe(f)) + ' ' + fmtFecha(f) + '</b>.' : ''}</div>
+        <div class="field"><label>¿Quién lo retiró? (opcional)</label>
+          <input id="rt-quien" placeholder="Nombre de quien pasó a buscarlo"/>
+          <span class="help">Queda registrado en el historial del pedido.</span></div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-verde" data-ok>✓ Sí, ya lo retiró</button>`,
+      onMount(node, close) {
+        node.querySelector('[data-cancel]').onclick = close;
+        node.querySelector('[data-ok]').onclick = () => {
+          Store.marcarRetirado(p.id, node.querySelector('#rt-quien').value.trim());
+          toast('Pedido marcado como retirado ✓', 'ok');
+          close(); GDO.App.render();
+        };
+      },
+    });
+  }
+  GDO.Views.retiradoModal = retiradoModal;
+
+  /* ---- Pasar un pedido de RETIRO a ENVÍO (y al revés) ----
+     Pasa seguido: el cliente pidió para retirar y después no puede venir, o el
+     pedido se hizo grande y conviene llevárselo. Al pasar a envío, el pedido
+     entra al armado de rutas como cualquier otro (por eso pide dirección y la
+     ubica en el mapa). Al pasar a retiro, se lo saca de la ruta en la que esté. */
+  function modalidadModal(p, after) {
+    if (!p) return;
+    const aEnvio = esRetiro(p);
+    const f = efFechaEntrega(p);
+    modal({
+      title: aEnvio ? 'Pasar a envío a domicilio' : 'Pasar a retiro en sucursal', width: 560,
+      bodyHTML: aEnvio ? `
+        <div class="note">El pedido de <b>${esc(p.cliente)}</b> está como <b>🏪 retiro en sucursal</b>.
+          Al pasarlo a <b>🚚 envío a domicilio</b> entra en la lista de pedidos para armar la ruta.</div>
+        <div class="form-grid">
+          <div class="field col-2"><label>Dirección de entrega *</label>
+            <input id="md-dir" autocomplete="off" value="${esc(p.direccion || '')}" placeholder="Calle 1234, Localidad"/></div>
+          <div class="field"><label>Localidad</label><input id="md-loc" value="${esc(p.localidad || '')}"/></div>
+          <div class="field"><label>Entre calles</label><input id="md-ec" value="${esc(p.entrecalles || '')}" placeholder="Calle A y Calle B"/></div>
+          <div class="field"><label>Fecha de entrega</label><input id="md-fec" type="date" value="${esc(f)}"/></div>
+          <div class="field"><label>Ventana horaria</label><input id="md-vent" value="${esc(p.ventana || '')}" placeholder="Ej: 8 a 11 hs"/></div>
+          <div class="field col-2"><label>Ubicación (coordenadas o link de Google Maps)</label>
+            <input id="md-coord" value="${p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
+            <span class="help">Si no la encuentra, pegá acá el link o las coordenadas de Google Maps.</span></div>
+        </div>` : `
+        <div class="note">El pedido de <b>${esc(p.cliente)}</b> pasa a <b>🏪 retiro en sucursal</b>: sale del armado de rutas
+          ${p.rutaId ? '<b>y se quita de la ruta en la que está</b>' : ''}. La dirección se conserva por si más adelante vuelve a ser un envío.</div>
+        <div class="field"><label>¿Qué día pasa a retirar?</label>
+          <input id="md-fec" type="date" value="${esc(f)}"/>
+          <span class="help">Acuña 1334, Villa Tesei · Lun a Sáb de 6:00 a 13:30. Podés dejarlo vacío si todavía no lo definió.</span></div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-ok>${aEnvio ? '🚚 Pasar a envío' : '🏪 Pasar a retiro'}</button>`,
+      onMount(node, close) {
+        node.querySelector('[data-cancel]').onclick = close;
+        if (aEnvio && GDO.Geo && GDO.Geo.attachAutocomplete) {
+          GDO.Geo.attachAutocomplete(node.querySelector('#md-dir'), (it) => {
+            if (it.lat != null) node.querySelector('#md-coord').value = it.lat.toFixed(6) + ', ' + it.lng.toFixed(6);
+            if (it.localidad) node.querySelector('#md-loc').value = it.localidad;
+          }, { provincia: 'Buenos Aires', departamento: 'Hurlingham' });
+        }
+        node.querySelector('[data-ok]').onclick = async () => {
+          const fec = node.querySelector('#md-fec').value;
+          if (!aEnvio) {
+            Store.setModalidad(p.id, 'retiro', { fechaEntrega: fec, diaEntrega: '' });
+            toast('Pedido pasado a retiro en sucursal', 'ok');
+            close(); (after || (() => GDO.App.render()))(); return;
+          }
+          const dir = node.querySelector('#md-dir').value.trim();
+          if (!dir) { toast('Para enviarlo hace falta la dirección', 'err'); return; }
+          let coord = null;
+          const cv = node.querySelector('#md-coord').value.trim();
+          if (cv && GDO.Geo && GDO.Geo.parseLatLng) coord = GDO.Geo.parseLatLng(cv);
+          if (!coord && cv) {
+            const cm = cv.split(',').map((x) => parseFloat(x.trim()));
+            if (cm.length === 2 && !isNaN(cm[0]) && !isNaN(cm[1])) coord = { lat: cm[0], lng: cm[1] };
+          }
+          const btn = node.querySelector('[data-ok]');
+          if (!coord && GDO.Geo) {
+            const prev = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Ubicando…';
+            const g = await GDO.Geo.geocode(dir, node.querySelector('#md-ec').value.trim());
+            btn.disabled = false; btn.textContent = prev;
+            if (g) coord = { lat: g.lat, lng: g.lng };
+            else toast('No se pudo ubicar la dirección: el pedido pasa igual, ubicalo con 📍', 'err');
+          }
+          Store.setModalidad(p.id, 'envio', {
+            direccion: dir,
+            localidad: node.querySelector('#md-loc').value.trim(),
+            entrecalles: node.querySelector('#md-ec').value.trim(),
+            ventana: node.querySelector('#md-vent').value.trim(),
+            fechaEntrega: fec, diaEntrega: '',
+            lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
+          });
+          toast('Pedido pasado a envío ✓ ya podés incluirlo en una ruta', 'ok');
+          close(); (after || (() => GDO.App.render()))();
+        };
+      },
+    });
+  }
+  GDO.Views.modalidadModal = modalidadModal;
 
   /* ---- Ver comprobante de entrega (foto + firma) ---- */
   function podModal(p) {
@@ -712,6 +913,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Valores pre-cargados (p. ej. extraídos de una imagen) para un pedido NUEVO.
     const pf = (!p && prefill) ? prefill : {};
     const items = p ? JSON.parse(JSON.stringify(p.items || [])) : [{ producto: '', cantidad: 1 }];
+    // Modalidad: envío a domicilio (lo de siempre) o retiro en sucursal. Un pedido
+    // ya cargado sin el campo es de envío.
+    let modIni = (p ? p.modalidad : pf.modalidad) === 'retiro' ? 'retiro' : 'envio';
     const m = modal({
       title: p ? 'Editar pedido' : 'Nuevo pedido', width: 680,
       bodyHTML: `
@@ -720,13 +924,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <input id="f-cli" autocomplete="off" value="${esc(p ? p.cliente : (pf.cliente || ''))}" placeholder="Nombre del cliente / comercio — empezá a escribir y te lo busca"/>
             <div id="f-cli-sug" class="crm-ac"></div>
             <span class="help" id="f-cli-info"></span></div>
-          <div class="field col-2"><label>Dirección de entrega *</label><input id="f-dir" value="${esc(p ? p.direccion : (pf.direccion || ''))}" placeholder="Calle 1234, Localidad"/></div>
-          <div class="field"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : (pf.localidad || ''))}" placeholder="Se completa al elegir la dirección"/></div>
-          <div class="field"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : (pf.entrecalles || ''))}" placeholder="Calle A y Calle B"/></div>
+          <div class="field col-2"><label>¿Cómo lo recibe el cliente?</label>
+            <div class="modsel" id="f-mod">
+              <button type="button" data-mod="envio"${modIni === 'envio' ? ' class="on"' : ''}>🚚 Envío a domicilio</button>
+              <button type="button" data-mod="retiro"${modIni === 'retiro' ? ' class="on"' : ''}>🏪 Retiro en sucursal</button>
+            </div>
+            <span class="help" id="f-mod-help"></span></div>
+          <div class="field col-2" id="f-w-dir"><label id="f-lbl-dir">Dirección de entrega *</label><input id="f-dir" value="${esc(p ? p.direccion : (pf.direccion || ''))}" placeholder="Calle 1234, Localidad"/></div>
+          <div class="field" id="f-w-loc"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : (pf.localidad || ''))}" placeholder="Se completa al elegir la dirección"/></div>
+          <div class="field" id="f-w-ec"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : (pf.entrecalles || ''))}" placeholder="Calle A y Calle B"/></div>
           <div class="field"><label>Teléfono</label><input id="f-tel" value="${esc(p ? p.telefono : (pf.telefono || ''))}" placeholder="11 5555-5555"/></div>
-          <div class="field"><label>Fecha de entrega</label><input id="f-fec" type="date" value="${esc(p ? efFechaEntrega(p) : '')}"/>
-            <span class="help">${p && p.diaEntrega ? 'El cliente eligió <b>' + esc(p.diaEntrega) + '</b> · agendada al próximo. ' : ''}Podés cambiarla a mano.</span></div>
-          <div class="field"><label>Ventana horaria</label><input id="f-vent" value="${esc(p ? p.ventana : '')}" placeholder="Ej: 8 a 11 hs"/></div>
+          <div class="field"><label id="f-lbl-fec">Fecha de entrega</label><input id="f-fec" type="date" value="${esc(p ? efFechaEntrega(p) : '')}"/>
+            <span class="help" id="f-help-fec">${p && p.diaEntrega ? 'El cliente eligió <b>' + esc(p.diaEntrega) + '</b> · agendada al próximo. ' : ''}Podés cambiarla a mano.</span></div>
+          <div class="field" id="f-w-vent"><label>Ventana horaria</label><input id="f-vent" value="${esc(p ? p.ventana : '')}" placeholder="Ej: 8 a 11 hs"/></div>
           <div class="field"><label>Prioridad</label>
             <select id="f-prio">
               <option value="baja"${p&&p.prioridad==='baja'?' selected':''}>Baja</option>
@@ -743,7 +953,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>⭐ Puntos GDO (al entregar)</label>
             <input id="f-pts" type="number" min="0" inputmode="numeric" value="${esc(p && p.puntos ? p.puntos : (pf.puntos || ''))}" placeholder="Ej: 12000"/>
             ${(p && p.clienteUid) ? '<span class="help" style="color:#1e8449">🛒 Pedido de un <b>socio del GDO CLUB</b> logueado' + (p.totalEstimado ? ' · el cliente declaró un total de $' + Number(p.totalEstimado).toLocaleString('es-AR') + ' (⚠️ dato del navegador del cliente: verificá el monto REAL antes de cargar los puntos)' : '') + '. Al entregar se le acreditan estos puntos automáticamente (sin escanear).</span>' : '<span class="help">Puntos que suma el socio del Club al confirmar la entrega (el cliente escanea el QR en la puerta). Vacío = no suma.</span>'}</div>
-          <div class="field"><label>Ubicación (coordenadas o link de Google Maps)</label>
+          <div class="field" id="f-w-coord"><label>Ubicación (coordenadas o link de Google Maps)</label>
             <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
             <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>
             <span class="help">Se ubica sola desde la dirección al guardar. Si no la encuentra (o querés el punto exacto): abrí <b>Google Maps</b>, mantené apretado / clic derecho en el lugar, copiá el <b>link</b> o las <b>coordenadas</b> y pegalas acá. También podés tocar “Usar mi ubicación actual” si estás en la puerta.</span></div>
@@ -760,6 +970,28 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
            datos que los anteriores y el historial se junta solo. Además avisa
            "ya compró N veces", que es información útil al tomar el pedido. */
         montarBuscadorCliente(node);
+
+        /* MODALIDAD. Un retiro no tiene ruta ni ventana horaria ni punto en el
+           mapa: lo único que hace falta saber es QUÉ DÍA pasa el cliente a
+           buscarlo. Por eso el formulario cambia de forma según lo que se elija,
+           en vez de pedir siempre todo. */
+        let mod = modIni;
+        const pintarModo = () => {
+          node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.classList.toggle('on', b.dataset.mod === mod));
+          const ret = mod === 'retiro';
+          ['f-w-vent', 'f-w-coord'].forEach((id) => { const el = node.querySelector('#' + id); if (el) el.style.display = ret ? 'none' : ''; });
+          node.querySelector('#f-lbl-dir').innerHTML = ret ? 'Dirección del cliente <span class="muted">(opcional)</span>' : 'Dirección de entrega *';
+          node.querySelector('#f-dir').placeholder = ret ? 'Sirve para la ficha del cliente' : 'Calle 1234, Localidad';
+          node.querySelector('#f-lbl-fec').textContent = ret ? '¿Qué día pasa a retirar?' : 'Fecha de entrega';
+          node.querySelector('#f-help-fec').innerHTML = ret
+            ? 'Acuña 1334, Villa Tesei · Lun a Sáb de 6:00 a 13:30. Si todavía no lo definió, dejalo vacío.'
+            : ((p && p.diaEntrega) ? 'El cliente eligió <b>' + esc(p.diaEntrega) + '</b> · agendada al próximo. Podés cambiarla a mano.' : 'Podés cambiarla a mano.');
+          node.querySelector('#f-mod-help').innerHTML = ret
+            ? '🏪 No entra al armado de rutas: el cliente lo pasa a buscar por el local.'
+            : '🚚 Entra en la lista de pedidos para armar la ruta del día.';
+        };
+        node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; pintarModo(); });
+        pintarModo();
 
         const itemsBox = node.querySelector('#f-items');
         const drawItems = () => {
@@ -823,8 +1055,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         node.querySelector('[data-save]').onclick = async () => {
           const cli = node.querySelector('#f-cli').value.trim();
           const dir = node.querySelector('#f-dir').value.trim();
-          if (!cli || !dir) { toast('Completá cliente y dirección', 'err'); return; }
-          let coord = coordFromInput();
+          const esRet = mod === 'retiro';
+          if (!cli) { toast('Completá el nombre del cliente', 'err'); return; }
+          if (!esRet && !dir) { toast('Completá la dirección de entrega', 'err'); return; }
+          let coord = esRet ? null : coordFromInput();
           // Si se EDITÓ la dirección pero las coordenadas siguen siendo las de antes
           // (el cliente/vendedor tipeó otra dirección sin elegir una sugerencia del
           // autocompletado, o no esperó a que cargue), las coords viejas quedarían
@@ -837,7 +1071,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             coord = null;
             node.querySelector('#f-coord').value = '';
           }
-          if (!coord && GDO.Geo) {
+          // En un retiro no hace falta ubicar nada en el mapa: no hay recorrido.
+          if (!coord && !esRet && GDO.Geo) {
             const btn = node.querySelector('[data-save]');
             const prev = btn.textContent;
             btn.disabled = true; btn.textContent = 'Ubicando…';
@@ -859,9 +1094,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             puntos: parseInt(node.querySelector('#f-pts').value, 10) || 0,
             especificaciones: node.querySelector('#f-esp').value.trim(),
             items: clean, lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
+            modalidad: mod,
             creadoPor: p ? p.creadoPor : Store.current().id,
           };
-          Store.upsertPedido(data);
+          // Si un pedido que YA estaba en una ruta pasa a retiro, hay que sacarlo
+          // de esa ruta (si no, queda una parada fantasma). Eso lo sabe hacer
+          // setModalidad, así que en ese caso guardamos por ahí.
+          if (p && esRetiro(p) !== esRet) {
+            delete data.id;
+            Store.setModalidad(p.id, mod, data);
+          } else {
+            Store.upsertPedido(data);
+          }
           toast(p ? 'Pedido actualizado' : 'Pedido creado', 'ok');
           close(); after && after();
         };
