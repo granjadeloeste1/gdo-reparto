@@ -966,7 +966,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      y kilos (si se vende por pieza). La opción queda guardada en el renglón
      (`_op`) para poder recalcular el precio cuando cambie la cantidad; `_op` NO
      se guarda en el pedido (se saca antes de grabar). */
-  function montarBuscadorProducto(inp, box, items, redraw, onTotal) {
+  function montarBuscadorProducto(inp, box, items, redraw, onTotal, lista) {
     const i = +inp.dataset.itProd;
     const sug = box.querySelector('[data-it-sug="' + i + '"]');
     if (!sug || !GDO.Lista) return;
@@ -1003,8 +1003,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       it._op = null;                      // se escribió a mano: ya no es el de la lista
       const q = inp.value.trim();
       if (q.length < 2) { cerrar(); return; }
-      if (!GDO.Lista.hay()) { GDO.Lista.cargar(() => pintar(GDO.Lista.buscar(q))); cerrar(); return; }
-      pintar(GDO.Lista.buscar(q));
+      const res = GDO.Lista.buscar(q, 8, lista());
+      if (!res.length) { GDO.Lista.cargar(lista(), () => pintar(GDO.Lista.buscar(q, 8, lista()))); cerrar(); return; }
+      pintar(res);
     };
     inp.onblur = () => setTimeout(cerrar, 150);
   }
@@ -1018,6 +1019,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Modalidad: envío a domicilio (lo de siempre) o retiro en sucursal. Un pedido
     // ya cargado sin el campo es de envío.
     let modIni = (p ? p.modalidad : pf.modalidad) === 'retiro' ? 'retiro' : 'envio';
+    /* De qué LISTA es el pedido. Cambia dos cosas: en qué catálogo se buscan los
+       productos (son listas distintas, con precios distintos) y si se cobra el
+       trabajo de preparación, que es solo de la mayorista. Los pedidos que entran
+       por la tienda ya lo traen (`lista`); los que se cargan a mano arrancan en
+       mayorista, que es de donde viene la mayoría. */
+    let listaIni = (p ? p.lista : pf.lista) === 'minorista' ? 'minorista' : 'mayorista';
     const m = modal({
       title: p ? 'Editar pedido' : 'Nuevo pedido', width: 680,
       bodyHTML: `
@@ -1061,6 +1068,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
             <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>
             <span class="help">Se ubica sola desde la dirección al guardar. Si no la encuentra (o querés el punto exacto): abrí <b>Google Maps</b>, mantené apretado / clic derecho en el lugar, copiá el <b>link</b> o las <b>coordenadas</b> y pegalas acá. También podés tocar “Usar mi ubicación actual” si estás en la puerta.</span></div>
+          <div class="field col-2"><label>¿Con qué lista de precios?</label>
+            <div class="modsel" id="f-lista">
+              <button type="button" data-lista="mayorista"${listaIni === 'mayorista' ? ' class="on"' : ''}>🏪 Mayorista</button>
+              <button type="button" data-lista="minorista"${listaIni === 'minorista' ? ' class="on"' : ''}>🏠 Minorista</button>
+            </div>
+            <span class="help" id="f-lista-help"></span></div>
           <div class="field col-2"><label>Pedido (productos)</label>
             <div id="f-items"></div>
             <datalist id="f-unidades">${(GDO.Lista ? GDO.Lista.UNIDADES : ['kg', 'unidad']).map((u) => `<option value="${u}"></option>`).join('')}</datalist>
@@ -1116,6 +1129,25 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
            en la lista se puede escribir a mano y elegir la unidad igual: lo que
            NO puede pasar es que quede una cantidad sin unidad, porque después en
            la comanda nadie sabe si son 20 cajones o 20 kilos. */
+        /* LISTA DE PRECIOS. Al cambiarla se busca en el otro catálogo y se
+           recalculan los precios (el trabajo de preparación solo lo cobra la
+           mayorista). Los productos ya elegidos NO se tocan: si el operador se
+           equivocó de lista, borra el renglón y lo vuelve a elegir. */
+        let lista = listaIni;
+        const pintarLista = () => {
+          node.querySelectorAll('#f-lista [data-lista]').forEach((b) => b.classList.toggle('on', b.dataset.lista === lista));
+          node.querySelector('#f-lista-help').innerHTML = lista === 'minorista'
+            ? '🏠 Precios de mostrador. El corte va <b>sin cargo</b>.'
+            : '🏪 Precios por mayor. La preparación (fileteado, en cubos, trozado) suma <b>$' + (GDO.Lista ? GDO.Lista.RECARGO_KG : 500) + ' el kilo</b>.';
+        };
+        node.querySelectorAll('#f-lista [data-lista]').forEach((b) => b.onclick = () => {
+          lista = b.dataset.lista;
+          pintarLista();
+          if (GDO.Lista) GDO.Lista.cargar(lista);
+          drawItems();
+        });
+        pintarLista();
+
         const itemsBox = node.querySelector('#f-items');
         const fmtP = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
         const totalItems = () => items.reduce((a, it) => a + (Number(it.cantidad) || 0) * (Number(it.precio) || 0), 0);
@@ -1184,7 +1216,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               precio: o.precio, preparacion: libre, nota: '', _op: o._op });
             drawItems(); recalcPrecios(); pintarTotal();
           });
-          itemsBox.querySelectorAll('[data-it-prod]').forEach((el) => montarBuscadorProducto(el, itemsBox, items, drawItems, pintarTotal));
+          // `lista` va como función: el buscador tiene que leer la lista ACTUAL,
+          // no la que estaba cuando se dibujó el renglón.
+          itemsBox.querySelectorAll('[data-it-prod]').forEach((el) => montarBuscadorProducto(el, itemsBox, items, drawItems, pintarTotal, () => lista));
           pintarTotal();
         };
         /* Opciones de corte del producto (suprema, cuarto trasero). Son las
@@ -1195,9 +1229,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (!d) return '';
           const sel = it.preparacion || d.opciones[0];
           if (!it.preparacion) it.preparacion = sel;
+          // El "+$500" solo aparece en la mayorista: en la minorista el corte va
+          // sin cargo (el precio de mostrador ya lo incluye).
           const rec = GDO.Lista.RECARGO_KG;
+          const cobra = (o) => !!GDO.Lista.prepRecargo(it.producto, o, lista);
           return `<div class="it-preps"><span class="lbl">✂️ ${esc(d.titulo)}</span>${
-            d.opciones.map((o) => `<button type="button" class="prepb${o === sel ? ' on' : ''}" data-it-prep="${i}" data-op="${esc(o)}" title="${GDO.Lista.prepConTrabajo(it.producto, o) ? 'Preparación: +$' + rec + ' por kg' : 'Sin cargo'}">${esc(o)}${GDO.Lista.prepConTrabajo(it.producto, o) ? ' <b>+$' + rec + '</b>' : ''}</button>`).join('')
+            d.opciones.map((o) => `<button type="button" class="prepb${o === sel ? ' on' : ''}" data-it-prep="${i}" data-op="${esc(o)}" title="${cobra(o) ? 'Preparación: +$' + rec + ' por kg' : 'Sin cargo'}">${esc(o)}${cobra(o) ? ' <b>+$' + rec + '</b>' : ''}</button>`).join('')
           }<button type="button" class="btn btn-ghost btn-sm" data-it-partir="${i}" title="El cliente quiere una parte de cada forma">➕ otro corte</button></div>`;
         }
         /* Precios de todos los renglones que vinieron de la lista. El ESCALÓN se
@@ -1222,7 +1259,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             // $500 el kilo, igual que en la lista mayorista. El producto tal cual
             // no paga nada.
             x.precio = GDO.Lista.precioPorEscalon(x._op.tiers, x._op.kgPor ? tot * x._op.kgPor : tot)
-              + GDO.Lista.prepRecargo(x.producto, x.preparacion);
+              + GDO.Lista.prepRecargo(x.producto, x.preparacion, lista);
             const pe = itemsBox.querySelector('[data-it-pre="' + i + '"]');
             if (pe) pe.value = x.precio || '';
             refrescarSub(i);
@@ -1248,7 +1285,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         // Traemos la lista de precios (usa la copia guardada al instante y se
         // refresca por atrás). No bloquea nada: si no hay internet ni copia, el
         // producto se escribe a mano y la unidad se elige de la lista fija.
-        if (GDO.Lista) GDO.Lista.cargar(() => { const c = node.querySelector('#f-lista-estado'); if (c) c.textContent = ''; });
+        if (GDO.Lista) GDO.Lista.cargar(lista);
         node.querySelector('[data-cancel]').onclick = close;
 
         // Acepta "lat, lng" o un link de Google Maps pegado (saca las coords).
@@ -1353,6 +1390,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             especificaciones: node.querySelector('#f-esp').value.trim(),
             items: clean, lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
             modalidad: mod,
+            lista: lista,
             // Solo lo pisamos si hay precios cargados: si el pedido se anotó sin
             // precios, no borramos un total que hubiera declarado el cliente.
             totalEstimado: totalCalc || (p ? p.totalEstimado : 0) || 0,

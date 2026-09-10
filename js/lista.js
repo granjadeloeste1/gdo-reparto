@@ -122,44 +122,102 @@ window.GDO = window.GDO || {};
     return out;
   }
 
-  let _opciones = null;
-  let _cargando = null;
+  /* ===== LISTA MINORISTA =====
+     El mismo Apps Script sirve las dos listas: sin parámetro devuelve la
+     MAYORISTA (secciones con tablas de escalones) y con `?lista=minorista`
+     devuelve la MINORISTA, que tiene otra forma: una fila por VARIEDAD
+     ({cat, sub, nombre, desc, variedad, precio}).
 
-  function guardar(secciones) {
-    try { localStorage.setItem(CACHE, JSON.stringify({ ts: Date.now(), data: secciones })); } catch (e) {}
+     En la minorista, un producto cuyas variedades son todas "N kg" se vende POR
+     KILO y esas filas son los escalones (el precio de la fila es el precio POR
+     KILO de ese escalón, no el total). El resto son variedades sueltas: cada una
+     es una forma distinta de pedir el producto ("1 caja", "1 Paquete", un sabor)
+     y la unidad sale de ahí. */
+  const RE_SOLO_KG = /^\s*(\d+(?:[.,]\d+)?)\s*kgs?\s*$/i;
+  function unidadDeVariedad(v) {
+    const t = String(v || '').trim();
+    if (!t) return 'unidad';
+    const m = /^\s*\d+(?:[.,]\d+)?\s*([a-zá-úñ]+)/i.exec(t);
+    if (!m) return 'unidad';                       // un sabor, no una unidad
+    const u = m[1].toLowerCase();
+    return SINONIMOS[u] || SINONIMOS[u.replace(/e?s$/, '')] || 'unidad';
   }
-  function leerCache() {
+  function aplanarMinorista(data) {
+    const filas = (data && data.productos) || [];
+    const porNombre = {};
+    filas.forEach((f) => { (porNombre[f.nombre] = porNombre[f.nombre] || []).push(f); });
+    const out = [];
+    Object.keys(porNombre).forEach((nombre) => {
+      const vs = porNombre[nombre];
+      const seccion = (vs[0].cat || '') + (vs[0].sub ? ' · ' + vs[0].sub : '');
+      const porKilo = vs.length > 0 && vs.every((v) => RE_SOLO_KG.test(v.variedad || ''));
+      if (porKilo) {
+        const tiers = vs.map((v) => ({ min: parseFloat(RE_SOLO_KG.exec(v.variedad)[1].replace(',', '.')), price: Number(v.precio) || 0, pesoKg: 0 }))
+          .sort((a, b) => a.min - b.min);
+        out.push({ nombre: nombre, marca: '', seccion: seccion, unidad: 'kg', kgPor: 0, tiers: tiers,
+          min: /MILANES/i.test(vs[0].cat || '') ? 2 : 0, lista: 'minorista' });
+        return;
+      }
+      vs.forEach((v) => {
+        out.push({
+          nombre: nombre + (v.variedad ? ' (' + v.variedad + ')' : ''),
+          marca: '', seccion: seccion,
+          unidad: unidadDeVariedad(v.variedad), kgPor: 0,
+          tiers: [{ min: 1, price: Number(v.precio) || 0, pesoKg: 0 }],
+          min: 0, lista: 'minorista',
+        });
+      });
+    });
+    return out;
+  }
+
+  // Un catálogo por lista: cada uno con su copia guardada y su carga en curso.
+  const CAT = {
+    mayorista: { url: API, cache: CACHE, aplanar: aplanar, ops: null, cargando: null },
+    minorista: { url: API + '?lista=minorista', cache: CACHE + '_min', aplanar: aplanarMinorista, ops: null, cargando: null },
+  };
+  const cat = (lista) => CAT[lista === 'minorista' ? 'minorista' : 'mayorista'];
+
+  function guardar(c, data) {
+    try { localStorage.setItem(c.cache, JSON.stringify({ ts: Date.now(), data: data })); } catch (e) {}
+  }
+  function leerCache(c) {
     try {
-      const c = JSON.parse(localStorage.getItem(CACHE) || 'null');
-      return (c && Array.isArray(c.data) && c.data.length) ? c : null;
+      const x = JSON.parse(localStorage.getItem(c.cache) || 'null');
+      return (x && x.data) ? x : null;
     } catch (e) { return null; }
   }
 
-  /* Carga la lista. Devuelve una promesa con las opciones. Pinta primero con lo
+  /* Carga una lista. Devuelve una promesa con las opciones. Pinta primero con lo
      guardado (instantáneo) y refresca de la red por atrás si está vieja. */
-  function cargar(onListo) {
-    const c = leerCache();
-    if (c && !_opciones) _opciones = aplanar(c.data);
-    const vieja = !c || (Date.now() - c.ts) > MAX_EDAD;
-    if (!_cargando && vieja) {
-      _cargando = fetch(API + (API.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' })
+  function cargar(listaOrCb, cb) {
+    // Compatible con la forma vieja cargar(onListo): sin lista = mayorista.
+    const lista = (typeof listaOrCb === 'string') ? listaOrCb : 'mayorista';
+    const onListo = (typeof listaOrCb === 'function') ? listaOrCb : cb;
+    const c = cat(lista);
+    const guardado = leerCache(c);
+    if (guardado && !c.ops) c.ops = c.aplanar(guardado.data);
+    const vieja = !guardado || (Date.now() - guardado.ts) > MAX_EDAD;
+    if (!c.cargando && vieja) {
+      c.cargando = fetch(c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' })
         .then((r) => { if (!r.ok) throw 0; return r.json(); })
         .then((data) => {
-          if (!data || !data.length) throw 0;
-          guardar(data);
-          _opciones = aplanar(data);
-          if (onListo) try { onListo(_opciones); } catch (e) {}
-          return _opciones;
+          const ops = c.aplanar(data);
+          if (!ops.length) throw 0;
+          guardar(c, data);
+          c.ops = ops;
+          if (onListo) try { onListo(ops); } catch (e) {}
+          return ops;
         })
-        .catch(() => _opciones || [])
-        .then((r) => { _cargando = null; return r; });
+        .catch(() => c.ops || [])
+        .then((r) => { c.cargando = null; return r; });
     }
     // Si YA hay algo (la copia guardada), se devuelve al instante y la red
     // refresca por atrás. Si no hay nada —la primera vez en este dispositivo—
     // hay que ESPERAR la red: devolver [] de una dejaba el buscador mudo hasta
     // que alguien volviera a abrir el formulario.
-    if (_opciones && _opciones.length) return Promise.resolve(_opciones);
-    return _cargando || Promise.resolve([]);
+    if (c.ops && c.ops.length) return Promise.resolve(c.ops);
+    return c.cargando || Promise.resolve([]);
   }
 
   const norm = (s) => String(s == null ? '' : s).toLowerCase()
@@ -167,11 +225,12 @@ window.GDO = window.GDO || {};
 
   /* Busca por palabras sueltas: "supr cong" encuentra la suprema congelada.
      Ordena poniendo primero lo que empieza con lo escrito. */
-  function buscar(texto, max) {
+  function buscar(texto, max, lista) {
     const q = norm(texto);
-    if (!q || !_opciones) return [];
+    const ops = cat(lista).ops;
+    if (!q || !ops) return [];
     const palabras = q.split(' ').filter(Boolean);
-    const res = _opciones.filter((o) => {
+    const res = ops.filter((o) => {
       const n = norm(o.nombre + ' ' + o.marca + ' ' + o.seccion);
       return palabras.every((p) => n.indexOf(p) >= 0);
     });
@@ -303,7 +362,13 @@ window.GDO = window.GDO || {};
     const d = prepDe(nombre);
     return !!(d && corte && corte !== d.opciones[0]);
   }
-  function prepRecargo(nombre, corte) { return prepConTrabajo(nombre, corte) ? RECARGO_KG : 0; }
+  /* El recargo es de la lista MAYORISTA. En la minorista no se cobra: el precio
+     por kilo del mostrador ya es otro ($11.350 contra $8.500) y ahí el corte va
+     incluido. Por eso hace falta saber de qué lista es el pedido. */
+  function prepRecargo(nombre, corte, lista) {
+    if (lista === 'minorista') return 0;
+    return prepConTrabajo(nombre, corte) ? RECARGO_KG : 0;
+  }
 
   GDO.Lista = {
     prepDe, PREPS, unidadDeItem, prepConTrabajo, prepRecargo, RECARGO_KG,
