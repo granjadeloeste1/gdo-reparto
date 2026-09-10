@@ -39,6 +39,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   let mod = '';              // '' | 'envio' | 'retiro'
   let tab = 'clientes';
   let ordProd = 'cant';      // cant (por unidad) | pedidos | monto
+  let _listasPedidas = false;  // las listas de precios se piden una vez por sesión
 
   // Primera y última fecha con pedidos cargados (para el atajo "Todo"). La
   // última puede ser FUTURA: un pedido pendiente para la semana que viene ya es
@@ -82,6 +83,43 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     { k: 'anio', t: 'Este año' }, { k: 'todo', t: 'Todo' },
   ];
 
+  /* ═══════ PLATA POR PRODUCTO ═══════
+     El total de un PEDIDO siempre se supo (lo manda la tienda en `totalEstimado`).
+     Lo que faltaba era saber cuánto de esa plata es de cada producto: hasta hoy
+     los pedidos guardaban el producto y la cantidad, pero NO el precio de cada
+     renglón. Por eso la columna "Facturado" de Productos venía vacía aunque el
+     KPI de arriba tuviera números — miran datos distintos.
+
+     Desde ahora los pedidos guardan el precio de cada renglón (tienda y panel) y
+     el número es EXACTO. Para los pedidos viejos se reconstruye:
+       1. se valúa cada renglón con la lista de precios de hoy, y
+       2. se ajusta la proporción para que la suma dé EXACTAMENTE el total real
+          del pedido.
+     O sea: el reparto entre productos es aproximado (usa precios de hoy), pero la
+     plata total nunca se inventa ni se pierde. Esas filas se marcan con ~. */
+  function valoresDe(p) {
+    const items = p.items || [];
+    if (!items.length) return [];
+    const cants = items.map((it) => Number(it.cantidad != null ? it.cantidad : it.cant) || 0);
+    const propios = items.map((it, i) => cants[i] * (Number(it.precio) || 0));
+    // Si TODOS los renglones traen su precio, no hay nada que reconstruir.
+    if (items.every((it) => Number(it.precio) > 0)) return propios.map((v) => ({ monto: v, aprox: false }));
+    const total = Number(p.totalEstimado) || 0;
+    if (!total || !GDO.Lista) return propios.map((v) => ({ monto: v, aprox: false }));
+    // Valor de referencia de cada renglón con la lista de hoy.
+    const ref = items.map((it, i) => {
+      if (it.precio) return cants[i] * Number(it.precio);
+      const op = GDO.Lista.opcionPara(it.producto || it.nombre || '', p.lista);
+      if (!op) return 0;
+      const c = op.kgPor ? cants[i] * op.kgPor : cants[i];
+      return cants[i] * GDO.Lista.precioPorEscalon(op.tiers, c);
+    });
+    const suma = ref.reduce((a, v) => a + v, 0);
+    if (!suma) return propios.map((v) => ({ monto: v, aprox: false }));
+    const f = total / suma;                       // para que cierre con lo cobrado
+    return ref.map((v, i) => ({ monto: v * f, aprox: !items[i].precio }));
+  }
+
   /* Cómo se cuenta un "cliente distinto": por teléfono si lo hay (es el dato que
      no se escribe de dos maneras) y si no por el nombre normalizado. Es el mismo
      criterio que usa el CRM para unificar. */
@@ -117,6 +155,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (Store.rolActivo() !== 'admin') {
       c.innerHTML = '<div class="empty">Esta sección es solo para la administración.</div>';
       return;
+    }
+    /* Las listas de precios hacen falta para reconstruir cuánta plata es de cada
+       producto en los pedidos viejos (ver valoresDe). Se piden UNA vez por
+       sesión y, cuando llegan, se vuelve a pintar. */
+    if (GDO.Lista && !_listasPedidas) {
+      _listasPedidas = true;
+      Promise.all([GDO.Lista.cargar('mayorista'), GDO.Lista.cargar('minorista')])
+        .then(() => { if (document.body.contains(c)) GDO.Views.metricas(c); })
+        .catch(() => {});
     }
     const vs = ventas();
     const r = { desde: desde, hasta: hasta };
@@ -416,18 +463,21 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   function agrupaProductos(vs) {
     const g = {};
     vs.forEach((v) => {
-      (v.p.items || []).forEach((it) => {
+      const vals = valoresDe(v.p);
+      (v.p.items || []).forEach((it, idx) => {
         const nom = String(it.producto || it.nombre || '').trim();
         if (!nom) return;
         const uni = uniDe(it);
         const k = GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase();
         const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
-        const r = g[k] || (g[k] = { nombre: nom, porUnidad: {}, cant: 0, kg: 0, monto: 0, _peds: {}, _clis: {} });
+        const r = g[k] || (g[k] = { nombre: nom, porUnidad: {}, cant: 0, kg: 0, monto: 0, aprox: 0, _peds: {}, _clis: {} });
         r.nombre = nom;                    // nos quedamos con la escritura más nueva
         r.porUnidad[uni] = (r.porUnidad[uni] || 0) + cant;
         r.cant += cant;
         r.kg += kgDe(it);
-        r.monto += cant * (Number(it.precio) || 0);
+        const val = vals[idx] || { monto: 0, aprox: false };
+        r.monto += val.monto;
+        if (val.aprox && val.monto) r.aprox++;
         // Por PEDIDO, no por renglón: si un pedido trae el mismo producto en dos
         // renglones, sigue siendo UN pedido que lo lleva.
         r._peds[v.p.id] = 1;
@@ -476,9 +526,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small">${f.kg ? fmtN(Math.round(f.kg * 10) / 10) + ' kg' : '<span class="muted">—</span>'}</td>
           <td>${fmtN(f.pedidos)}</td>
           <td class="small">${fmtN(f.nClientes)}</td>
-          <td>${f.monto ? fmtM(f.monto) : '<span class="muted">—</span>'}</td>
+          <td>${f.monto ? (f.aprox ? '~' : '') + fmtM(f.monto) : '<span class="muted">—</span>'}</td>
         </tr>`).join('')}</tbody></table>
       <div class="help" style="padding:12px 18px;line-height:1.6">
+        ${filas.some((f) => f.aprox) ? '<b>~</b> Los pedidos cargados antes de hoy no guardaban el precio de cada producto, solo el total del pedido. Esos importes se reparten entre los productos con la <b>lista de precios de hoy</b>: la plata total es exacta, lo aproximado es cuánto le toca a cada uno. Los pedidos nuevos ya guardan el precio de cada renglón.<br>' : ''}
         <b>Cantidad pedida</b>: lo que se pidió, sumado <b>en la unidad con la que se cargó</b> (cajones, kg, unidades).
         ${mezclados ? 'Cuando un producto se cargó con unidades distintas se muestran por separado (' + mezclados + ' producto' + (mezclados === 1 ? '' : 's') + ' acá): no se pueden sumar entre sí. ' : ''}
         · <b>Kg declarados</b>: solo los pedidos de la tienda que se venden por pieza traen el peso; si está vacío, ese producto no informa kilos.

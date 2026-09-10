@@ -303,6 +303,22 @@ window.GDO = window.GDO || {};
     return 0;
   }
 
+  /* Busca el producto de un renglón de pedido en los catálogos (primero donde
+     diga el pedido, después en el otro). Sirve para poner precio a los pedidos
+     VIEJOS, que se guardaron sin el precio de cada producto. Devuelve null si no
+     está en ninguna lista o si la lista no se pudo cargar. */
+  function opcionPara(nombre, lista) {
+    const k = (GDO.CRM ? GDO.CRM.prodKey(nombre) : norm(nombre));
+    if (!k) return null;
+    const orden = lista === 'minorista' ? ['minorista', 'mayorista'] : ['mayorista', 'minorista'];
+    for (let i = 0; i < orden.length; i++) {
+      const ops = cat(orden[i]).ops || [];
+      const m = ops.find((o) => (GDO.CRM ? GDO.CRM.prodKey(o.nombre) : norm(o.nombre)) === k);
+      if (m) return m;
+    }
+    return null;
+  }
+
   // Cómo queda una opción convertida en renglón de pedido, con la cantidad dada.
   function renglon(op, cant) {
     const c = Number(cant) || 0;
@@ -371,7 +387,7 @@ window.GDO = window.GDO || {};
   }
 
   GDO.Lista = {
-    prepDe, PREPS, unidadDeItem, prepConTrabajo, prepRecargo, RECARGO_KG,
+    prepDe, PREPS, unidadDeItem, prepConTrabajo, prepRecargo, RECARGO_KG, opcionPara,
     cargar, buscar, renglon, precioPorEscalon, etiqueta, plural, kgDeItem,
     UNIDADES: TODAS,
     opciones: () => _opciones || [],
