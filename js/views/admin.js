@@ -961,6 +961,54 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
 
+  /* ---- Buscador de producto contra la LISTA DE PRECIOS ----
+     Al elegir una opción se completan nombre exacto, unidad, precio del escalón
+     y kilos (si se vende por pieza). La opción queda guardada en el renglón
+     (`_op`) para poder recalcular el precio cuando cambie la cantidad; `_op` NO
+     se guarda en el pedido (se saca antes de grabar). */
+  function montarBuscadorProducto(inp, box, items, redraw, onTotal) {
+    const i = +inp.dataset.itProd;
+    const sug = box.querySelector('[data-it-sug="' + i + '"]');
+    if (!sug || !GDO.Lista) return;
+    const cerrar = () => { sug.innerHTML = ''; sug.classList.remove('on'); };
+
+    const pintar = (lista) => {
+      if (!lista.length) { cerrar(); return; }
+      sug.innerHTML = lista.map((o, k) => {
+        const esc2 = esc(o.nombre + (o.marca ? ' (' + o.marca + ')' : ''));
+        const desde = o.tiers && o.tiers.length ? '$' + Number(o.tiers[o.tiers.length - 1].price).toLocaleString('es-AR') : '';
+        return `<div class="crm-ac-it" data-k="${k}">
+          <b>${esc2}</b>
+          <span>por ${esc(o.unidad)}${o.kgPor ? ' de ' + o.kgPor + ' kg' : ''} · ${esc(o.seccion)}${desde ? ' · desde ' + desde : ''}</span>
+        </div>`;
+      }).join('');
+      sug.classList.add('on');
+      sug.querySelectorAll('[data-k]').forEach((el) => el.onmousedown = (ev) => {
+        ev.preventDefault();
+        const o = lista[+el.dataset.k];
+        const it = items[i];
+        // El mínimo de la lista manda (el trozado se vende por 5 kg).
+        if (o.min && (Number(it.cantidad) || 0) < o.min) it.cantidad = o.min;
+        const r = GDO.Lista.renglon(o, it.cantidad || 1);
+        it.producto = r.producto; it.unidad = r.unidad; it.precio = r.precio; it.kg = r.kg;
+        it._op = o;
+        cerrar();
+        redraw(); if (onTotal) onTotal();
+      });
+    };
+
+    inp.oninput = () => {
+      const it = items[i];
+      it.producto = inp.value;
+      it._op = null;                      // se escribió a mano: ya no es el de la lista
+      const q = inp.value.trim();
+      if (q.length < 2) { cerrar(); return; }
+      if (!GDO.Lista.hay()) { GDO.Lista.cargar(() => pintar(GDO.Lista.buscar(q))); cerrar(); return; }
+      pintar(GDO.Lista.buscar(q));
+    };
+    inp.onblur = () => setTimeout(cerrar, 150);
+  }
+
   /* ---- Modal cargar / editar pedido ---- */
   function pedidoModal(id, after, prefill) {
     const p = id ? Store.pedido(id) : null;
@@ -1013,8 +1061,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
             <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>
             <span class="help">Se ubica sola desde la dirección al guardar. Si no la encuentra (o querés el punto exacto): abrí <b>Google Maps</b>, mantené apretado / clic derecho en el lugar, copiá el <b>link</b> o las <b>coordenadas</b> y pegalas acá. También podés tocar “Usar mi ubicación actual” si estás en la puerta.</span></div>
-          <div class="field col-2"><label>Pedido (productos)</label><div id="f-items"></div>
-            <button class="btn btn-ghost btn-sm" id="f-additem" style="align-self:flex-start;margin-top:6px">+ Agregar producto</button></div>
+          <div class="field col-2"><label>Pedido (productos)</label>
+            <div id="f-items"></div>
+            <datalist id="f-unidades">${(GDO.Lista ? GDO.Lista.UNIDADES : ['kg', 'unidad']).map((u) => `<option value="${u}"></option>`).join('')}</datalist>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px">
+              <button class="btn btn-ghost btn-sm" id="f-additem">+ Agregar producto</button>
+              <span class="help" id="f-items-total"></span>
+            </div>
+            <span class="help" id="f-lista-estado">Escribí el producto y elegilo de la <b>lista de precios</b>: así vienen la unidad (kg, cajón, caja…) y el precio del escalón que corresponde.</span></div>
           <div class="field col-2"><label>Comentarios / especificaciones de entrega</label>
             <textarea id="f-esp" placeholder="Aclaraciones para el repartidor: a quién entregar, accesos, formas de pago, demoras habituales…">${esc(p ? p.especificaciones : (pf.especificaciones || ''))}</textarea></div>
         </div>`,
@@ -1053,20 +1107,87 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; pintarModo(); });
         pintarModo();
 
+        /* RENGLONES DEL PEDIDO. Cada uno lleva producto, CANTIDAD y UNIDAD.
+           La unidad no se adivina: sale de la lista de precios (un cajón de
+           pollo se pide por cajón, la suprema fresca por kg, la congelada por
+           caja de 12 kg). Al elegir el producto del buscador vienen pegados el
+           nombre exacto, la unidad, el precio del escalón que corresponde a esa
+           cantidad y, si se vende por pieza, los kilos. Si el producto no está
+           en la lista se puede escribir a mano y elegir la unidad igual: lo que
+           NO puede pasar es que quede una cantidad sin unidad, porque después en
+           la comanda nadie sabe si son 20 cajones o 20 kilos. */
         const itemsBox = node.querySelector('#f-items');
+        const fmtP = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+        const totalItems = () => items.reduce((a, it) => a + (Number(it.cantidad) || 0) * (Number(it.precio) || 0), 0);
+        const pintarTotal = () => {
+          const t = node.querySelector('#f-items-total');
+          const tot = totalItems();
+          t.innerHTML = tot ? 'Total del pedido: <b>' + fmtP(tot) + '</b> <span class="muted">(con los precios de la lista)</span>' : '';
+        };
         const drawItems = () => {
           itemsBox.innerHTML = items.map((it, i) => `
-            <div style="display:flex;gap:8px;margin-bottom:6px">
-              <input data-it-prod="${i}" placeholder="Producto" value="${esc(it.producto)}" style="flex:1"/>
-              <input data-it-cant="${i}" type="number" min="1" value="${esc(it.cantidad)}" style="width:90px"/>
-              <button class="btn btn-ghost btn-sm" data-it-del="${i}">✕</button>
-            </div>`).join('');
-          itemsBox.querySelectorAll('[data-it-prod]').forEach((el) => el.oninput = (e) => items[+el.dataset.itProd].producto = e.target.value);
-          itemsBox.querySelectorAll('[data-it-cant]').forEach((el) => el.oninput = (e) => items[+el.dataset.itCant].cantidad = +e.target.value);
-          itemsBox.querySelectorAll('[data-it-del]').forEach((el) => el.onclick = () => { items.splice(+el.dataset.itDel, 1); if (!items.length) items.push({ producto: '', cantidad: 1 }); drawItems(); });
+            <div class="it-row" data-it-row="${i}">
+              <div class="it-prod">
+                <input data-it-prod="${i}" autocomplete="off" placeholder="Producto — escribí y elegí de la lista" value="${esc(it.producto)}"/>
+                <div class="crm-ac" data-it-sug="${i}"></div>
+              </div>
+              <input data-it-cant="${i}" type="number" min="0" step="any" value="${esc(it.cantidad)}" title="Cantidad"/>
+              <input data-it-uni="${i}" list="f-unidades" placeholder="unidad" value="${esc(it.unidad || '')}" title="Unidad (kg, cajón, caja…)"/>
+              <input data-it-pre="${i}" type="number" min="0" step="any" value="${esc(it.precio || '')}" placeholder="$ c/u" title="Precio por unidad"/>
+              <button class="btn btn-ghost btn-sm" data-it-del="${i}" title="Quitar">✕</button>
+            </div>
+            <div class="it-sub" data-it-sub="${i}">${subItem(it)}</div>`).join('');
+
+          itemsBox.querySelectorAll('[data-it-cant]').forEach((el) => el.oninput = () => {
+            const i = +el.dataset.itCant, it = items[i];
+            it.cantidad = el.value === '' ? '' : +el.value;
+            // Al cambiar la cantidad puede cambiar el ESCALÓN de precio (5 kg no
+            // vale lo mismo que 60 kg): si el producto vino de la lista, se
+            // recalcula solo.
+            if (it._op && GDO.Lista) {
+              const r = GDO.Lista.renglon(it._op, it.cantidad || 0);
+              it.precio = r.precio; it.kg = r.kg;
+              const pe = itemsBox.querySelector('[data-it-pre="' + i + '"]');
+              if (pe) pe.value = it.precio || '';
+            }
+            refrescarSub(i); pintarTotal();
+          });
+          itemsBox.querySelectorAll('[data-it-uni]').forEach((el) => el.oninput = () => {
+            items[+el.dataset.itUni].unidad = el.value.trim();
+            refrescarSub(+el.dataset.itUni);
+          });
+          itemsBox.querySelectorAll('[data-it-pre]').forEach((el) => el.oninput = () => {
+            items[+el.dataset.itPre].precio = el.value === '' ? 0 : +el.value;
+            refrescarSub(+el.dataset.itPre); pintarTotal();
+          });
+          itemsBox.querySelectorAll('[data-it-del]').forEach((el) => el.onclick = () => {
+            items.splice(+el.dataset.itDel, 1);
+            if (!items.length) items.push({ producto: '', cantidad: 1 });
+            drawItems(); pintarTotal();
+          });
+          itemsBox.querySelectorAll('[data-it-prod]').forEach((el) => montarBuscadorProducto(el, itemsBox, items, drawItems, pintarTotal));
+          pintarTotal();
         };
+        function subItem(it) {
+          const c = Number(it.cantidad) || 0;
+          const uni = GDO.Lista ? GDO.Lista.etiqueta(it.unidad, c) : (it.unidad || 'unidades');
+          const partes = [];
+          if (c) partes.push('<b>' + c + ' ' + esc(uni) + '</b>');
+          // Los kilos solo aportan si la unidad NO es el kilo (ahí ya se dijeron).
+          if (it.kg && String(it.unidad).toLowerCase() !== 'kg') partes.push(it.kg + ' kg');
+          if (it.precio) partes.push(fmtP(it.precio) + ' c/' + esc(it.unidad || 'un') + ' = <b>' + fmtP(c * it.precio) + '</b>');
+          return partes.join(' · ');
+        }
+        function refrescarSub(i) {
+          const s = itemsBox.querySelector('[data-it-sub="' + i + '"]');
+          if (s) s.innerHTML = subItem(items[i]);
+        }
         drawItems();
         node.querySelector('#f-additem').onclick = () => { items.push({ producto: '', cantidad: 1 }); drawItems(); };
+        // Traemos la lista de precios (usa la copia guardada al instante y se
+        // refresca por atrás). No bloquea nada: si no hay internet ni copia, el
+        // producto se escribe a mano y la unidad se elige de la lista fija.
+        if (GDO.Lista) GDO.Lista.cargar(() => { const c = node.querySelector('#f-lista-estado'); if (c) c.textContent = ''; });
         node.querySelector('[data-cancel]').onclick = close;
 
         // Acepta "lat, lng" o un link de Google Maps pegado (saca las coords).
@@ -1141,7 +1262,22 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             if (g) { coord = { lat: g.lat, lng: g.lng }; if (g.localidad && !node.querySelector('#f-loc').value.trim()) node.querySelector('#f-loc').value = g.localidad; }
             else toast('No se pudo ubicar la dirección. El pedido se guarda, ubicalo luego con 📍.', 'err');
           }
-          const clean = items.filter((i) => i.producto.trim());
+          /* Renglones a guardar. Se saca `_op` (la opción de la lista, que solo
+             servía para recalcular el precio mientras se editaba) y se guardan
+             cantidad, UNIDAD, precio y kilos. La unidad es la que después deja
+             que la comanda diga "20 cajones" y no un "20" a secas. */
+          const clean = items.filter((i) => String(i.producto || '').trim()).map((i) => {
+            const it = { producto: String(i.producto).trim(), cantidad: Number(i.cantidad) || 0 };
+            if (i.unidad) it.unidad = String(i.unidad).trim();
+            if (i.precio) it.precio = Number(i.precio) || 0;
+            if (i.kg) it.kg = Number(i.kg) || 0;
+            if (i.nota) it.nota = i.nota;
+            return it;
+          });
+          // Total del pedido con los precios de la lista: es lo que hace que
+          // este pedido cuente en la facturación de Métricas (antes, un pedido
+          // cargado a mano quedaba sin precio y no sumaba).
+          const totalCalc = clean.reduce((a, i) => a + (i.cantidad || 0) * (i.precio || 0), 0);
           const data = {
             id: p ? p.id : undefined, cliente: cli, direccion: dir,
             localidad: node.querySelector('#f-loc').value.trim(),
@@ -1155,6 +1291,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             especificaciones: node.querySelector('#f-esp').value.trim(),
             items: clean, lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
             modalidad: mod,
+            // Solo lo pisamos si hay precios cargados: si el pedido se anotó sin
+            // precios, no borramos un total que hubiera declarado el cliente.
+            totalEstimado: totalCalc || (p ? p.totalEstimado : 0) || 0,
             creadoPor: p ? p.creadoPor : Store.current().id,
           };
           // Si un pedido que YA estaba en una ruta pasa a retiro, hay que sacarlo

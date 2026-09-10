@@ -19,6 +19,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const DIAS_C = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
   const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  // Kilos de un renglón: los declarados, o los que se deducen de la unidad o del
+  // peso del bulto que dice el nombre. Ver GDO.Lista.kgDeItem.
+  const kgDe = (it) => (GDO.Lista ? GDO.Lista.kgDeItem(it) : (Number(it && it.kg) || 0));
   const hoyISO = () => iso(new Date());
   const masDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
 
@@ -419,7 +422,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         r.nombre = nom;                    // nos quedamos con la escritura más nueva
         r.porUnidad[uni] = (r.porUnidad[uni] || 0) + cant;
         r.cant += cant;
-        r.kg += Number(it.kg) || 0;
+        r.kg += kgDe(it);
         r.monto += cant * (Number(it.precio) || 0);
         // Por PEDIDO, no por renglón: si un pedido trae el mismo producto en dos
         // renglones, sigue siendo UN pedido que lo lleva.
@@ -437,7 +440,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   // Cantidades sumadas por unidad: "120 cajones + 39 kg". Sin unidad cargada
   // (pedido escrito a mano) se muestra como "unidades".
-  const unidadTxt = (uni, cant) => (uni ? uni : (cant === 1 ? 'unidad' : 'unidades'));
+  const unidadTxt = (uni, cant) => (GDO.Lista ? GDO.Lista.etiqueta(uni, cant)
+    : (uni || (Number(cant) === 1 ? 'unidad' : 'unidades')));
   const cantProd = (f) => Object.keys(f.porUnidad)
     .sort((a, b) => f.porUnidad[b] - f.porUnidad[a])
     .map((u) => fmtN(Math.round(f.porUnidad[u] * 100) / 100) + ' ' + unidadTxt(u, f.porUnidad[u]))

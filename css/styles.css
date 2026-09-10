@@ -539,3 +539,19 @@ textarea{resize:vertical;min-height:74px}
   .mobile-tabbar.n7 a{font-size:9.5px;letter-spacing:-.1px}
   .mobile-tabbar.n7 a .ic{font-size:18px}
 }
+
+/* ---------- Renglones del pedido (producto / cantidad / unidad / precio) ---------- */
+.it-row{display:grid;grid-template-columns:1fr 82px 108px 100px 36px;gap:8px;align-items:center}
+.it-row .it-prod{position:relative;min-width:0}
+.it-row input{width:100%}
+.it-sub{font-size:12px;color:var(--gris);margin:2px 0 8px;min-height:15px;padding-left:2px}
+.it-sub b{color:var(--negro)}
+@media (max-width:620px){
+  .it-row{grid-template-columns:1fr 1fr;grid-template-areas:'prod prod' 'cant uni' 'pre del'}
+  .it-row .it-prod{grid-area:prod}
+  .it-row [data-it-cant]{grid-area:cant}
+  .it-row [data-it-uni]{grid-area:uni}
+  .it-row [data-it-pre]{grid-area:pre}
+  .it-row [data-it-del]{grid-area:del;justify-self:end}
+  .it-sub{margin-bottom:12px;border-bottom:1px solid var(--gris-bd);padding-bottom:10px}
+}

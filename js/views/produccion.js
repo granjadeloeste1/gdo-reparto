@@ -29,6 +29,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const hoyISO = () => iso(new Date());
   const masDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
+  /* Kilos de un renglón: los declarados, o los que se deducen de la unidad
+     ("12 kg" son 12 kilos) o del peso del bulto que dice el nombre ("SUPREMA
+     CONGELADA … X 12 KG" × 2 cajas = 24 kg). Un cajón de pollo no declara kilos
+     —depende de las aves—, así que ahí devuelve 0 y la columna queda vacía. */
+  const kgDe = (it) => (GDO.Lista ? GDO.Lista.kgDeItem(it) : (Number(it && it.kg) || 0));
   const largo = (isoStr) => {
     if (!isoStr) return '';
     const d = new Date(isoStr + 'T00:00:00');
@@ -76,7 +81,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const r = g[clave] || (g[clave] = { nombre: nom, unidades: {}, kg: 0, pedidos: 0, notas: 0 });
         r.nombre = nom;                 // nos quedamos con la escritura más nueva
         r.unidades[uni] = (r.unidades[uni] || 0) + cant;
-        r.kg += Number(it.kg) || 0;
+        r.kg += kgDe(it);
         r.pedidos++;
         if (it.nota && String(it.nota).trim()) r.notas++;
       });
@@ -84,7 +89,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return Object.keys(g).map((k) => g[k]).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
   }
 
-  const unidadTxt = (uni, cant) => (uni ? uni : (cant === 1 ? 'unidad' : 'unidades'));
+  // "cajón"→"cajones", "caja"→"cajas", "kg"→"kg". El plural sale de la misma
+  // tabla de unidades que usa la lista de precios.
+  const unidadTxt = (uni, cant) => (GDO.Lista ? GDO.Lista.etiqueta(uni, cant)
+    : (uni || (Number(cant) === 1 ? 'unidad' : 'unidades')));
   const cantTxt = (r) => Object.keys(r.unidades)
     .map((u) => nUm(r.unidades[u]) + ' ' + unidadTxt(u, r.unidades[u]))
     .join(' + ');
@@ -96,7 +104,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const itemTxt = (it) => {
     const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
     const uni = String(it.unidad || it.u || '').trim();
-    const kg = Number(it.kg) || 0;
+    // El peso solo se agrega si la unidad NO es el kilo (si no, se repetiría).
+    const kg = uni.toLowerCase() === 'kg' ? 0 : kgDe(it);
     return nUm(cant) + ' ' + unidadTxt(uni, cant) + (kg ? ' (' + nUm(kg) + ' kg)' : '')
       + ' · ' + String(it.producto || it.nombre || '');
   };
@@ -264,7 +273,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           it.producto || it.nombre || '',
           (it.cantidad != null ? it.cantidad : it.cant) || 0,
           unidadTxt(String(it.unidad || it.u || '').trim(), Number(it.cantidad != null ? it.cantidad : it.cant) || 0),
-          it.kg || '', (it.nota || '').toString().trim(),
+          kgDe(it) || '', (it.nota || '').toString().trim(),
         ], cola));
       });
     });
