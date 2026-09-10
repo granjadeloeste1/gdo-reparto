@@ -22,14 +22,32 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const hoyISO = () => iso(new Date());
   const masDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
 
-  // Estado de la pantalla (se conserva mientras no se cambie de sección).
-  let per = '30d';
+  /* Estado de la pantalla (se conserva mientras no se cambie de sección).
+     El período SIEMPRE es un par de fechas concretas (`desde` / `hasta`): eso es
+     lo que se ve y se elige en el calendario. Los atajos (Hoy, 30 días, Este
+     mes…) no son otra cosa: solo COMPLETAN esas dos fechas. `per` guarda cuál
+     atajo coincide, nada más que para dejarlo resaltado. */
   let desde = masDias(-29), hasta = hoyISO();
+  let per = '30d';
   let mod = '';              // '' | 'envio' | 'retiro'
   let tab = 'clientes';
   let ordProd = 'unidades';  // unidades | pedidos | monto
 
-  /* Período elegido → rango de fechas (ISO, ambos inclusive). '' = sin límite. */
+  // Primera y última fecha con pedidos cargados (para el atajo "Todo"). La
+  // última puede ser FUTURA: un pedido pendiente para la semana que viene ya es
+  // una venta hecha y tiene que entrar.
+  function rangoDatos() {
+    let min = null, max = null;
+    (Store.pedidos() || []).forEach((p) => {
+      const t = GDO.CRM ? GDO.CRM.fechaDe(p) : null;
+      if (!t) return;
+      if (min === null || t < min) min = t;
+      if (max === null || t > max) max = t;
+    });
+    return { desde: min ? iso(new Date(min)) : hoyISO(), hasta: max ? iso(new Date(max)) : hoyISO() };
+  }
+
+  /* Atajo → par de fechas (ISO, ambos inclusive). */
   function rangoDe(clave) {
     const h = new Date(); h.setHours(0, 0, 0, 0);
     const d = new Date(h);
@@ -41,21 +59,26 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       case 'mes': return { desde: iso(new Date(h.getFullYear(), h.getMonth(), 1)), hasta: iso(new Date(h.getFullYear(), h.getMonth() + 1, 0)) };
       case 'mesant': return { desde: iso(new Date(h.getFullYear(), h.getMonth() - 1, 1)), hasta: iso(new Date(h.getFullYear(), h.getMonth(), 0)) };
       case 'anio': return { desde: iso(new Date(h.getFullYear(), 0, 1)), hasta: iso(new Date(h.getFullYear(), 11, 31)) };
-      case 'todo': return { desde: '', hasta: '' };
+      case 'todo': return rangoDatos();
       default: return { desde: desde, hasta: hasta };
     }
+  }
+  // ¿Las fechas elegidas coinciden con algún atajo? Sirve para resaltarlo solo
+  // cuando corresponde (si el usuario mueve el calendario, no queda ninguno).
+  function atajoDe(d, h) {
+    const k = PERIODOS.map((x) => x.k).find((x) => { const r = rangoDe(x); return r.desde === d && r.hasta === h; });
+    return k || '';
   }
   const PERIODOS = [
     { k: 'hoy', t: 'Hoy' }, { k: '7d', t: '7 días' }, { k: '30d', t: '30 días' },
     { k: 'mes', t: 'Este mes' }, { k: 'mesant', t: 'Mes pasado' }, { k: '90d', t: '90 días' },
-    { k: 'anio', t: 'Este año' }, { k: 'todo', t: 'Todo' }, { k: 'custom', t: '📅 Elegir fechas' },
+    { k: 'anio', t: 'Este año' }, { k: 'todo', t: 'Todo' },
   ];
 
   /* Ventas del período: cada pedido con su fecha y su monto ya resueltos. */
   function ventas() {
-    const r = rangoDe(per);
-    const t0 = r.desde ? Date.parse(r.desde + 'T00:00:00') : -Infinity;
-    const t1 = r.hasta ? Date.parse(r.hasta + 'T23:59:59') : Infinity;
+    const t0 = desde ? Date.parse(desde + 'T00:00:00') : -Infinity;
+    const t1 = hasta ? Date.parse(hasta + 'T23:59:59') : Infinity;
     const out = [];
     (Store.pedidos() || []).forEach((p) => {
       if (p.estado === 'no_entregado') return;                 // no se lo llevó nadie
@@ -70,8 +93,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   /* ─────────────────────────── pantalla ─────────────────────────── */
   GDO.Views.metricas = function (c) {
+    /* CANDADO: Métricas es SOLO del administrador. Acá está la facturación del
+       negocio, cliente por cliente: no la ve ni un vendedor ni un cajero, y no
+       hay permiso que se pueda habilitar para dárselo (a diferencia de Clientes
+       o Promos). El router ya no deja entrar por la URL; este chequeo es la
+       segunda traba, por si alguien llega a la vista por otro camino. */
+    if (Store.rolActivo() !== 'admin') {
+      c.innerHTML = '<div class="empty">Esta sección es solo para la administración.</div>';
+      return;
+    }
     const vs = ventas();
-    const r = rangoDe(per);
+    const r = { desde: desde, hasta: hasta };
+    per = atajoDe(desde, hasta);
     const total = vs.reduce((a, v) => a + v.monto, 0);
     const conMonto = vs.filter((v) => v.monto > 0).length;
     const ticket = conMonto ? Math.round(total / conMonto) : 0;
@@ -80,26 +113,26 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const abiertos = vs.filter((v) => v.p.estado !== 'entregado').length;
     const sinPrecio = vs.length - conMonto;
     const clientes = agrupaClientes(vs);
-    const rotulo = r.desde ? (fFecha(r.desde) + ' → ' + fFecha(r.hasta)) : 'Desde el primer pedido cargado';
+    const rotulo = (desde === hasta) ? fFecha(desde) : (fFecha(desde) + ' → ' + fFecha(hasta));
 
     c.innerHTML = `
       <div class="section-title"><h2>Métricas</h2></div>
 
       <div class="mx-filtros">
+        <div class="mx-fechas">
+          <label>Desde<input type="date" id="mx-d" value="${esc(desde)}" max="${esc(hasta)}"/></label>
+          <span class="mx-flecha">→</span>
+          <label>Hasta<input type="date" id="mx-h" value="${esc(hasta)}" min="${esc(desde)}"/></label>
+          <span class="mx-rotulo">${esc(rotulo)}</span>
+        </div>
         <div class="mx-chips" id="mx-per">
           ${PERIODOS.map((x) => `<button type="button" data-per="${x.k}" class="${per === x.k ? 'on' : ''}">${x.t}</button>`).join('')}
-        </div>
-        <div class="mx-fechas" id="mx-fechas" style="display:${per === 'custom' ? 'flex' : 'none'}">
-          <label>Desde <input type="date" id="mx-d" value="${esc(desde)}"/></label>
-          <label>Hasta <input type="date" id="mx-h" value="${esc(hasta)}"/></label>
-          <button class="btn btn-dark btn-sm" id="mx-aplicar">Aplicar</button>
         </div>
         <div class="mx-chips" id="mx-mod">
           <button type="button" data-mod="" class="${mod === '' ? 'on' : ''}">Envíos y retiros</button>
           <button type="button" data-mod="envio" class="${mod === 'envio' ? 'on' : ''}">🚚 Envíos</button>
           <button type="button" data-mod="retiro" class="${mod === 'retiro' ? 'on' : ''}">🏪 Retiros</button>
         </div>
-        <div class="mx-rotulo">${esc(rotulo)}</div>
       </div>
 
       <div class="cards" style="margin-bottom:18px">
@@ -133,19 +166,36 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     else pintarProductos(cuerpo, vs);
 
     const repintar = () => GDO.Views.metricas(c);
+    // Los atajos solo COMPLETAN el calendario: después todo sigue siendo un
+    // rango de fechas común, que se puede seguir moviendo a mano.
     c.querySelectorAll('#mx-per [data-per]').forEach((b) => b.onclick = () => {
-      per = b.dataset.per;
-      if (per !== 'custom') { const x = rangoDe(per); desde = x.desde || desde; hasta = x.hasta || hasta; }
+      const x = rangoDe(b.dataset.per);
+      desde = x.desde; hasta = x.hasta;
       repintar();
     });
     c.querySelectorAll('#mx-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; repintar(); });
     c.querySelectorAll('#mx-tabs [data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; repintar(); });
-    const ap = c.querySelector('#mx-aplicar');
-    if (ap) ap.onclick = () => {
-      const d = c.querySelector('#mx-d').value, h = c.querySelector('#mx-h').value;
-      if (!d || !h) { toast('Elegí las dos fechas', 'err'); return; }
-      if (d > h) { toast('La fecha "desde" tiene que ser anterior a la de "hasta"', 'err'); return; }
-      desde = d; hasta = h; per = 'custom'; repintar();
+
+    /* Calendario: al tocar el campo se abre el almanaque del navegador
+       (showPicker), no hace falta apuntarle al iconito. Se aplica solo al
+       elegir el día — sin botón "Aplicar" de por medio. Si se elige un "desde"
+       posterior al "hasta" (o al revés), se acomodan solos en vez de dar error:
+       el que se acaba de tocar manda. */
+    const inD = c.querySelector('#mx-d'), inH = c.querySelector('#mx-h');
+    [inD, inH].forEach((el) => {
+      el.onfocus = el.onclick = () => { try { el.showPicker && el.showPicker(); } catch (e) {} };
+    });
+    inD.onchange = () => {
+      if (!inD.value) { inD.value = desde; return; }
+      desde = inD.value;
+      if (hasta < desde) hasta = desde;
+      repintar();
+    };
+    inH.onchange = () => {
+      if (!inH.value) { inH.value = hasta; return; }
+      hasta = inH.value;
+      if (hasta < desde) desde = hasta;
+      repintar();
     };
     const so = c.querySelector('#mx-ord');
     if (so) so.onchange = () => { ordProd = so.value; repintar(); };
@@ -354,7 +404,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         uds, Math.round(v.monto), p.origen || 'panel',
       ].map(q).join(';'));
     });
-    const nombre = 'gdo-metricas-' + (rangoDe(per).desde || 'todo') + '_' + (rangoDe(per).hasta || 'hoy') + (mod ? '-' + mod : '') + '.csv';
+    const nombre = 'gdo-metricas-' + desde + '_' + hasta + (mod ? '-' + mod : '') + '.csv';
     try {
       const blob = new Blob(['﻿' + L.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');

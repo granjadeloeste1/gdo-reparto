@@ -290,7 +290,9 @@ textarea{resize:vertical;min-height:74px}
 .mobile-tabbar{display:none}
 @media (max-width:860px){
   .mobile-tabbar{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--gris-bd);z-index:40;padding-bottom:env(safe-area-inset-bottom)}
-  .mobile-tabbar a{flex:1;text-align:center;padding:9px 4px;font-size:11px;color:var(--gris);font-weight:600}
+  /* Con 6 pestañas (el admin) hay que apretar un poco: nombres cortos, sin
+     cortar palabras y sin que la barra se desborde en un celular angosto. */
+  .mobile-tabbar a{flex:1;min-width:0;text-align:center;padding:9px 2px;font-size:10.5px;color:var(--gris);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .mobile-tabbar a .ic{display:block;font-size:19px}
   .mobile-tabbar a.active{color:var(--naranja)}
   .main{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
@@ -438,10 +440,21 @@ textarea{resize:vertical;min-height:74px}
 }
 .mx-chips button:hover{border-color:#c9cdd3}
 .mx-chips button.on{background:var(--negro);border-color:var(--negro);color:#fff}
-.mx-fechas{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px}
-.mx-fechas label{display:flex;flex-direction:column;gap:5px;font-size:12.5px}
-.mx-fechas input{min-width:160px}
-.mx-rotulo{font-size:13px;color:var(--gris);font-weight:600}
+/* Rango de fechas: es EL selector de período (los chips de abajo son atajos que
+   completan estas dos fechas). Al tocar el campo se abre el calendario. */
+.mx-fechas{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 14px;box-shadow:var(--sombra)}
+.mx-fechas label{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--gris);font-weight:700}
+.mx-fechas input{min-width:170px;font-weight:600;cursor:pointer}
+.mx-fechas input::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.6}
+.mx-fechas input:hover{border-color:var(--naranja)}
+.mx-flecha{color:var(--naranja);font-weight:800;font-size:17px;align-self:flex-end;padding-bottom:9px}
+.mx-rotulo{font-size:13px;color:var(--gris);font-weight:600;align-self:flex-end;padding-bottom:9px;margin-left:auto}
+@media (max-width:560px){
+  .mx-fechas label{flex:1;min-width:0}
+  .mx-fechas input{min-width:0;width:100%}
+  .mx-flecha{display:none}
+  .mx-rotulo{margin-left:0;width:100%;padding-bottom:0;align-self:flex-start}
+}
 
 .mx-tabs{display:flex;gap:4px;flex-wrap:wrap}
 .mx-tabs button{
