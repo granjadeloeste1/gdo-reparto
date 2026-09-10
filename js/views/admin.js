@@ -1143,15 +1143,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           itemsBox.querySelectorAll('[data-it-cant]').forEach((el) => el.oninput = () => {
             const i = +el.dataset.itCant, it = items[i];
             it.cantidad = el.value === '' ? '' : +el.value;
-            // Al cambiar la cantidad puede cambiar el ESCALÓN de precio (5 kg no
-            // vale lo mismo que 60 kg): si el producto vino de la lista, se
-            // recalcula solo.
-            if (it._op && GDO.Lista) {
-              const r = GDO.Lista.renglon(it._op, it.cantidad || 0);
-              it.precio = r.precio; it.kg = r.kg;
-              const pe = itemsBox.querySelector('[data-it-pre="' + i + '"]');
-              if (pe) pe.value = it.precio || '';
-            }
+            recalcPrecios();
             refrescarSub(i); pintarTotal();
           });
           itemsBox.querySelectorAll('[data-it-uni]').forEach((el) => el.oninput = () => {
@@ -1178,6 +1170,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             itemsBox.querySelectorAll('[data-it-prep="' + i + '"]').forEach((b) => b.classList.toggle('on', b === el));
             refrescarSub(i);
           });
+          /* "➕ otro corte": duplica el renglón para que el mismo producto vaya
+             con dos preparaciones (3 kg fileteados + 2 en cubos). Se copia el
+             producto, la unidad y el PRECIO —que es el del escalón del total, no
+             el de cada pedacito— y se deja la cantidad en 0 para completarla. */
+          itemsBox.querySelectorAll('[data-it-partir]').forEach((el) => el.onclick = () => {
+            const i = +el.dataset.itPartir, o = items[i];
+            const d = GDO.Lista ? GDO.Lista.prepDe(o.producto) : null;
+            const usados = items.filter((x) => x.producto === o.producto).map((x) => x.preparacion);
+            const libre = d ? (d.opciones.find((x) => usados.indexOf(x) < 0) || d.opciones[0]) : '';
+            items.splice(i + 1, 0, { producto: o.producto, cantidad: 0, unidad: o.unidad,
+              precio: o.precio, preparacion: libre, nota: '', _op: o._op });
+            drawItems(); recalcPrecios(); pintarTotal();
+          });
           itemsBox.querySelectorAll('[data-it-prod]').forEach((el) => montarBuscadorProducto(el, itemsBox, items, drawItems, pintarTotal));
           pintarTotal();
         };
@@ -1191,7 +1196,31 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (!it.preparacion) it.preparacion = sel;
           return `<div class="it-preps"><span class="lbl">✂️ ${esc(d.titulo)}</span>${
             d.opciones.map((o) => `<button type="button" class="prepb${o === sel ? ' on' : ''}" data-it-prep="${i}" data-op="${esc(o)}">${esc(o)}</button>`).join('')
-          }</div>`;
+          }<button type="button" class="btn btn-ghost btn-sm" data-it-partir="${i}" title="El cliente quiere una parte de cada forma">➕ otro corte</button></div>`;
+        }
+        /* Precios de todos los renglones que vinieron de la lista. El ESCALÓN se
+           busca con el TOTAL DEL PRODUCTO, no con el de cada renglón: si un
+           cliente pide 60 kg de suprema repartidos en 40 fileteados y 20 enteros,
+           esos 60 kg pagan el escalón de 60 — repartir el pedido en dos cortes no
+           puede salir más caro que pedirlo todo de una forma. */
+        function recalcPrecios() {
+          if (!GDO.Lista) return;
+          const totales = {};
+          items.forEach((x) => {
+            if (!x._op) return;
+            const k = x._op.nombre;
+            totales[k] = (totales[k] || 0) + (Number(x.cantidad) || 0);
+          });
+          items.forEach((x, i) => {
+            if (!x._op) return;
+            const tot = totales[x._op.nombre] || 0;
+            const r = GDO.Lista.renglon(x._op, Number(x.cantidad) || 0);
+            x.kg = r.kg;
+            x.precio = GDO.Lista.precioPorEscalon(x._op.tiers, x._op.kgPor ? tot * x._op.kgPor : tot);
+            const pe = itemsBox.querySelector('[data-it-pre="' + i + '"]');
+            if (pe) pe.value = x.precio || '';
+            refrescarSub(i);
+          });
         }
         function subItem(it) {
           const c = Number(it.cantidad) || 0;
