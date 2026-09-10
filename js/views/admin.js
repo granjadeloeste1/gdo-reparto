@@ -1136,6 +1136,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <input data-it-pre="${i}" type="number" min="0" step="any" value="${esc(it.precio || '')}" placeholder="$ c/u" title="Precio por unidad"/>
               <button class="btn btn-ghost btn-sm" data-it-del="${i}" title="Quitar">✕</button>
             </div>
+            ${prepFila(it, i)}
+            <div class="it-nota"><input data-it-nota="${i}" value="${esc(it.nota || '')}" maxlength="120" placeholder="📝 Aclaración para este producto (opcional)"/></div>
             <div class="it-sub" data-it-sub="${i}">${subItem(it)}</div>`).join('');
 
           itemsBox.querySelectorAll('[data-it-cant]').forEach((el) => el.oninput = () => {
@@ -1165,14 +1167,38 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             if (!items.length) items.push({ producto: '', cantidad: 1 });
             drawItems(); pintarTotal();
           });
+          itemsBox.querySelectorAll('[data-it-nota]').forEach((el) => el.oninput = () => {
+            items[+el.dataset.itNota].nota = el.value;
+          });
+          // Cómo lo quiere cortado. Cambiarlo NO redibuja todo: solo se marca el
+          // botón elegido, así no se pierde lo que se estaba tipeando al lado.
+          itemsBox.querySelectorAll('[data-it-prep]').forEach((el) => el.onclick = () => {
+            const i = +el.dataset.itPrep;
+            items[i].preparacion = el.dataset.op;
+            itemsBox.querySelectorAll('[data-it-prep="' + i + '"]').forEach((b) => b.classList.toggle('on', b === el));
+            refrescarSub(i);
+          });
           itemsBox.querySelectorAll('[data-it-prod]').forEach((el) => montarBuscadorProducto(el, itemsBox, items, drawItems, pintarTotal));
           pintarTotal();
         };
+        /* Opciones de corte del producto (suprema, cuarto trasero). Son las
+           MISMAS que ve el cliente en la tienda: el que toma un pedido por
+           teléfono tiene que poder ofrecer exactamente lo mismo. */
+        function prepFila(it, i) {
+          const d = GDO.Lista ? GDO.Lista.prepDe(it.producto) : null;
+          if (!d) return '';
+          const sel = it.preparacion || d.opciones[0];
+          if (!it.preparacion) it.preparacion = sel;
+          return `<div class="it-preps"><span class="lbl">✂️ ${esc(d.titulo)}</span>${
+            d.opciones.map((o) => `<button type="button" class="prepb${o === sel ? ' on' : ''}" data-it-prep="${i}" data-op="${esc(o)}">${esc(o)}</button>`).join('')
+          }</div>`;
+        }
         function subItem(it) {
           const c = Number(it.cantidad) || 0;
           const uni = GDO.Lista ? GDO.Lista.etiqueta(it.unidad, c) : (it.unidad || 'unidades');
           const partes = [];
           if (c) partes.push('<b>' + c + ' ' + esc(uni) + '</b>');
+          if (it.preparacion) partes.push('✂️ ' + esc(it.preparacion));
           // Los kilos solo aportan si la unidad NO es el kilo (ahí ya se dijeron).
           if (it.kg && String(it.unidad).toLowerCase() !== 'kg') partes.push(it.kg + ' kg');
           if (it.precio) partes.push(fmtP(it.precio) + ' c/' + esc(it.unidad || 'un') + ' = <b>' + fmtP(c * it.precio) + '</b>');
@@ -1271,7 +1297,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             if (i.unidad) it.unidad = String(i.unidad).trim();
             if (i.precio) it.precio = Number(i.precio) || 0;
             if (i.kg) it.kg = Number(i.kg) || 0;
-            if (i.nota) it.nota = i.nota;
+            if (i.preparacion) it.preparacion = String(i.preparacion).trim();
+            if (i.nota) it.nota = String(i.nota).trim();
             return it;
           });
           // Total del pedido con los precios de la lista: es lo que hace que

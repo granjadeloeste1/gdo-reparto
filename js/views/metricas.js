@@ -22,6 +22,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   // Kilos de un renglón: los declarados, o los que se deducen de la unidad o del
   // peso del bulto que dice el nombre. Ver GDO.Lista.kgDeItem.
   const kgDe = (it) => (GDO.Lista ? GDO.Lista.kgDeItem(it) : (Number(it && it.kg) || 0));
+  /* Unidad NORMALIZADA: "u" y "un" son lo mismo (si no, aparecían sumas sin
+     sentido como "27 u + 1 un"), y cuando la unidad guardada no aporta nada pero
+     el nombre declara el envase ("… (1 caja)"), esa es la unidad real. */
+  const uniDe = (it) => (GDO.Lista ? GDO.Lista.unidadDeItem(it) : String((it && (it.unidad || it.u)) || '').trim());
   const hoyISO = () => iso(new Date());
   const masDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
 
@@ -415,7 +419,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       (v.p.items || []).forEach((it) => {
         const nom = String(it.producto || it.nombre || '').trim();
         if (!nom) return;
-        const uni = String(it.unidad || it.u || '').trim();
+        const uni = uniDe(it);
         const k = GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase();
         const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
         const r = g[k] || (g[k] = { nombre: nom, porUnidad: {}, cant: 0, kg: 0, monto: 0, _peds: {}, _clis: {} });

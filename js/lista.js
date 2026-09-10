@@ -183,6 +183,46 @@ window.GDO = window.GDO || {};
     return res.slice(0, max || 8);
   }
 
+  /* ===== UNIDAD de un renglón del pedido =====
+     Dos problemas reales que aparecieron con los datos en vivo:
+
+     1. La MISMA unidad venía escrita de varias formas ("u", "un", "unidad") y
+        al agrupar salían como si fueran distintas: "27 u + 1 un" en vez de
+        "28 unidades". Acá se lleva todo a una sola forma.
+
+     2. Los pedidos de la lista minorista guardaban la unidad como "u" aunque el
+        producto se venda por CAJA o por MAPLE: la unidad real quedaba escondida
+        en el nombre, entre paréntesis ("… (1 caja)"). Cuando la unidad guardada
+        no dice nada y el nombre declara un envase de UNO, se usa ese: así
+        "27 u" de la suprema congelada se lee "27 cajas", que es lo que hay que
+        preparar. Sirve también para los pedidos VIEJOS, sin migrar nada. */
+  const SINONIMOS = {
+    u: 'unidad', un: 'unidad', uni: 'unidad', unid: 'unidad', unidad: 'unidad', unidades: 'unidad',
+    kg: 'kg', kgs: 'kg', k: 'kg', kilo: 'kg', kilos: 'kg',
+    cajon: 'cajón', 'cajón': 'cajón', cajones: 'cajón',
+    caja: 'caja', cajas: 'caja',
+    maple: 'maple', maples: 'maple',
+    paquete: 'paquete', paquetes: 'paquete', paq: 'paquete',
+    bandeja: 'bandeja', bandejas: 'bandeja',
+    bolsa: 'bolsa', bolsas: 'bolsa',
+    pieza: 'pieza', piezas: 'pieza',
+  };
+  const RE_ENVASE_UNO = /\(\s*1\s*(kgs?|kilos?|cajones?|caj[oó]n|cajas?|maples?|paquetes?|bandejas?|bolsas?|piezas?|unidad(?:es)?)\s*\)\s*$/i;
+  function unidadDeItem(it) {
+    if (!it) return '';
+    const cruda = String(it.unidad || it.u || '').trim().toLowerCase();
+    const canon = SINONIMOS[cruda] || cruda;
+    // Si no aporta nada (vacía o "unidad" a secas), miramos el envase del nombre.
+    if (!canon || canon === 'unidad') {
+      const m = RE_ENVASE_UNO.exec(String(it.producto || it.nombre || ''));
+      if (m) {
+        const u = m[1].toLowerCase();
+        return SINONIMOS[u] || SINONIMOS[u.replace(/e?s$/, '')] || u;
+      }
+    }
+    return canon;
+  }
+
   /* KILOS de un renglón del pedido — el dato que producción necesita para saber
      cuánta mercadería mover, aunque se pida por caja o por cajón:
        · si ya viene declarado (pedidos de la tienda por pieza), ese manda;
@@ -220,7 +260,43 @@ window.GDO = window.GDO || {};
     return base;
   }
 
+  /* ===== PREPARACIONES (cómo quiere el cliente el corte) =====
+     COPIA de gdo-tienda/preparaciones.js. Está duplicado porque el panel arma
+     pedidos por teléfono y tiene que ofrecer EXACTAMENTE las mismas opciones que
+     la tienda; si se cambia una lista hay que cambiar la otra.
+     Es un dato ELEGIBLE, no un texto: por eso la comanda del día puede sumar
+     "10 kg de suprema: 3 fileteados, 3 en cubos, 4 entera". Lo que no entra en
+     estas opciones va en la aclaración libre del renglón, que también llega a la
+     comanda pero sin sumarse. */
+  const PREPS = [
+    {
+      id: 'suprema',
+      // La fresca se corta; la congelada viene en caja cerrada de 12 kg y una
+      // hamburguesa o milanesa ya elaborada tampoco se "cortan".
+      re: /SUPREMA/i,
+      no: /CONGELAD|HAMBURG|MEDALL|MILANES|NUGGET|ARROLL|MATAMBRE/i,
+      titulo: '¿Cómo la quiere?',
+      opciones: ['Entera', 'Fileteada para milanesa', 'Para churrasquitos', 'En cubos'],
+    },
+    {
+      id: 'cuarto',
+      re: /CUARTO\s*TRASERO|PATA\s*Y\s*MUSLO/i,
+      no: /CONGELAD|DESHUES|MILANES/i,
+      titulo: '¿Cómo lo quiere?',
+      opciones: ['Entero', 'Trozado en dos (pata y muslo)', 'Sin piel', 'Trozado y sin piel'],
+    },
+  ];
+  function prepDe(nombre) {
+    const n = String(nombre == null ? '' : nombre);
+    for (let i = 0; i < PREPS.length; i++) {
+      const p = PREPS[i];
+      if (p.re.test(n) && !(p.no && p.no.test(n))) return p;
+    }
+    return null;
+  }
+
   GDO.Lista = {
+    prepDe, PREPS, unidadDeItem,
     cargar, buscar, renglon, precioPorEscalon, etiqueta, plural, kgDeItem,
     UNIDADES: TODAS,
     opciones: () => _opciones || [],
