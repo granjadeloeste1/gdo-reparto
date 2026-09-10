@@ -202,7 +202,8 @@ window.GDO = window.GDO || {};
     if (p && p.modalidad === 'retiro') {
       const f = p.fechaEntrega || '';
       const dia = f && GDO.UI ? (GDO.UI.diaSemanaDe(f) + ' ' + GDO.UI.fmtFecha(f)) : (p.diaEntrega || '');
-      return '🏪 Nuevo pedido para RETIRO en sucursal: ' + quien + (dia ? ' — pasa el ' + dia : '');
+      const hora = p.ventana ? ' de ' + p.ventana : '';
+      return '🏪 Nuevo pedido para RETIRO en sucursal: ' + quien + (dia ? ' — pasa el ' + dia + hora : '');
     }
     return '🛒 Nuevo pedido de la tienda online: ' + quien + ' — falta asignar chofer';
   }

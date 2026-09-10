@@ -15,6 +15,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
   GDO.isoHoy = isoHoy;
 
+  /* Franjas horarias de retiro: una hora, de 6:30 a 13:30 (la última, 12:30 a
+     13:30). Son las mismas que elige el cliente en la tienda; acá sirven para
+     que el mostrador pueda cargarlas o corregirlas sin escribirlas a mano. */
+  const FRANJAS = (() => {
+    const hhmm = (m) => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
+    const out = [];
+    for (let m = 6 * 60 + 30; m + 60 <= 13 * 60 + 30; m += 60) out.push(hhmm(m) + ' a ' + hhmm(m + 60) + ' hs');
+    return out;
+  })();
+  GDO.FRANJAS_RETIRO = FRANJAS;
+
   /* ---------------- Tablero ---------------- */
   GDO.Views.dashboard = function (c) {
     const peds = Store.pedidos();
@@ -93,6 +104,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (ret) {
       L.push('• *Retiro en:* Acuña 1334, Villa Tesei');
       if (f) L.push('• *Día de retiro:* ' + diaSemanaDe(f) + ' ' + fmtFecha(f));
+      L.push('• *Horario:* ' + (p.ventana || 'A coordinar'));
     } else {
       if (p.zona) L.push('• *Zona:* ' + p.zona);
       if (f) L.push('• *Día de entrega:* ' + diaSemanaDe(f) + ' ' + fmtFecha(f));
@@ -530,7 +542,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const f = efFechaEntrega(p);
     if (!f) return '<span class="chip chip-pend" style="font-size:10px">' + (esRetiro(p) ? 'Día a coordinar' : 'A asignar') + '</span>';
     return '<b>' + esc(diaSemanaDe(f)) + '</b><div class="small muted">' + fmtFecha(f)
-      + (esRetiro(p) ? ' · retira' : '') + '</div>';
+      + (esRetiro(p) ? ' · retira' + (p.ventana ? ' ' + esc(p.ventana) : '') : '') + '</div>';
   }
   function renderPedidosTabla(box, list, opts) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }
@@ -601,12 +613,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (!list.length) { box.innerHTML = `<div class="empty">No hay retiros pendientes.</div>`; return; }
     const hoy = isoHoy();
     const fmtM = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+    // La franja horaria que eligió el cliente (o el aviso de que hay que
+    // acordarla): es lo que dice a qué hora tiene que estar listo el pedido.
+    const franja = (p) => p.ventana
+      ? '<div class="small"><b>' + esc(p.ventana) + '</b></div>'
+      : '<div class="small muted">horario a coordinar</div>';
     const cuando = (p) => {
       const f = efFechaEntrega(p);
-      if (!f) return '<span class="chip chip-pend" style="font-size:10px">A coordinar</span>';
+      if (!f) return '<span class="chip chip-pend" style="font-size:10px">A coordinar</span>' + franja(p);
       const marca = f === hoy ? ' <span class="chip chip-retiro" style="font-size:10px">hoy</span>'
         : (f < hoy ? ' <span class="chip chip-no" style="font-size:10px">vencido</span>' : '');
-      return '<b>' + esc(diaSemanaDe(f)) + '</b> ' + fmtFecha(f) + marca;
+      return '<b>' + esc(diaSemanaDe(f)) + '</b> ' + fmtFecha(f) + marca + franja(p);
     };
     box.innerHTML = `<table><thead><tr>
         <th>Cliente</th><th>Pedido</th><th>Pasa a retirar</th><th>Total</th><th></th>
@@ -730,9 +747,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>` : `
         <div class="note">El pedido de <b>${esc(p.cliente)}</b> pasa a <b>🏪 retiro en sucursal</b>: sale del armado de rutas
           ${p.rutaId ? '<b>y se quita de la ruta en la que está</b>' : ''}. La dirección se conserva por si más adelante vuelve a ser un envío.</div>
-        <div class="field"><label>¿Qué día pasa a retirar?</label>
-          <input id="md-fec" type="date" value="${esc(f)}"/>
-          <span class="help">Acuña 1334, Villa Tesei · Lun a Sáb de 6:00 a 13:30. Podés dejarlo vacío si todavía no lo definió.</span></div>`,
+        <div class="form-grid">
+          <div class="field"><label>¿Qué día pasa a retirar?</label>
+            <input id="md-fec" type="date" value="${esc(f)}"/>
+            <span class="help">Acuña 1334, Villa Tesei · Lun a Sáb de 6:00 a 13:30. Podés dejarlo vacío si todavía no lo definió.</span></div>
+          <div class="field"><label>Horario de retiro</label>
+            <input id="md-vent" list="md-franjas" value="${esc(p.ventana || '')}" placeholder="Ej: 9:30 a 10:30 hs"/>
+            <datalist id="md-franjas">${FRANJAS.map((x) => `<option value="${x}"></option>`).join('')}</datalist>
+            <span class="help">Vacío = a coordinar.</span></div>
+        </div>`,
       footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-ok>${aEnvio ? '🚚 Pasar a envío' : '🏪 Pasar a retiro'}</button>`,
       onMount(node, close) {
         node.querySelector('[data-cancel]').onclick = close;
@@ -745,7 +768,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         node.querySelector('[data-ok]').onclick = async () => {
           const fec = node.querySelector('#md-fec').value;
           if (!aEnvio) {
-            Store.setModalidad(p.id, 'retiro', { fechaEntrega: fec, diaEntrega: '' });
+            Store.setModalidad(p.id, 'retiro', { fechaEntrega: fec, diaEntrega: '',
+              ventana: node.querySelector('#md-vent').value.trim() });
             toast('Pedido pasado a retiro en sucursal', 'ok');
             close(); (after || (() => GDO.App.render()))(); return;
           }
@@ -936,7 +960,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>Teléfono</label><input id="f-tel" value="${esc(p ? p.telefono : (pf.telefono || ''))}" placeholder="11 5555-5555"/></div>
           <div class="field"><label id="f-lbl-fec">Fecha de entrega</label><input id="f-fec" type="date" value="${esc(p ? efFechaEntrega(p) : '')}"/>
             <span class="help" id="f-help-fec">${p && p.diaEntrega ? 'El cliente eligió <b>' + esc(p.diaEntrega) + '</b> · agendada al próximo. ' : ''}Podés cambiarla a mano.</span></div>
-          <div class="field" id="f-w-vent"><label>Ventana horaria</label><input id="f-vent" value="${esc(p ? p.ventana : '')}" placeholder="Ej: 8 a 11 hs"/></div>
+          <div class="field" id="f-w-vent"><label id="f-lbl-vent">Ventana horaria</label>
+            <input id="f-vent" list="f-franjas" value="${esc(p ? p.ventana : '')}" placeholder="Ej: 8 a 11 hs"/>
+            <datalist id="f-franjas">${FRANJAS.map((f) => `<option value="${f}"></option>`).join('')}</datalist></div>
           <div class="field"><label>Prioridad</label>
             <select id="f-prio">
               <option value="baja"${p&&p.prioridad==='baja'?' selected':''}>Baja</option>
@@ -979,7 +1005,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const pintarModo = () => {
           node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.classList.toggle('on', b.dataset.mod === mod));
           const ret = mod === 'retiro';
-          ['f-w-vent', 'f-w-coord'].forEach((id) => { const el = node.querySelector('#' + id); if (el) el.style.display = ret ? 'none' : ''; });
+          // En un retiro no hay recorrido que armar (fuera el mapa), pero SÍ
+          // importa la hora: es cuándo tiene que estar listo el pedido.
+          const coord = node.querySelector('#f-w-coord'); if (coord) coord.style.display = ret ? 'none' : '';
+          node.querySelector('#f-lbl-vent').textContent = ret ? 'Horario de retiro' : 'Ventana horaria';
+          node.querySelector('#f-vent').placeholder = ret ? 'Ej: 9:30 a 10:30 hs' : 'Ej: 8 a 11 hs';
           node.querySelector('#f-lbl-dir').innerHTML = ret ? 'Dirección del cliente <span class="muted">(opcional)</span>' : 'Dirección de entrega *';
           node.querySelector('#f-dir').placeholder = ret ? 'Sirve para la ficha del cliente' : 'Calle 1234, Localidad';
           node.querySelector('#f-lbl-fec').textContent = ret ? '¿Qué día pasa a retirar?' : 'Fecha de entrega';
