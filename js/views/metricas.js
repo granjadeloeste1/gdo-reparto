@@ -149,18 +149,20 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="panel-h">
           <div class="mx-tabs" id="mx-tabs">
             <button type="button" data-tab="clientes" class="${tab === 'clientes' ? 'on' : ''}">Por cliente</button>
+            <button type="button" data-tab="zonas" class="${tab === 'zonas' ? 'on' : ''}">Por localidad</button>
             <button type="button" data-tab="dias" class="${tab === 'dias' ? 'on' : ''}">Por día</button>
             <button type="button" data-tab="meses" class="${tab === 'meses' ? 'on' : ''}">Por mes</button>
             <button type="button" data-tab="productos" class="${tab === 'productos' ? 'on' : ''}">Productos más vendidos</button>
           </div>
           <button class="btn btn-ghost btn-sm" id="mx-csv">⬇ Exportar CSV</button>
         </div>
-        <div class="panel-b ${tab === 'clientes' || tab === 'productos' ? 'flush' : ''}" id="mx-cuerpo"></div>
+        <div class="panel-b ${tab === 'clientes' || tab === 'productos' || tab === 'zonas' ? 'flush' : ''}" id="mx-cuerpo"></div>
       </div>`;
 
     const cuerpo = c.querySelector('#mx-cuerpo');
     if (!vs.length) cuerpo.innerHTML = '<div class="empty">No hay pedidos en el período elegido.</div>';
     else if (tab === 'clientes') pintarClientes(cuerpo, clientes);
+    else if (tab === 'zonas') pintarZonas(cuerpo, vs);
     else if (tab === 'dias') pintarDias(cuerpo, vs, r);
     else if (tab === 'meses') pintarMeses(cuerpo, vs);
     else pintarProductos(cuerpo, vs);
@@ -261,6 +263,63 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     box.querySelectorAll('[data-ficha]').forEach((tr) => tr.onclick = () => {
       if (GDO.Views.fichaClienteModal && Store.puedeCRM()) GDO.Views.fichaClienteModal(tr.dataset.ficha, () => GDO.App.render());
     });
+  }
+
+  /* ─────────────────────────── por localidad ───────────────────────────
+     De dónde son los clientes. La localidad sale del pedido (`localidad`), que
+     completa el autocompletado de direcciones; si está vacía se intenta sacar de
+     lo que va después de la última coma de la dirección ("Roca 1200, Hurlingham"),
+     que es como la escribe la gente. Un RETIRO muchas veces no tiene dirección
+     — el cliente lo pasa a buscar — así que esos caen en "Sin dato": no es un
+     error, es que ese pedido no dice de dónde viene el cliente. */
+  function localidadDe(p) {
+    let l = String(p.localidad || '').trim();
+    if (!l && p.direccion && String(p.direccion).indexOf(',') >= 0) {
+      l = String(p.direccion).split(',').pop().trim();
+      if (/^\d/.test(l) || l.length < 3) l = '';        // no era una localidad
+    }
+    return l;
+  }
+  const titulo = (s) => s.split(' ').map((w) => (w.length > 2 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase())).join(' ');
+
+  function agrupaZonas(vs) {
+    const g = {};
+    vs.forEach((v) => {
+      const l = localidadDe(v.p);
+      const k = l ? (GDO.CRM ? GDO.CRM.norm(l) : l.toLowerCase()) : '';
+      const r = g[k] || (g[k] = { nombre: l ? titulo(l) : 'Sin dato', n: 0, total: 0, ret: 0, clientes: {} });
+      if (l) r.nombre = titulo(l);
+      r.n++; r.total += v.monto;
+      if (esRetiro(v.p)) r.ret++;
+      // Cliente distinto: por teléfono si lo hay, si no por nombre.
+      const ck = (GDO.CRM && GDO.CRM.telKey(v.p.telefono)) || (GDO.CRM ? GDO.CRM.nomKey(v.p.cliente) : String(v.p.cliente || '').toLowerCase()) || ('x' + v.p.id);
+      r.clientes[ck] = 1;
+    });
+    return Object.keys(g).map((k) => { const r = g[k]; r.nClientes = Object.keys(r.clientes).length; return r; })
+      .sort((a, b) => b.n - a.n || b.total - a.total);
+  }
+
+  function pintarZonas(box, vs) {
+    const filas = agrupaZonas(vs);
+    if (!filas.length) { box.innerHTML = '<div class="empty">Sin datos de localidad en el período.</div>'; return; }
+    const totPed = filas.reduce((a, f) => a + f.n, 0);
+    const max = filas.reduce((a, f) => Math.max(a, f.n), 0) || 1;
+    const sinDato = filas.filter((f) => f.nombre === 'Sin dato').reduce((a, f) => a + f.n, 0);
+    box.innerHTML = `<table><thead><tr>
+        <th>Localidad</th><th>Pedidos</th><th>% de los pedidos</th><th>Clientes</th><th>🏪 Retiros</th><th>Facturado</th>
+      </tr></thead><tbody>${filas.map((f) => `
+        <tr>
+          <td><b>${esc(f.nombre)}</b></td>
+          <td>${fmtN(f.n)}</td>
+          <td style="min-width:150px">
+            ${Math.round(f.n / totPed * 100)}%
+            <div class="mx-barra"><span style="width:${Math.max(2, Math.round(f.n / max * 100))}%"></span></div>
+          </td>
+          <td>${fmtN(f.nClientes)}</td>
+          <td class="small">${f.ret ? fmtN(f.ret) : '<span class="muted">—</span>'}</td>
+          <td>${f.total ? fmtM(f.total) : '<span class="muted">—</span>'}</td>
+        </tr>`).join('')}</tbody></table>
+      ${sinDato ? `<div class="help" style="padding:12px 18px">“Sin dato” son ${sinDato} pedido${sinDato === 1 ? '' : 's'} sin localidad cargada: casi siempre <b>retiros en sucursal</b>, que no llevan dirección porque el cliente los pasa a buscar.</div>` : ''}`;
   }
 
   /* ─────────────────────────── por día / por mes ─────────────────────────── */
@@ -389,7 +448,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      así el Excel en español lo abre en columnas sin tener que importar nada. */
   function exportarCSV(vs, clientes, rotulo) {
     if (!vs.length) { toast('No hay datos para exportar', 'err'); return; }
-    const q = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+    // Decimales con COMA: el Excel en español lee "2.5" como texto.
+    const q = (s) => {
+      const v = (typeof s === 'number') ? String(s).replace('.', ',') : String(s == null ? '' : s);
+      return '"' + v.replace(/"/g, '""') + '"';
+    };
     const L = [];
     L.push(['Fecha', 'Cliente', 'Teléfono', 'Modalidad', 'Estado', 'Localidad', 'Productos', 'Unidades', 'Monto', 'Origen'].map(q).join(';'));
     vs.forEach((v) => {
@@ -399,7 +462,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         iso(new Date(v.ts)), p.cliente || '', p.telefono || '',
         esRetiro(p) ? 'Retiro en sucursal' : 'Envío a domicilio',
         esRetiro(p) && p.estado === 'entregado' ? 'retirado' : (p.estado || ''),
-        p.localidad || '',
+        localidadDe(p),
         (p.items || []).map((it) => (it.cantidad || 1) + '× ' + (it.producto || it.nombre || '')).join(' | '),
         uds, Math.round(v.monto), p.origen || 'panel',
       ].map(q).join(';'));

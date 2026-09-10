@@ -185,8 +185,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <option value="envio">🚚 Solo envíos a domicilio</option>
           <option value="retiro">🏪 Solo retiros en sucursal</option>
         </select>
+        <div class="p-fechas" title="Buscar por día de entrega o de retiro">
+          <span class="ic">📅</span>
+          <input type="date" id="p-d" title="Desde"/>
+          <span class="fl">→</span>
+          <input type="date" id="p-h" title="Hasta"/>
+          <button class="btn btn-ghost btn-sm" id="p-fclear" title="Ver todas las fechas" style="display:none">✕</button>
+        </div>
         <div class="spacer"></div>
-        <a class="btn btn-ghost" href="tienda/index.html" target="_blank">🛒 Tienda online ↗</a>
+        <!-- La tienda EN VIVO es lista.granjadeloeste.com (repo gdo-tienda). La
+             carpeta tienda/ de este repo es una copia vieja de julio que quedó
+             congelada: abrirla mostraba precios y un formulario desactualizados. -->
+        <a class="btn btn-ghost" href="https://lista.granjadeloeste.com" target="_blank" rel="noopener">🛒 Tienda online ↗</a>
         <button class="btn btn-ghost" id="p-wsp">📋 WhatsApp del día</button>
         <button class="btn btn-ghost" id="p-ocr">📷 Desde imagen</button>
         <button class="btn btn-ghost" id="p-import">📥 Importar</button>
@@ -226,6 +236,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const mod = c.querySelector('#p-mod').value;
       if (mod === 'retiro') list = list.filter((p) => esRetiro(p));
       else if (mod === 'envio') list = list.filter((p) => !esRetiro(p));
+      /* Búsqueda por fecha: el día de entrega (o de retiro) del pedido. Sirve
+         para contestar "¿qué entregamos el jueves pasado?" — se combina con el
+         estado, así que con "Entregado" + un día quedan las entregas de ese día.
+         Con una sola fecha cargada el rango queda abierto de ese lado. Un pedido
+         SIN fecha no puede entrar en ninguna búsqueda por fecha. */
+      const fD = c.querySelector('#p-d').value, fH = c.querySelector('#p-h').value;
+      if (fD || fH) {
+        list = list.filter((p) => {
+          const f = efFechaEntrega(p);
+          return f && (!fD || f >= fD) && (!fH || f <= fH);
+        });
+      }
+      c.querySelector('#p-fclear').style.display = (fD || fH) ? '' : 'none';
       // Mantenemos tildado solo lo que se sigue viendo (al cambiar filtro/busqueda).
       const visibles = new Set(list.map((p) => p.id));
       [...sel].forEach((id) => { if (!visibles.has(id)) sel.delete(id); });
@@ -235,6 +258,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#p-q').oninput = draw;
     c.querySelector('#p-est').onchange = () => { sel.clear(); draw(); };
     c.querySelector('#p-mod').onchange = () => { sel.clear(); draw(); };
+    // Calendario: al tocar el campo se abre el almanaque, y el filtro se aplica
+    // solo. Si el "hasta" queda antes del "desde", se acomodan solos.
+    const pD = c.querySelector('#p-d'), pH = c.querySelector('#p-h');
+    [pD, pH].forEach((el) => { el.onfocus = el.onclick = () => { try { el.showPicker && el.showPicker(); } catch (e) {} }; });
+    pD.onchange = () => { if (pH.value && pH.value < pD.value) pH.value = pD.value; sel.clear(); draw(); };
+    pH.onchange = () => { if (pD.value && pH.value < pD.value) pD.value = pH.value; sel.clear(); draw(); };
+    c.querySelector('#p-fclear').onclick = () => { pD.value = ''; pH.value = ''; sel.clear(); draw(); };
     c.querySelector('#p-new').onclick = () => pedidoModal(null, draw);
     c.querySelector('#p-ocr').onclick = () => ocrPedidoModal(draw);
     c.querySelector('#p-import').onclick = () => importModal(draw);

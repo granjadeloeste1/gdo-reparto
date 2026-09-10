@@ -7,20 +7,21 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v80';
+  const VERSION = 'v81';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
   const NAV = {
     admin: [
+      // El orden importa: las 7 primeras son las que entran en la barra de abajo
+      // del celular (en el teléfono no hay panel lateral), y son justamente las
+      // de todos los días. Promos/Usuarios/Vehículos se manejan de la computadora.
       { hash: '#/panel', ic: '📊', t: 'Tablero' },
       { hash: '#/pedidos', ic: '📦', t: 'Pedidos' },
+      { hash: '#/produccion', ic: '📋', t: 'Producción', st: 'Comanda' },
       { hash: '#/rutas', ic: '🗺️', t: 'Rutas' },
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
-      { hash: '#/club', ic: '⭐', t: 'GDO Club' },
-      // Métricas va DESPUÉS del Club (que se usa en el mostrador todos los días)
-      // pero DENTRO de las 6 primeras, que son las que entran en la barra de
-      // abajo del celular. Es una sección para mirar desde el teléfono.
+      { hash: '#/club', ic: '⭐', t: 'GDO Club', st: 'Club' },
       { hash: '#/metricas', ic: '📈', t: 'Métricas' },
       { hash: '#/promos', ic: '🖼️', t: 'Promos de la tienda' },
       { hash: '#/usuarios', ic: '👥', t: 'Usuarios y roles' },
@@ -165,6 +166,7 @@ window.GDO = window.GDO || {};
       case '#/rutas': return V.rutas(c);
       case '#/clientes': return Store.puedeCRM() ? V.clientes(c) : V.pedidos(c);
       case '#/metricas': return rol === 'admin' ? V.metricas(c) : V.pedidos(c);
+      case '#/produccion': return rol === 'admin' ? V.produccion(c) : V.pedidos(c);
       case '#/club': return (rol === 'admin' || rol === 'cajero') ? V.club(c) : V.pedidos(c);
       case '#/promos': return Store.puedePromos() ? V.promos(c) : V.pedidos(c);
       case '#/usuarios': return rol === 'admin' ? V.usuarios(c) : V.pedidos(c);
@@ -206,8 +208,8 @@ window.GDO = window.GDO || {};
           ${GDO.footHTML()}
         </div>
       </div>
-      <nav class="mobile-tabbar">
-        ${nav.slice(0, 6).map((n) => `<a data-hash="${n.hash}" class="${hash.startsWith(n.hash) ? 'active' : ''}"><span class="ic">${n.ic}</span>${n.t.split(' ')[0]}</a>`).join('')}
+      <nav class="mobile-tabbar${nav.length >= 7 ? " n7" : ""}">
+        ${nav.slice(0, 7).map((n) => `<a data-hash="${n.hash}" class="${hash.startsWith(n.hash) ? 'active' : ''}"><span class="ic">${n.ic}</span>${n.st || n.t.split(' ')[0]}</a>`).join('')}
       </nav>`;
 
     root().querySelectorAll('[data-hash]').forEach((a) => a.onclick = () => go(a.dataset.hash));
@@ -225,7 +227,7 @@ window.GDO = window.GDO || {};
      #/metricas por la URL veía sus pedidos pero con el título "Métricas". */
   function vedada(hash, rol) {
     switch (hash) {
-      case '#/panel': case '#/metricas': case '#/usuarios': case '#/vehiculos': return rol !== 'admin';
+      case '#/panel': case '#/metricas': case '#/produccion': case '#/usuarios': case '#/vehiculos': return rol !== 'admin';
       case '#/clientes': return !Store.puedeCRM();
       case '#/club': return !(rol === 'admin' || rol === 'cajero');
       case '#/promos': return !Store.puedePromos();
@@ -236,7 +238,7 @@ window.GDO = window.GDO || {};
   function titleFor(hash, rol) {
     if (hash.startsWith('#/rutas/')) return 'Armador de ruta';
     if (vedada(hash, rol)) hash = '#/pedidos';
-    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/metricas': 'Métricas', '#/club': 'GDO Club', '#/promos': 'Promos de la tienda', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
+    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/metricas': 'Métricas', '#/produccion': 'Producción', '#/club': 'GDO Club', '#/promos': 'Promos de la tienda', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
     return map[hash] || 'Granja del Oeste';
   }
 
