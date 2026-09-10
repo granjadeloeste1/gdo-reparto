@@ -1168,7 +1168,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             const i = +el.dataset.itPrep;
             items[i].preparacion = el.dataset.op;
             itemsBox.querySelectorAll('[data-it-prep="' + i + '"]').forEach((b) => b.classList.toggle('on', b === el));
-            refrescarSub(i);
+            // Cambiar el corte cambia el precio: el trabajo se cobra aparte.
+            recalcPrecios(); pintarTotal();
           });
           /* "➕ otro corte": duplica el renglón para que el mismo producto vaya
              con dos preparaciones (3 kg fileteados + 2 en cubos). Se copia el
@@ -1194,8 +1195,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (!d) return '';
           const sel = it.preparacion || d.opciones[0];
           if (!it.preparacion) it.preparacion = sel;
+          const rec = GDO.Lista.RECARGO_KG;
           return `<div class="it-preps"><span class="lbl">✂️ ${esc(d.titulo)}</span>${
-            d.opciones.map((o) => `<button type="button" class="prepb${o === sel ? ' on' : ''}" data-it-prep="${i}" data-op="${esc(o)}">${esc(o)}</button>`).join('')
+            d.opciones.map((o) => `<button type="button" class="prepb${o === sel ? ' on' : ''}" data-it-prep="${i}" data-op="${esc(o)}" title="${GDO.Lista.prepConTrabajo(it.producto, o) ? 'Preparación: +$' + rec + ' por kg' : 'Sin cargo'}">${esc(o)}${GDO.Lista.prepConTrabajo(it.producto, o) ? ' <b>+$' + rec + '</b>' : ''}</button>`).join('')
           }<button type="button" class="btn btn-ghost btn-sm" data-it-partir="${i}" title="El cliente quiere una parte de cada forma">➕ otro corte</button></div>`;
         }
         /* Precios de todos los renglones que vinieron de la lista. El ESCALÓN se
@@ -1216,7 +1218,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             const tot = totales[x._op.nombre] || 0;
             const r = GDO.Lista.renglon(x._op, Number(x.cantidad) || 0);
             x.kg = r.kg;
-            x.precio = GDO.Lista.precioPorEscalon(x._op.tiers, x._op.kgPor ? tot * x._op.kgPor : tot);
+            // El trabajo de preparación (fileteado, en cubos, trozado) se cobra
+            // $500 el kilo, igual que en la lista mayorista. El producto tal cual
+            // no paga nada.
+            x.precio = GDO.Lista.precioPorEscalon(x._op.tiers, x._op.kgPor ? tot * x._op.kgPor : tot)
+              + GDO.Lista.prepRecargo(x.producto, x.preparacion);
             const pe = itemsBox.querySelector('[data-it-pre="' + i + '"]');
             if (pe) pe.value = x.precio || '';
             refrescarSub(i);
