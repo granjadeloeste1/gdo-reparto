@@ -88,10 +88,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const cantTxt = (r) => Object.keys(r.unidades)
     .map((u) => nUm(r.unidades[u]) + ' ' + unidadTxt(u, r.unidades[u]))
     .join(' + ');
+  /* Un renglón del detalle. La UNIDAD va SIEMPRE escrita: si el pedido se cargó
+     a mano sin unidad, "20" solo no dice si son 20 kilos, 20 cajones o 20 pollos
+     — en producción eso es la diferencia entre preparar bien y preparar mal. Sin
+     unidad cargada asumimos unidades y lo decimos con esa palabra. Si el
+     producto además informa el peso, va entre paréntesis. */
   const itemTxt = (it) => {
     const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
     const uni = String(it.unidad || it.u || '').trim();
-    return nUm(cant) + (uni ? ' ' + uni : '') + ' · ' + String(it.producto || it.nombre || '');
+    const kg = Number(it.kg) || 0;
+    return nUm(cant) + ' ' + unidadTxt(uni, cant) + (kg ? ' (' + nUm(kg) + ' kg)' : '')
+      + ' · ' + String(it.producto || it.nombre || '');
   };
 
   /* ─────────────────────────── pantalla ─────────────────────────── */
@@ -156,6 +163,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <td>${r.kg ? nUm(r.kg) + ' kg' : '<span class="muted">—</span>'}</td>
               <td class="small muted no-print">${r.pedidos}</td>
             </tr>`).join('')}</tbody></table>
+          <div class="help" style="padding:10px 18px;line-height:1.6">
+            Las cantidades se suman <b>por unidad</b>: cajones, kilos y unidades no se mezclan
+            en un solo número. Si un producto se pidió de las dos formas, la fila muestra las dos
+            (“3 cajones + 12 kg”). <b>Kg</b> es el peso que informa el pedido, cuando lo trae.
+          </div>
         </div>
       </div>
 
@@ -251,7 +263,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         filas.push(base.concat([
           it.producto || it.nombre || '',
           (it.cantidad != null ? it.cantidad : it.cant) || 0,
-          it.unidad || it.u || '', it.kg || '', (it.nota || '').toString().trim(),
+          unidadTxt(String(it.unidad || it.u || '').trim(), Number(it.cantidad != null ? it.cantidad : it.cant) || 0),
+          it.kg || '', (it.nota || '').toString().trim(),
         ], cola));
       });
     });

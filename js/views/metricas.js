@@ -31,7 +31,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   let per = '30d';
   let mod = '';              // '' | 'envio' | 'retiro'
   let tab = 'clientes';
-  let ordProd = 'unidades';  // unidades | pedidos | monto
+  let ordProd = 'cant';      // cant (por unidad) | pedidos | monto
 
   // Primera y última fecha con pedidos cargados (para el atajo "Todo"). La
   // última puede ser FUTURA: un pedido pendiente para la semana que viene ya es
@@ -74,6 +74,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     { k: 'mes', t: 'Este mes' }, { k: 'mesant', t: 'Mes pasado' }, { k: '90d', t: '90 días' },
     { k: 'anio', t: 'Este año' }, { k: 'todo', t: 'Todo' },
   ];
+
+  /* Cómo se cuenta un "cliente distinto": por teléfono si lo hay (es el dato que
+     no se escribe de dos maneras) y si no por el nombre normalizado. Es el mismo
+     criterio que usa el CRM para unificar. */
+  function clienteKey(p) {
+    return (GDO.CRM && GDO.CRM.telKey(p.telefono))
+      || (GDO.CRM ? GDO.CRM.nomKey(p.cliente) : String(p.cliente || '').toLowerCase())
+      || ('x' + p.id);
+  }
 
   /* Ventas del período: cada pedido con su fecha y su monto ya resueltos. */
   function ventas() {
@@ -291,9 +300,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (l) r.nombre = titulo(l);
       r.n++; r.total += v.monto;
       if (esRetiro(v.p)) r.ret++;
-      // Cliente distinto: por teléfono si lo hay, si no por nombre.
-      const ck = (GDO.CRM && GDO.CRM.telKey(v.p.telefono)) || (GDO.CRM ? GDO.CRM.nomKey(v.p.cliente) : String(v.p.cliente || '').toLowerCase()) || ('x' + v.p.id);
-      r.clientes[ck] = 1;
+      r.clientes[clienteKey(v.p)] = 1;
     });
     return Object.keys(g).map((k) => { const r = g[k]; r.nClientes = Object.keys(r.clientes).length; return r; })
       .sort((a, b) => b.n - a.n || b.total - a.total);
@@ -392,54 +399,83 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   };
 
   /* ─────────────────────────── productos ─────────────────────────── */
+  /* OJO CON LAS UNIDADES. Cada renglón de un pedido trae una cantidad Y una
+     unidad ("3 cajones", "10 kg", y si se cargó a mano muchas veces no trae
+     unidad ninguna). Sumar todas esas cantidades en un solo número da algo que
+     NO significa nada: 3 cajones + 10 kg no son 13 de nada. Por eso la cantidad
+     se suma POR UNIDAD y la columna muestra el desglose ("120 cajones + 39 kg").
+     Cuando el producto se pidió siempre en la misma unidad —que es lo normal—
+     queda un solo número, que es el esperado. */
   function agrupaProductos(vs) {
     const g = {};
     vs.forEach((v) => {
       (v.p.items || []).forEach((it) => {
         const nom = String(it.producto || it.nombre || '').trim();
         if (!nom) return;
+        const uni = String(it.unidad || it.u || '').trim();
         const k = GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase();
         const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
-        const r = g[k] || (g[k] = { nombre: nom, pedidos: 0, unidades: 0, kg: 0, monto: 0, clientes: {} });
+        const r = g[k] || (g[k] = { nombre: nom, porUnidad: {}, cant: 0, kg: 0, monto: 0, _peds: {}, _clis: {} });
         r.nombre = nom;                    // nos quedamos con la escritura más nueva
-        r.pedidos++;
-        r.unidades += cant;
+        r.porUnidad[uni] = (r.porUnidad[uni] || 0) + cant;
+        r.cant += cant;
         r.kg += Number(it.kg) || 0;
         r.monto += cant * (Number(it.precio) || 0);
-        r.clientes[(v.p.cliente || '').toLowerCase()] = 1;
+        // Por PEDIDO, no por renglón: si un pedido trae el mismo producto en dos
+        // renglones, sigue siendo UN pedido que lo lleva.
+        r._peds[v.p.id] = 1;
+        r._clis[clienteKey(v.p)] = 1;
       });
     });
     return Object.keys(g).map((k) => {
-      const r = g[k]; r.nClientes = Object.keys(r.clientes).length; return r;
+      const r = g[k];
+      r.pedidos = Object.keys(r._peds).length;
+      r.nClientes = Object.keys(r._clis).length;
+      return r;
     }).sort((a, b) => (b[ordProd] || 0) - (a[ordProd] || 0));
   }
+
+  // Cantidades sumadas por unidad: "120 cajones + 39 kg". Sin unidad cargada
+  // (pedido escrito a mano) se muestra como "unidades".
+  const unidadTxt = (uni, cant) => (uni ? uni : (cant === 1 ? 'unidad' : 'unidades'));
+  const cantProd = (f) => Object.keys(f.porUnidad)
+    .sort((a, b) => f.porUnidad[b] - f.porUnidad[a])
+    .map((u) => fmtN(Math.round(f.porUnidad[u] * 100) / 100) + ' ' + unidadTxt(u, f.porUnidad[u]))
+    .join(' + ');
+
+  const ORD_PROD = { cant: 'Cantidad pedida', pedidos: 'Cantidad de pedidos', monto: 'Facturación' };
 
   function pintarProductos(box, vs) {
     const filas = agrupaProductos(vs);
     if (!filas.length) { box.innerHTML = '<div class="empty">Los pedidos del período no tienen productos cargados.</div>'; return; }
     const max = filas.reduce((a, f) => Math.max(a, f[ordProd] || 0), 0) || 1;
+    const mezclados = filas.filter((f) => Object.keys(f.porUnidad).length > 1).length;
     box.innerHTML = `
       <div class="toolbar" style="padding:12px 18px;margin:0;border-bottom:1px solid var(--gris-bd)">
         <label class="small muted" style="font-weight:600">Ordenar por</label>
         <select id="mx-ord" style="max-width:220px">
-          <option value="unidades"${ordProd === 'unidades' ? ' selected' : ''}>Unidades vendidas</option>
-          <option value="pedidos"${ordProd === 'pedidos' ? ' selected' : ''}>Cantidad de pedidos</option>
-          <option value="monto"${ordProd === 'monto' ? ' selected' : ''}>Facturación</option>
+          ${Object.keys(ORD_PROD).map((k) => `<option value="${k}"${ordProd === k ? ' selected' : ''}>${ORD_PROD[k]}</option>`).join('')}
         </select>
       </div>
       <table><thead><tr>
-        <th style="width:34px">#</th><th>Producto</th><th>Unidades</th><th>Kg</th><th>Pedidos</th><th>Clientes</th><th>Facturado</th>
+        <th style="width:34px">#</th><th>Producto</th><th>Cantidad pedida</th><th>Kg declarados</th><th>En pedidos</th><th>Clientes</th><th>Facturado</th>
       </tr></thead><tbody>${filas.map((f, i) => `
         <tr>
           <td class="muted">${i + 1}</td>
           <td><b>${esc(f.nombre)}</b>
             <div class="mx-barra"><span style="width:${Math.max(2, Math.round((f[ordProd] || 0) / max * 100))}%"></span></div></td>
-          <td>${fmtN(Math.round(f.unidades * 100) / 100)}</td>
-          <td class="small">${f.kg ? fmtN(Math.round(f.kg * 10) / 10) : '<span class="muted">—</span>'}</td>
+          <td><b>${esc(cantProd(f))}</b></td>
+          <td class="small">${f.kg ? fmtN(Math.round(f.kg * 10) / 10) + ' kg' : '<span class="muted">—</span>'}</td>
           <td>${fmtN(f.pedidos)}</td>
           <td class="small">${fmtN(f.nClientes)}</td>
           <td>${f.monto ? fmtM(f.monto) : '<span class="muted">—</span>'}</td>
-        </tr>`).join('')}</tbody></table>`;
+        </tr>`).join('')}</tbody></table>
+      <div class="help" style="padding:12px 18px;line-height:1.6">
+        <b>Cantidad pedida</b>: lo que se pidió, sumado <b>en la unidad con la que se cargó</b> (cajones, kg, unidades).
+        ${mezclados ? 'Cuando un producto se cargó con unidades distintas se muestran por separado (' + mezclados + ' producto' + (mezclados === 1 ? '' : 's') + ' acá): no se pueden sumar entre sí. ' : ''}
+        · <b>Kg declarados</b>: solo los pedidos de la tienda que se venden por pieza traen el peso; si está vacío, ese producto no informa kilos.
+        · <b>En pedidos</b>: en cuántos pedidos distintos apareció · <b>Clientes</b>: cuántos clientes distintos lo pidieron.
+      </div>`;
   }
 
   /* ─────────────────────────── exportar ───────────────────────────
