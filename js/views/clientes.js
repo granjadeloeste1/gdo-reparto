@@ -64,7 +64,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </div>` : ''}
 
       ${huerfanos.length ? `<div class="note" id="crm-huerf" style="cursor:pointer">
-        ⚠️ Hay <b>${huerfanos.length} pedido${huerfanos.length === 1 ? '' : 's'} sin fecha</b> (se cargaron sin fecha de entrega y nunca se despacharon).
+        ⚠️ Hay <b>${huerfanos.length} pedido${huerfanos.length === 1 ? '' : 's'} entregado${huerfanos.length === 1 ? '' : 's'} sin fecha</b> (figuran como entregados pero no quedó registrado cuándo).
         No cuentan para el historial ni para el ritmo de compra. <b>Tocá acá para verlos y completarlos.</b>
       </div>` : ''}
 
@@ -472,7 +472,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       title: f.nombre, width: 720,
       bodyHTML: `
         <div class="crm-ficha-kpi">
-          <div><span class="n">${f.nCompras}</span><span class="l">compras</span></div>
+          <div><span class="n">${f.nCompras}</span><span class="l">compras entregadas</span></div>
           <div><span class="n">${f.ritmo != null ? f.ritmo + ' d' : '—'}</span><span class="l">cada</span></div>
           <div><span class="n">${f.diasDesde != null ? f.diasDesde + ' d' : '—'}</span><span class="l">desde la última</span></div>
           <div><span class="n">${f.ticket ? fmtM(f.ticket) : '—'}</span><span class="l">pedido promedio</span></div>
@@ -547,15 +547,27 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <button class="btn btn-ghost btn-sm" data-ct style="margin-top:10px">+ Registrar un contacto</button>
         </div>
 
+        ${f.enCurso.length ? `<div class="crm-bloque">
+          <h4>En curso (${f.enCurso.length})</h4>
+          <div class="help" style="margin-bottom:8px">Todavía <b>no cuentan como compra</b>: entran al historial cuando se entregan o se retiran.</div>
+          <table class="crm-hist"><tbody>${f.enCurso.map((p) => `
+            <tr data-ped="${esc(p.id)}" style="cursor:pointer">
+              <td style="white-space:nowrap">${p.fechaEntrega ? fmtFecha(p.fechaEntrega) : 'A asignar'}<div class="small muted">${GDO.UI.esRetiro(p) ? '🏪 retiro' : '🚚 envío'}</div></td>
+              <td>${esc((p.items || []).map((i) => (i.cantidad || 1) + ' ' + (GDO.Lista ? GDO.Lista.nombreItem(i) : (i.producto || i.nombre || ''))).join(', ')) || '<span class="help">Sin detalle</span>'}</td>
+              <td style="white-space:nowrap;text-align:right">${GDO.CRM.montoDe(p) ? fmtM(GDO.CRM.montoDe(p)) : ''}</td>
+              <td>${GDO.UI.estadoChip(p)}</td>
+            </tr>`).join('')}</tbody></table>
+        </div>` : ''}
+
         <div class="crm-bloque">
-          <h4>Historial de pedidos (${compras.length})</h4>
+          <h4>Compras entregadas (${compras.length})</h4>
           ${compras.length ? `<table class="crm-hist"><tbody>${compras.slice(0, 30).map((c) => `
             <tr data-ped="${esc(c.p.id)}" style="cursor:pointer">
               <td style="white-space:nowrap">${fmtD(c.ts)}<div class="small muted">${GDO.UI.esRetiro(c.p) ? '🏪 retiro' : '🚚 envío'}</div></td>
               <td>${esc((c.p.items || []).map((i) => (i.cantidad || 1) + ' ' + (GDO.Lista ? GDO.Lista.nombreItem(i) : (i.producto || i.nombre || ''))).join(', ')) || '<span class="help">Sin detalle</span>'}</td>
               <td style="white-space:nowrap;text-align:right">${GDO.CRM.montoDe(c.p) ? fmtM(GDO.CRM.montoDe(c.p)) : ''}</td>
               <td>${GDO.UI.estadoChip(c.p)}</td>
-            </tr>`).join('')}</tbody></table>` : '<div class="empty">Todavía no tiene compras registradas.</div>'}
+            </tr>`).join('')}</tbody></table>` : '<div class="empty">Todavía no tiene compras entregadas.</div>'}
         </div>`,
       footHTML: `
         ${tel ? '<button class="btn btn-verde" data-wsp>💬 WhatsApp</button>' : ''}
@@ -763,8 +775,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     modal({
       title: lista.length + ' pedido' + (lista.length === 1 ? '' : 's') + ' sin fecha', width: 620,
       bodyHTML: `
-        <div class="note">Estos pedidos no tienen <b>fecha de entrega</b> ni entrega registrada, así que la app no sabe cuándo fueron y no los puede sumar al historial del cliente.<br>
-        Tocá uno para abrirlo y ponerle la fecha, o usá el botón de abajo si ya se entregaron y no importa el día exacto.</div>
+        <div class="note">Estos pedidos figuran como <b>entregados</b> pero no tienen fecha de entrega ni quedó registrado cuándo se entregaron, así que la app no los puede sumar al historial del cliente.<br>
+        Tocá uno para abrirlo y ponerle la fecha, o usá el botón de abajo si no importa el día exacto.</div>
         <div class="crm-unir-lista">${lista.map((p) => `
           <button class="crm-unir-item" data-ped="${esc(p.id)}">
             <b>${esc(p.cliente || 'Sin nombre')}</b>

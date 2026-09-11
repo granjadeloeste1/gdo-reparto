@@ -11,6 +11,8 @@
       migrar ni cargar nada: agrupamos los pedidos por TELÉFONO (o por nombre
       normalizado si no hay teléfono) y de ahí salen historial, ritmo de compra,
       productos habituales y plata. Es de solo lectura y siempre está al día.
+      Solo cuentan como compra los pedidos ENTREGADOS (o retirados en el local),
+      con la fecha de la entrega.
 
    2) La ficha GUARDADA (colección `crm_clientes` de Firestore): SOLO lo que una
       persona agrega a mano y la app no puede adivinar — tipo de cliente, notas,
@@ -106,10 +108,11 @@ window.GDO = window.GDO || {};
     return p.creado || p.ts || null;
   }
 
-  // Pedidos que la app no puede ubicar en el tiempo: no suman al historial ni al
-  // ritmo de compra. Si son muchos, conviene completarles la fecha de entrega.
+  // Pedidos ENTREGADOS que la app no puede ubicar en el tiempo: no suman al
+  // historial ni al ritmo de compra. Solo importan los entregados: un pedido que
+  // todavía no se entregó no es una venta para el CRM (ver calcular()).
   function sinFecha() {
-    return (GDO.Store.pedidos() || []).filter((p) => !fechaDe(p));
+    return (GDO.Store.pedidos() || []).filter((p) => p.estado === 'entregado' && !fechaDe(p));
   }
 
   // Plata del pedido. Si el cliente declaró un total lo usamos; si no, sumamos
@@ -334,15 +337,26 @@ window.GDO = window.GDO || {};
   function calcular(g) {
     const hoy = Date.now();
 
-    // Compras REALES para el historial: las que ya ocurrieron y no fueron
-    // rechazadas. Un "no entregado" no es una compra (no se llevó la mercadería).
+    /* REGLA DEL NEGOCIO: para el CRM una venta existe recién cuando se ENTREGÓ
+       (o se retiró en el local, que también deja el pedido en 'entregado'). Un
+       pedido pendiente, asignado o en ruta todavía no es una compra aunque su
+       fecha de entrega ya haya pasado: puede no haberse entregado nunca. La
+       fecha de la compra es la de la ENTREGA (fechaDe usa la del chofer o el
+       mostrador antes que la pactada). Si el chofer corrige una entrega, el
+       pedido vuelve a 'en_ruta' y deja de contar solo. */
     const compras = g.pedidos
+      .filter((p) => p.estado === 'entregado')
       .map((p) => ({ p: p, ts: fechaDe(p) }))
-      .filter((x) => x.ts && x.ts <= hoy && x.p.estado !== 'no_entregado')
+      .filter((x) => x.ts)
+      // Entregado pero con una fecha pactada futura (se adelantó la entrega y
+      // nadie la registró): la entrega fue hoy o antes, nunca en el futuro.
+      .map((x) => (x.ts > hoy ? { p: x.p, ts: hoy } : x))
       .sort((a, b) => a.ts - b.ts);
 
-    // ¿Tiene un pedido en curso? Si ya pidió, NO hay que recordarle que pida.
-    g.tienePendiente = g.pedidos.some((p) => ['pendiente', 'asignado', 'en_ruta'].indexOf(p.estado) >= 0);
+    // Pedidos en curso: ya están pedidos pero todavía no cuentan como compra.
+    // Si tiene uno, NO hay que recordarle que pida. La ficha los muestra aparte.
+    g.enCurso = g.pedidos.filter((p) => ['pendiente', 'asignado', 'en_ruta'].indexOf(p.estado) >= 0);
+    g.tienePendiente = g.enCurso.length > 0;
 
     g.nCompras = compras.length;
     g.primera = compras.length ? compras[0].ts : null;
@@ -452,7 +466,7 @@ window.GDO = window.GDO || {};
      con él, no se le vuelve a preguntar. Devuelve null si no es cliente nuevo. */
   function seguimiento(f) {
     const primera = (f._compras || [])[0] || null;
-    const enCurso = (f.pedidos || []).filter((p) => ['pendiente', 'asignado', 'en_ruta'].indexOf(p.estado) >= 0)[0] || null;
+    const enCurso = (f.enCurso || [])[0] || null;
     if (!primera && !enCurso) return null;
     const cts = primera ? (f.contactos || []).filter((ct) => ct.ts >= primera.ts) : [];   // del más nuevo al más viejo
     const s = {
@@ -466,7 +480,7 @@ window.GDO = window.GDO || {};
     if (s.opinion) s.estado = s.opinion.resultado === 'problema' ? 'critica' : 'gusto';
     else if (cts.length) s.estado = cts[0].resultado === 'enviado' ? 'escrito' : 'hablado';
     else if (s.volvio) s.estado = 'volvio';
-    else if (!primera || primera.p.estado !== 'entregado') s.estado = 'curso';
+    else if (!primera) s.estado = 'curso';     // las compras ya son solo pedidos entregados
     else if (s.dias < PRIMERA_DESDE) s.estado = 'espera';
     else s.estado = 'toca';
     return s;

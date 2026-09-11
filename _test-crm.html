@@ -152,9 +152,9 @@ chk(pc2[0] && pc2[0].telefonos.length === 2, 'Guarda los 2 teléfonos del client
 chk(DOCS.length === 1, 'La unión deja UN solo documento guardado, no dos (dio ' + DOCS.length + ')');
 
 L.push('<h2>4d · Pedidos sin fecha (los viejos)</h2>');
-// Pedido cargado a mano, sin fecha de entrega, nunca despachado: la app no sabe cuándo fue.
+// Pedido viejo marcado entregado, sin fecha de entrega ni registro de cuándo: la app no sabe cuándo fue.
 const viejo = { id: 'p_viejo', cliente: 'Verdulería Los Pinos', telefono: '11 5555-9500',
-  direccion: 'Roca 900, Morón', estado: 'pendiente', items: [{ producto: 'Pollo entero', cantidad: 4 }],
+  direccion: 'Roca 900, Morón', estado: 'entregado', items: [{ producto: 'Pollo entero', cantidad: 4 }],
   historia: [], fechaEntrega: '' };
 PEDIDOS.push(viejo);
 chk(GDO.CRM.fechaDe(viejo) === null, 'Un pedido viejo sin fecha de entrega ni entrega registrada no tiene fecha');
@@ -310,6 +310,30 @@ DOCS = []; seq = 0;
 GDO.Store.crmClientes = function () { return []; };
 GDO.Store.upsertCrmCliente = function (c) { return c; };
 for (let k = 0; k < 4; k++) PEDIDOS.pop();
+
+L.push('<h2>4i · La venta cuenta recién cuando se ENTREGA</h2>');
+// R · Pedido pendiente con la fecha de entrega YA pasada, que nadie marcó entregado.
+const pr = ped('Pizzería Sin Entregar', '11 5511-0001', 4, [POLLO], 'pendiente');
+PEDIDOS.push(pr);
+const fPr = () => GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Sin Entregar') >= 0)[0];
+chk(fPr() && fPr().nCompras === 0, 'Un pedido pendiente con la fecha ya pasada NO cuenta como venta (dio ' + (fPr() ? fPr().nCompras : '—') + ')');
+chk(fPr() && fPr().enCurso.length === 1, 'Figura aparte, como pedido en curso');
+chk(!GDO.CRM.sinFecha().some((p) => p.id === pr.id), 'Y no se lo trata como "pedido sin fecha": todavía no es una venta');
+// Se entrega (hace un rato) → cuenta, con la fecha de la ENTREGA, no la pactada.
+pr.estado = 'entregado'; pr.historia = [{ ts: hoy - 3000, est: 'entregado' }];
+chk(fPr().nCompras === 1 && fPr().diasDesde === 0, 'Al marcarlo entregado cuenta, con la fecha de la entrega (hoy) y no la pactada (hace 4 días)');
+// El chofer corrige la entrega → vuelve a en_ruta y deja de contar.
+pr.estado = 'en_ruta'; pr.historia.push({ ts: hoy - 2000, est: 'reabierto' });
+chk(fPr().nCompras === 0, 'Si el chofer corrige la entrega, deja de contar solo');
+// Retiro en el local: el mostrador lo marca retirado (queda 'entregado') y cuenta.
+pr.estado = 'entregado'; pr.modalidad = 'retiro'; pr.historia.push({ ts: hoy - 1000, est: 'entregado' });
+chk(fPr().nCompras === 1 && fPr().nRetiros === 1, 'Un retiro marcado como retirado en el mostrador también cuenta como venta');
+// Entregado con fecha pactada futura y sin registro de entrega: cuenta como de hoy, no del futuro.
+const pf = ped('Bar Adelantado', '11 5511-0002', -3, [POLLO], 'pendiente'); pf.estado = 'entregado';
+PEDIDOS.push(pf);
+const fPf = GDO.CRM.fichas().filter((f) => f.nombre.indexOf('Adelantado') >= 0)[0];
+chk(fPf && fPf.nCompras === 1 && fPf.diasDesde === 0, 'Entregado antes de la fecha pactada: cuenta, fechado hoy (nunca en el futuro)');
+PEDIDOS.pop(); PEDIDOS.pop();
 
 L.push('<h2>5 · Agrupación: una tarjeta por cliente</h2>');
 const ids = sugs.map((s) => s.clienteId);
