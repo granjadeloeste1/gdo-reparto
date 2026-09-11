@@ -585,7 +585,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      es el del dueño del código…) sale en rojo: hay que abrirlo antes de cobrar. */
   function chipDesc(p) {
     if (!p.descuento || !p.descuento.codigo) return '';
-    const v = GDO.Desc ? GDO.Desc.validar(p.descuento.codigo, { telefono: p.telefono, modalidad: esRetiro(p) ? 'retiro' : 'envio',
+    const v = GDO.Desc ? GDO.Desc.validar(p.descuento.codigo, { telefono: p.telefono, lista: p.lista === 'minorista' ? 'minorista' : 'mayorista',
       pedidoId: p.id, creado: p.creado || p.ts, guardado: true }) : { ok: true };
     return v.ok
       ? ' <span class="chip chip-desc" style="font-size:10px" title="Código ' + esc(p.descuento.codigo) + '">🎟️ ' + esc(String(p.descuento.pct)) + '% OFF</span>'
@@ -1137,8 +1137,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             ? '🏪 No entra al armado de rutas: el cliente lo pasa a buscar por el local.'
             : '🚚 Entra en la lista de pedidos para armar la ruta del día.';
         };
-        // Cambiar la modalidad puede invalidar un código "solo envío": se revisa.
-        node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; pintarModo(); pintarDesc(); pintarTotal(); });
+        node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; pintarModo(); });
         pintarModo();
 
         /* RENGLONES DEL PEDIDO. Cada uno lleva producto, CANTIDAD y UNIDAD.
@@ -1166,20 +1165,22 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           pintarLista();
           if (GDO.Lista) GDO.Lista.cargar(lista);
           drawItems();
+          // Pasar a mayorista invalida un código "solo venta minorista": se revisa.
+          pintarDesc(); pintarTotal();
         });
         pintarLista();
 
         /* CÓDIGO DE DESCUENTO (la lógica está en js/descuentos.js). Lo carga el
            cliente en la tienda antes de mandar el pedido o, si no, quien toma el
-           pedido acá. Se valida contra el TELÉFONO y la MODALIDAD del pedido: uno
+           pedido acá. Se valida contra el TELÉFONO y la LISTA del pedido: uno
            de campaña vale una vez por cliente, uno personal solo para su dueño, y
-           los "solo envío" no valen para retirar. Un pedido que YA traía el
+           los "solo venta minorista" no valen en la mayorista. Un pedido que YA traía el
            código se juzga con la fecha en que se hizo, no con la de hoy. */
         const pedCreado = p ? (p.creado || p.ts || Date.now()) : Date.now();
         var desc = (p && p.descuento && p.descuento.codigo)
           ? { codigo: p.descuento.codigo, pct: p.descuento.pct, guardado: true } : null;
         const descBox = node.querySelector('#f-desc');
-        const ctxDesc = () => ({ telefono: node.querySelector('#f-tel').value, modalidad: mod,
+        const ctxDesc = () => ({ telefono: node.querySelector('#f-tel').value, lista: lista,
           pedidoId: p ? p.id : null, creado: pedCreado, guardado: !!(desc && desc.guardado) });
         const validarDesc = () => (desc && GDO.Desc ? GDO.Desc.validar(desc.codigo, ctxDesc()) : null);
         // El % que se aplica: el que quedó guardado en el pedido (si después se

@@ -371,7 +371,11 @@ const en = (n) => GDO.Desc.iso(new Date(Date.now() + n * DIA));
 GDO.Desc.guardar({ codigo: 'volve 10', tipo: 'campana', pct: 10, nombre: 'Volvé', vence: en(10), soloEnvio: true });
 chk(!!GDO.Desc.buscar('VOLVE10'), 'El código se guarda en mayúsculas y sin espacios ("volve 10" → VOLVE10)');
 chk(GDO.Desc.validar('volve10', { telefono: '11 5000-0001', modalidad: 'envio' }).ok, 'Una campaña vigente vale para un cliente con envío (escrita en minúsculas también)');
-chk(!GDO.Desc.validar('VOLVE10', { telefono: '11 5000-0001', modalidad: 'retiro' }).ok, 'Un código "solo envío" no vale para retirar en el local');
+chk(GDO.Desc.buscar('VOLVE10').soloMinorista === true && GDO.Desc.soloMin({ soloEnvio: true }), 'Los códigos "solo envío" de antes pasan a ser "solo venta minorista"');
+chk(!GDO.Desc.validar('VOLVE10', { telefono: '11 5000-0001', lista: 'mayorista' }).ok, 'Un código "solo venta minorista" no vale en la lista mayorista');
+chk(GDO.Desc.validar('VOLVE10', { telefono: '11 5000-0001', lista: 'minorista', modalidad: 'retiro' }).ok, 'Pero sí vale en la minorista, con envío o retirando en el local');
+GDO.Desc.guardar({ codigo: 'TODOS5', tipo: 'campana', pct: 5, nombre: 'Para todos', soloMinorista: false });
+chk(GDO.Desc.validar('TODOS5', { telefono: '11 5000-0001', lista: 'mayorista' }).ok, 'Un código sin "solo venta minorista" vale también en la mayorista');
 chk(!GDO.Desc.validar('NOEXISTE', { telefono: '1150000001' }).ok, 'Un código que no existe se rechaza');
 chk(!GDO.Desc.validar('VOLVE10', { telefono: '', modalidad: 'envio' }).ok, 'Sin teléfono no se aplica (cada cliente lo usa una vez)');
 chk(GDO.Desc.aplicar(123456, { pct: 10 }).monto === 12346 && GDO.Desc.aplicar(123456, { pct: 10 }).total === 111110, 'El 10% se redondea al peso');
@@ -415,7 +419,8 @@ GDO.Desc.guardar({ codigo: 'NARANJA-JUAN', tipo: 'personal', pct: 10, clienteNom
 chk(GDO.Desc.colorDe(GDO.Desc.buscar('NARANJA-JUAN')) === 'naranja', 'Y un personal puede ser NARANJA');
 const msgV = GDO.Desc.mensajeVuelta({ nombre: 'Juan Pérez' }, GDO.Desc.buscar(cp));
 chk(/^Hola Juan!/.test(msgV) && /hace tiempo que no sabemos nada de vos/i.test(msgV) && /15% de descuento/.test(msgV)
-  && msgV.indexOf(cp) >= 0 && /a domicilio/.test(msgV), 'El mensaje saluda por el nombre y dice el %, "a domicilio" y el código');
+  && msgV.indexOf(cp) >= 0 && /próximo pedido minorista/.test(msgV) && !/domicilio/.test(msgV),
+  'El mensaje saluda por el nombre y dice el %, "pedido minorista" (ya no "a domicilio") y el código');
 L.push('<b>Mensaje "volvé" → Juan Pérez</b><pre>' + msgV + '</pre>');
 L.push('<b>Mensaje de campaña</b><pre>' + GDO.Desc.mensajeCampana(Object.assign({}, GDO.Desc.buscar('VOLVE10'), { activo: true })) + '</pre>');
 

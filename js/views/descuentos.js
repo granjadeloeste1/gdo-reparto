@@ -71,7 +71,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="dc-nom">${esc(personal ? (d.clienteNombre || 'Elegí un cliente') : (d.nombre || 'Nombre de la campaña'))}</div>
           <div class="dc-meta">
             <span>${venceTxt(d)}</span>
-            <span>${d.soloEnvio ? '🚚 Solo envío a domicilio' : '🛍️ Envío o retiro en el local'}</span>
+            <span>${D().soloMin(d) ? '🏠 Solo venta minorista' : '🛍️ Minorista y mayorista'}</span>
             ${opts.preview ? '' : `<span>${us.length ? '🎯 ' + us.length + ' pedido' + (us.length === 1 ? '' : 's') + (plata ? ' · ' + D().fmtM(plata) + ' descontados' : '') : '🎯 Todavía sin usar'}</span>`}
           </div>
         </div>
@@ -180,7 +180,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       codigo: d ? d.id : '',
       pct: d ? d.pct : 10,
       vence: d ? (d.vence || '') : venceEn(personal ? 15 : 30),
-      soloEnvio: d ? !!d.soloEnvio : true,
+      soloMin: d ? D().soloMin(d) : true,
       color: d ? D().colorDe(d) : (personal ? 'negro' : 'naranja'),
       clienteNombre: d ? (d.clienteNombre || '') : '',
       telefono: '',
@@ -222,9 +222,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             </div>
             <input id="cm-ven" type="date" value="${esc(st.vence)}" style="margin-top:8px"/></div>
           <div class="field col-2"><label style="display:flex;align-items:center;gap:8px;font-weight:600">
-              <input type="checkbox" id="cm-env" ${st.soloEnvio ? 'checked' : ''} style="width:auto;margin:0"/>
-              Solo para pedidos con envío a domicilio</label>
-            <span class="help">Si lo destildás, vale también para retirar en el local (lista mayorista).</span></div>
+              <input type="checkbox" id="cm-env" ${st.soloMin ? 'checked' : ''} style="width:auto;margin:0"/>
+              Solo para venta minorista</label>
+            <span class="help">Vale en la lista minorista, con envío o retirando en el local. Si lo destildás, vale también en la mayorista.</span></div>
         </div>
         <div class="desc-msg err" id="cm-err"></div>`,
       footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save>${edit ? 'Guardar cambios' : (personal ? 'Crear código' : 'Crear campaña')}</button>`,
@@ -233,7 +233,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const pintar = () => {
           $('#cm-prev').innerHTML = ticketHTML({
             id: st.codigo || (personal ? 'VOLVE-·····' : 'CODIGO'), tipo: st.tipo, pct: st.pct, nombre: st.nombre,
-            clienteNombre: st.clienteNombre, vence: st.vence, soloEnvio: st.soloEnvio, activo: true, color: st.color,
+            clienteNombre: st.clienteNombre, vence: st.vence, soloMinorista: st.soloMin, activo: true, color: st.color,
           }, { preview: true });
           node.querySelectorAll('[data-pct]').forEach((b) => b.classList.toggle('on', +b.dataset.pct === +st.pct));
           node.querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('on', b.dataset.color === st.color));
@@ -250,7 +250,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         $('#cm-pct').oninput = (e) => { st.pct = +e.target.value || 0; sugerir(); pintar(); };
         node.querySelectorAll('[data-ven]').forEach((b) => b.onclick = () => { st.vence = venDe(b.dataset.ven); $('#cm-ven').value = st.vence; pintar(); });
         $('#cm-ven').onchange = (e) => { st.vence = e.target.value; pintar(); };
-        $('#cm-env').onchange = (e) => { st.soloEnvio = e.target.checked; pintar(); };
+        $('#cm-env').onchange = (e) => { st.soloMin = e.target.checked; pintar(); };
         node.querySelectorAll('[data-color]').forEach((b) => b.onclick = () => { st.color = b.dataset.color; pintar(); });
         $('#cm-cod').oninput = (e) => { st.codigoTocado = true; st.codigo = D().normCodigo(e.target.value); pintar(); };
         $('#cm-cod').onblur = (e) => { e.target.value = st.codigo; };
@@ -291,7 +291,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const err = (m) => { $('#cm-err').textContent = '⚠️ ' + m; };
           if (nom) st.nombre = nom.value.trim();
           if (!edit) st.codigo = D().normCodigo($('#cm-cod').value);
-          st.pct = +$('#cm-pct').value; st.vence = $('#cm-ven').value; st.soloEnvio = $('#cm-env').checked;
+          st.pct = +$('#cm-pct').value; st.vence = $('#cm-ven').value; st.soloMin = $('#cm-env').checked;
           if (!edit) {
             if (!st.codigo || st.codigo.length < 4) return err('El código tiene que tener al menos 4 letras o números.');
             if (D().buscar(st.codigo)) return err('Ya existe un código ' + st.codigo + '. Elegí otro.');
@@ -301,7 +301,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (!(st.pct >= 1 && st.pct <= 50)) return err('El descuento tiene que ser entre 1% y 50%.');
           if (st.vence && st.vence < D().hoyISO()) return err('La fecha de vencimiento ya pasó.');
           const doc = D().guardar({
-            codigo: st.codigo, tipo: st.tipo, pct: st.pct, nombre: st.nombre, vence: st.vence, soloEnvio: st.soloEnvio,
+            codigo: st.codigo, tipo: st.tipo, pct: st.pct, nombre: st.nombre, vence: st.vence, soloMinorista: st.soloMin,
             activo: d ? d.activo : true, clienteNombre: st.clienteNombre, telefono: st.telefono, color: st.color,
           }, d);
           toast(edit ? 'Código guardado ✓' : 'Código ' + doc.id + ' creado ✓', 'ok');
@@ -357,11 +357,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   GDO.Views.ofrecerDescuento = function (ficha, after, sug) {
     const tel = (ficha.telefono && GDO.Wpp.tieneTel(ficha.telefono)) ? ficha.telefono : '';
     const t8 = GDO.CRM ? GDO.CRM.telKey(ficha.telefono) : '';
-    const ctx = { telefono: ficha.telefono, modalidad: 'envio' };
+    const ctx = { telefono: ficha.telefono, lista: 'minorista' };
     const camps = D().todos().filter((d) => d.tipo !== 'personal' && D().estado(d) === 'activo' && D().validar(d.id, ctx).ok);
     const propio = t8 ? (D().todos().filter((d) => d.tipo === 'personal' && d.tel8 === t8 && D().estado(d) === 'activo')[0] || null) : null;
     const st = {
-      modo: 'personal', pct: 10, venK: '15', soloEnvio: true, color: 'negro',
+      modo: 'personal', pct: 10, venK: '15', soloMin: true, color: 'negro',
       camp: camps[0] ? camps[0].id : '',
       codigo: D().codigoPersonal(ficha.nombre),
     };
@@ -369,7 +369,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const actual = () => {
       if (st.modo === 'campana') return D().buscar(st.camp);
       if (propio) return propio;
-      return { id: st.codigo, tipo: 'personal', pct: st.pct, vence: venDe(st.venK), soloEnvio: st.soloEnvio, clienteNombre: ficha.nombre, activo: true, color: st.color };
+      return { id: st.codigo, tipo: 'personal', pct: st.pct, vence: venDe(st.venK), soloMinorista: st.soloMin, clienteNombre: ficha.nombre, activo: true, color: st.color };
     };
 
     modal({
@@ -412,12 +412,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <div class="field col-2"><label>Color del voucher</label>
                 <div class="dc-colores">${[['naranja', 'Naranja'], ['negro', 'Negro']].map((c) => `<button type="button" class="dc-color${st.color === c[0] ? ' on' : ''}" data-color="${c[0]}"><span class="sw ${c[0]}"></span>${c[1]}</button>`).join('')}</div></div>
               <div class="field col-2"><label style="display:flex;align-items:center;gap:8px;font-weight:600">
-                <input type="checkbox" id="of-env" ${st.soloEnvio ? 'checked' : ''} style="width:auto;margin:0"/> Solo para pedidos con envío a domicilio</label></div>
+                <input type="checkbox" id="of-env" ${st.soloMin ? 'checked' : ''} style="width:auto;margin:0"/> Solo para venta minorista</label></div>
             </div>`;
             box.querySelectorAll('[data-pct]').forEach((b) => b.onclick = () => { st.pct = +b.dataset.pct; pintarOpts(); pintar(); });
             box.querySelectorAll('[data-ven]').forEach((b) => b.onclick = () => { st.venK = b.dataset.ven; pintarOpts(); pintar(); });
             box.querySelectorAll('[data-color]').forEach((b) => b.onclick = () => { st.color = b.dataset.color; pintarOpts(); pintar(); });
-            $('#of-env').onchange = (e) => { st.soloEnvio = e.target.checked; pintar(); };
+            $('#of-env').onchange = (e) => { st.soloMin = e.target.checked; pintar(); };
           }
         };
         const pintar = () => {
@@ -440,7 +440,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const confirmar = () => {
           let d = actual();
           if (st.modo === 'personal' && !propio) {
-            d = D().guardar({ codigo: st.codigo, tipo: 'personal', pct: st.pct, vence: venDe(st.venK), soloEnvio: st.soloEnvio, color: st.color,
+            d = D().guardar({ codigo: st.codigo, tipo: 'personal', pct: st.pct, vence: venDe(st.venK), soloMinorista: st.soloMin, color: st.color,
               nombre: 'Volvé a Granja del Oeste', clienteNombre: ficha.nombre, telefono: ficha.telefono });
           }
           if (GDO.CRM) {

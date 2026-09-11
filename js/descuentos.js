@@ -59,6 +59,10 @@ window.GDO = window.GDO || {};
   // códigos viejos, sin el campo, siguen como antes: campaña naranja, personal negro.
   const colorDe = (d) => ((d && (d.color === 'negro' || d.color === 'naranja'))
     ? d.color : ((d && d.tipo === 'personal') ? 'negro' : 'naranja'));
+
+  // ¿Es "solo venta minorista"? Se elige en cada código. Los primeros códigos
+  // guardaban `soloEnvio` (solo envío a domicilio): esos pasan a ser minoristas.
+  const soloMin = (d) => !!(d && (d.soloMinorista != null ? d.soloMinorista : d.soloEnvio));
   const quien = (p) => (p.cliente || 'otro pedido') + (creadoDe(p) ? ', el ' + new Date(creadoDe(p)).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '');
 
   // En qué está un código, para mostrarlo: activo, pausado, vencido o (el
@@ -71,7 +75,7 @@ window.GDO = window.GDO || {};
   }
 
   /* ¿Se puede usar este código en este pedido?
-     ctx = { telefono, modalidad, pedidoId, creado, guardado }
+     ctx = { telefono, lista ('minorista'|'mayorista'), pedidoId, creado, guardado }
        · creado:   cuándo se hizo el pedido (por defecto, ahora).
        · guardado: el pedido YA traía el código (vino de la tienda o se cargó
                    antes). No se lo frena por "pausado": se juzga como estaba
@@ -87,8 +91,8 @@ window.GDO = window.GDO || {};
     const ref = ctx.creado || Date.now();
     if (!ctx.guardado && !d.activo) return { ok: false, d: d, error: 'El código ' + k + ' está pausado.' };
     if (vencido(d, ref)) return { ok: false, d: d, error: 'El código ' + k + ' venció el ' + fmtDia(d.vence) + '.' };
-    if (d.soloEnvio && ctx.modalidad === 'retiro') {
-      return { ok: false, d: d, error: 'Este código es solo para pedidos con envío a domicilio.' };
+    if (soloMin(d) && ctx.lista === 'mayorista') {
+      return { ok: false, d: d, error: 'Este código es solo para venta minorista.' };
     }
     const t = tel8(ctx.telefono);
     // Si otro pedido lo usó ANTES que este, gana el otro.
@@ -150,7 +154,7 @@ window.GDO = window.GDO || {};
   }
 
   /* Crear o actualizar un código. `datos` = { codigo, tipo, pct, nombre, vence,
-     soloEnvio, activo, clienteNombre, telefono, fichaId }. */
+     soloMinorista, activo, color, clienteNombre, telefono, fichaId }. */
   function guardar(datos, previo) {
     const u = (GDO.Store.current && GDO.Store.current()) || null;
     const id = normCodigo(datos.codigo);
@@ -160,7 +164,7 @@ window.GDO = window.GDO || {};
       pct: Math.max(1, Math.min(50, Math.round(Number(datos.pct) || 0))),
       nombre: String(datos.nombre || '').trim().slice(0, 80),
       vence: datos.vence || '',
-      soloEnvio: !!datos.soloEnvio,
+      soloMinorista: datos.soloMinorista != null ? !!datos.soloMinorista : !!datos.soloEnvio,
       activo: datos.activo !== false,
       // Si al editar no se manda color, se conserva el que tenía.
       color: colorDe({ color: datos.color || (previo && previo.color), tipo: datos.tipo }),
@@ -185,7 +189,7 @@ window.GDO = window.GDO || {};
     const nom = GDO.CRM && GDO.CRM.nombrePila ? GDO.CRM.nombrePila(ficha || {}) : String((ficha && ficha.nombre) || '').split(' ')[0];
     const url = (GDO.CRM && GDO.CRM.LISTA_URL) || 'lista.granjadeloeste.com';
     return 'Hola ' + (nom || '') + '! 👋 Hace tiempo que no sabemos nada de vos y queremos que vuelvas 🐔❤️\n' +
-      'Por eso te ofrecemos un *' + d.pct + '% de descuento* en tu próximo pedido' + (d.soloEnvio ? ' a domicilio' : '') + '!! 🎁\n\n' +
+      'Por eso te ofrecemos un *' + d.pct + '% de descuento* en tu próximo pedido' + (soloMin(d) ? ' minorista' : '') + '!! 🎁\n\n' +
       '🎟️ Tu código: *' + d.id + '*\n' +
       '⏳ ' + textoVence(d).charAt(0).toUpperCase() + textoVence(d).slice(1) + '\n\n' +
       'Hacé tu pedido en ' + url + ' y cargá el código antes de enviarlo, o respondé este mensaje y te lo tomamos nosotros.\n' +
@@ -194,14 +198,14 @@ window.GDO = window.GDO || {};
   /* El mensaje de una CAMPAÑA, para estados o listas de difusión (sin nombre). */
   function mensajeCampana(d) {
     const url = (GDO.CRM && GDO.CRM.LISTA_URL) || 'lista.granjadeloeste.com';
-    return '🎁 *' + d.pct + '% de descuento* en tu próximo pedido' + (d.soloEnvio ? ' a domicilio' : '') + ' en Granja del Oeste 🐔\n\n' +
+    return '🎁 *' + d.pct + '% de descuento* en tu próximo pedido' + (soloMin(d) ? ' minorista' : '') + ' en Granja del Oeste 🐔\n\n' +
       '🎟️ Código: *' + d.id + '*\n' +
       '⏳ ' + textoVence(d).charAt(0).toUpperCase() + textoVence(d).slice(1) + ' · uno por cliente\n\n' +
       'Pedí en ' + url + ' y cargá el código antes de enviar el pedido.';
   }
 
   GDO.Desc = {
-    normCodigo, buscar, todos, validar, aplicar, resumenPedido, usos, estado, vencido, diasParaVencer, colorDe,
+    normCodigo, buscar, todos, validar, aplicar, resumenPedido, usos, estado, vencido, diasParaVencer, colorDe, soloMin,
     codigoPersonal, codigoCampana, guardar, mensajeVuelta, mensajeCampana, textoVence, fmtDia, fmtM, hoyISO, iso,
   };
 })();
