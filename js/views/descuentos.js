@@ -59,7 +59,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const plata = us.reduce((a, p) => a + (Number(p.descuento && p.descuento.monto) || 0), 0);
     const ESTADO = { pausado: '⏸ Pausado', vencido: '⌛ Vencido', usado: '✓ Ya se usó' };
     const personal = d.tipo === 'personal';
-    return `<div class="dc-wrap${est !== 'activo' ? ' off' : ''}"><div class="dc-ticket${personal ? ' personal' : ''}">
+    const negro = D().colorDe(d) === 'negro';
+    return `<div class="dc-wrap${est !== 'activo' ? ' off' : ''}"><div class="dc-ticket${negro ? ' negro' : ''}">
         <div class="dc-pct"><b>${esc(String(d.pct || 0))}%</b><span>OFF</span></div>
         <div class="dc-body">
           <div class="dc-h">
@@ -180,6 +181,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       pct: d ? d.pct : 10,
       vence: d ? (d.vence || '') : venceEn(personal ? 15 : 30),
       soloEnvio: d ? !!d.soloEnvio : true,
+      color: d ? D().colorDe(d) : (personal ? 'negro' : 'naranja'),
       clienteNombre: d ? (d.clienteNombre || '') : '',
       telefono: '',
       codigoTocado: false,
@@ -205,6 +207,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>Descuento</label>
             <div class="dc-chips">${[5, 10, 15, 20, 25].map((n) => `<button type="button" class="dc-chip" data-pct="${n}">${n}%</button>`).join('')}</div>
             <input id="cm-pct" type="number" min="1" max="50" value="${esc(String(st.pct))}" style="margin-top:8px"/></div>
+          <div class="field col-2"><label>Color del voucher</label>
+            <div class="dc-colores">
+              <button type="button" class="dc-color" data-color="naranja"><span class="sw naranja"></span>Naranja</button>
+              <button type="button" class="dc-color" data-color="negro"><span class="sw negro"></span>Negro</button>
+            </div></div>
           <div class="field col-2"><label>¿Hasta cuándo vale?</label>
             <div class="dc-chips">
               <button type="button" class="dc-chip" data-ven="7">7 días</button>
@@ -226,9 +233,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const pintar = () => {
           $('#cm-prev').innerHTML = ticketHTML({
             id: st.codigo || (personal ? 'VOLVE-·····' : 'CODIGO'), tipo: st.tipo, pct: st.pct, nombre: st.nombre,
-            clienteNombre: st.clienteNombre, vence: st.vence, soloEnvio: st.soloEnvio, activo: true,
+            clienteNombre: st.clienteNombre, vence: st.vence, soloEnvio: st.soloEnvio, activo: true, color: st.color,
           }, { preview: true });
           node.querySelectorAll('[data-pct]').forEach((b) => b.classList.toggle('on', +b.dataset.pct === +st.pct));
+          node.querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('on', b.dataset.color === st.color));
           node.querySelectorAll('[data-ven]').forEach((b) => b.classList.toggle('on', venDe(b.dataset.ven) === st.vence));
         };
         // En una campaña, el código se sugiere del nombre y el % mientras la
@@ -243,6 +251,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         node.querySelectorAll('[data-ven]').forEach((b) => b.onclick = () => { st.vence = venDe(b.dataset.ven); $('#cm-ven').value = st.vence; pintar(); });
         $('#cm-ven').onchange = (e) => { st.vence = e.target.value; pintar(); };
         $('#cm-env').onchange = (e) => { st.soloEnvio = e.target.checked; pintar(); };
+        node.querySelectorAll('[data-color]').forEach((b) => b.onclick = () => { st.color = b.dataset.color; pintar(); });
         $('#cm-cod').oninput = (e) => { st.codigoTocado = true; st.codigo = D().normCodigo(e.target.value); pintar(); };
         $('#cm-cod').onblur = (e) => { e.target.value = st.codigo; };
         const nom = $('#cm-nom');
@@ -293,7 +302,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (st.vence && st.vence < D().hoyISO()) return err('La fecha de vencimiento ya pasó.');
           const doc = D().guardar({
             codigo: st.codigo, tipo: st.tipo, pct: st.pct, nombre: st.nombre, vence: st.vence, soloEnvio: st.soloEnvio,
-            activo: d ? d.activo : true, clienteNombre: st.clienteNombre, telefono: st.telefono,
+            activo: d ? d.activo : true, clienteNombre: st.clienteNombre, telefono: st.telefono, color: st.color,
           }, d);
           toast(edit ? 'Código guardado ✓' : 'Código ' + doc.id + ' creado ✓', 'ok');
           close();
@@ -352,7 +361,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const camps = D().todos().filter((d) => d.tipo !== 'personal' && D().estado(d) === 'activo' && D().validar(d.id, ctx).ok);
     const propio = t8 ? (D().todos().filter((d) => d.tipo === 'personal' && d.tel8 === t8 && D().estado(d) === 'activo')[0] || null) : null;
     const st = {
-      modo: 'personal', pct: 10, venK: '15', soloEnvio: true,
+      modo: 'personal', pct: 10, venK: '15', soloEnvio: true, color: 'negro',
       camp: camps[0] ? camps[0].id : '',
       codigo: D().codigoPersonal(ficha.nombre),
     };
@@ -360,7 +369,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const actual = () => {
       if (st.modo === 'campana') return D().buscar(st.camp);
       if (propio) return propio;
-      return { id: st.codigo, tipo: 'personal', pct: st.pct, vence: venDe(st.venK), soloEnvio: st.soloEnvio, clienteNombre: ficha.nombre, activo: true };
+      return { id: st.codigo, tipo: 'personal', pct: st.pct, vence: venDe(st.venK), soloEnvio: st.soloEnvio, clienteNombre: ficha.nombre, activo: true, color: st.color };
     };
 
     modal({
@@ -400,11 +409,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
                 <div class="dc-chips">${[5, 10, 15, 20].map((n) => `<button type="button" class="dc-chip${st.pct === n ? ' on' : ''}" data-pct="${n}">${n}%</button>`).join('')}</div></div>
               <div class="field"><label>Vale por</label>
                 <div class="dc-chips">${[['7', '7 días'], ['15', '15 días'], ['30', '30 días']].map((v) => `<button type="button" class="dc-chip${st.venK === v[0] ? ' on' : ''}" data-ven="${v[0]}">${v[1]}</button>`).join('')}</div></div>
+              <div class="field col-2"><label>Color del voucher</label>
+                <div class="dc-colores">${[['naranja', 'Naranja'], ['negro', 'Negro']].map((c) => `<button type="button" class="dc-color${st.color === c[0] ? ' on' : ''}" data-color="${c[0]}"><span class="sw ${c[0]}"></span>${c[1]}</button>`).join('')}</div></div>
               <div class="field col-2"><label style="display:flex;align-items:center;gap:8px;font-weight:600">
                 <input type="checkbox" id="of-env" ${st.soloEnvio ? 'checked' : ''} style="width:auto;margin:0"/> Solo para pedidos con envío a domicilio</label></div>
             </div>`;
             box.querySelectorAll('[data-pct]').forEach((b) => b.onclick = () => { st.pct = +b.dataset.pct; pintarOpts(); pintar(); });
             box.querySelectorAll('[data-ven]').forEach((b) => b.onclick = () => { st.venK = b.dataset.ven; pintarOpts(); pintar(); });
+            box.querySelectorAll('[data-color]').forEach((b) => b.onclick = () => { st.color = b.dataset.color; pintarOpts(); pintar(); });
             $('#of-env').onchange = (e) => { st.soloEnvio = e.target.checked; pintar(); };
           }
         };
@@ -428,7 +440,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const confirmar = () => {
           let d = actual();
           if (st.modo === 'personal' && !propio) {
-            d = D().guardar({ codigo: st.codigo, tipo: 'personal', pct: st.pct, vence: venDe(st.venK), soloEnvio: st.soloEnvio,
+            d = D().guardar({ codigo: st.codigo, tipo: 'personal', pct: st.pct, vence: venDe(st.venK), soloEnvio: st.soloEnvio, color: st.color,
               nombre: 'Volvé a Granja del Oeste', clienteNombre: ficha.nombre, telefono: ficha.telefono });
           }
           if (GDO.CRM) {

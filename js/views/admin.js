@@ -1192,7 +1192,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             const v = validarDesc();
             const ok = !!(v && v.ok);
             const quien = ok ? (v.d.tipo === 'personal' ? '👤 Código personal de ' + (v.d.clienteNombre || 'este cliente') : '📣 ' + (v.d.nombre || 'Campaña')) : '';
-            descBox.innerHTML = `<div class="desc-ok${ok ? '' : ' mal'}">
+            descBox.innerHTML = `<div class="desc-ok${ok ? (GDO.Desc.colorDe(v.d) === 'negro' ? ' negro' : '') : ' mal'}">
                 <div class="desc-pct">${ok ? esc(String(pctDesc(v))) + '%' : '!'}</div>
                 <div class="desc-tx"><b>${esc(desc.codigo)}</b><span>${esc(ok ? quien : (v ? v.error : ''))}</span></div>
                 <button class="btn btn-ghost btn-sm" type="button" id="f-desc-x">Quitar</button>

@@ -460,14 +460,14 @@ textarea{resize:vertical;min-height:74px}
                radial-gradient(circle 11px at 92px 100%,transparent 96%,#000 100%) bottom/100% 51% no-repeat}
 .dc-pct{flex:0 0 92px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;
   background:linear-gradient(165deg,#ffa24d 0%,#F58220 50%,#e0650a 100%)}
-.dc-ticket.personal .dc-pct{background:linear-gradient(165deg,#444 0%,#161616 100%)}
+.dc-ticket.negro .dc-pct{background:linear-gradient(165deg,#444 0%,#161616 100%)}
 .dc-pct b{font-family:var(--slab);font-size:32px;line-height:1;font-weight:800;text-shadow:0 2px 0 rgba(0,0,0,.14)}
 .dc-pct span{font-size:11px;letter-spacing:3px;font-weight:800;margin-top:6px;opacity:.95}
 .dc-body{flex:1;min-width:0;padding:13px 16px 13px 18px;border-left:2px dashed #f0cfa8;display:flex;flex-direction:column;gap:5px}
-.dc-ticket.personal .dc-body{border-left-color:#d6d6d6}
+.dc-ticket.negro .dc-body{border-left-color:#d6d6d6}
 .dc-h{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .dc-tipo{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#a85f1a}
-.dc-ticket.personal .dc-tipo{color:#444}
+.dc-ticket.negro .dc-tipo{color:#444}
 .dc-est{font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;background:#eef2f7;color:#4b5563}
 .dc-est.vencido,.dc-est.usado{background:#fde4e4;color:#b32020}
 .dc-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:18px;font-weight:800;letter-spacing:2px;
@@ -475,13 +475,25 @@ textarea{resize:vertical;min-height:74px}
   padding:3px 10px;word-break:break-all}
 .dc-code[data-copy]{cursor:pointer}
 .dc-code[data-copy]:hover{background:#ffedd6}
-.dc-ticket.personal .dc-code{background:#f4f4f5;border-color:#cfcfd4}
+.dc-ticket.negro .dc-code{background:#f4f4f5;border-color:#cfcfd4}
 .dc-nom{font-size:14px;font-weight:700;color:#2b2b2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dc-meta{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--gris);line-height:1.4}
 .dc-ac{display:flex;gap:5px;flex-wrap:wrap}
 .dc-ac .btn-sm{padding:6px 9px}
 .dc-prev{display:flex;justify-content:center;padding:4px 0 16px}
 .dc-prev .dc-wrap{width:100%;max-width:400px}
+/* Elegir el color del voucher (naranja o negro) */
+.dc-colores{display:flex;gap:8px;flex-wrap:wrap}
+.dc-color{display:flex;align-items:center;gap:8px;border:1.5px solid var(--gris-bd);background:#fff;border-radius:12px;
+  padding:8px 14px;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.dc-color:hover{border-color:#b9bcc2}
+.dc-color .sw{width:22px;height:22px;border-radius:7px;display:inline-block;flex:0 0 auto}
+.dc-color .sw.naranja{background:linear-gradient(165deg,#ffa24d 0%,#F58220 50%,#e0650a 100%)}
+.dc-color .sw.negro{background:linear-gradient(165deg,#444 0%,#161616 100%)}
+.dc-color.on{border-color:var(--negro);box-shadow:0 0 0 1px var(--negro) inset}
+.desc-ok.negro{border-color:#161616;background:linear-gradient(120deg,#f1f1f2,#fbfbfb)}
+.desc-ok.negro .desc-pct{background:#161616}
+.desc-ok.negro .desc-tx span{color:#444}
 .dc-in-cod{text-transform:uppercase;letter-spacing:1.5px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 @media(max-width:560px){.dc-stats{grid-template-columns:1fr 1fr 1fr}.dc-stats b{font-size:19px}.dc-grid{grid-template-columns:1fr}}
 

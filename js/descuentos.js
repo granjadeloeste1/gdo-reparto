@@ -54,6 +54,11 @@ window.GDO = window.GDO || {};
       p.descuento && normCodigo(p.descuento.codigo) === k && p.estado !== 'no_entregado' && p.id !== excluirId);
   }
   const creadoDe = (p) => p.creado || p.ts || 0;
+
+  // Color del voucher: lo elige quien crea el código (naranja o negro). Los
+  // códigos viejos, sin el campo, siguen como antes: campaña naranja, personal negro.
+  const colorDe = (d) => ((d && (d.color === 'negro' || d.color === 'naranja'))
+    ? d.color : ((d && d.tipo === 'personal') ? 'negro' : 'naranja'));
   const quien = (p) => (p.cliente || 'otro pedido') + (creadoDe(p) ? ', el ' + new Date(creadoDe(p)).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '');
 
   // En qué está un código, para mostrarlo: activo, pausado, vencido o (el
@@ -157,6 +162,8 @@ window.GDO = window.GDO || {};
       vence: datos.vence || '',
       soloEnvio: !!datos.soloEnvio,
       activo: datos.activo !== false,
+      // Si al editar no se manda color, se conserva el que tenía.
+      color: colorDe({ color: datos.color || (previo && previo.color), tipo: datos.tipo }),
     };
     if (doc.tipo === 'personal') {
       // Al EDITAR un personal no se vuelve a elegir el cliente: se conservan su
@@ -194,7 +201,7 @@ window.GDO = window.GDO || {};
   }
 
   GDO.Desc = {
-    normCodigo, buscar, todos, validar, aplicar, resumenPedido, usos, estado, vencido, diasParaVencer,
+    normCodigo, buscar, todos, validar, aplicar, resumenPedido, usos, estado, vencido, diasParaVencer, colorDe,
     codigoPersonal, codigoCampana, guardar, mensajeVuelta, mensajeCampana, textoVence, fmtDia, fmtM, hoyISO, iso,
   };
 })();

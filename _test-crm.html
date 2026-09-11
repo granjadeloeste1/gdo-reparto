@@ -404,6 +404,15 @@ chk(GDO.Desc.estado(GDO.Desc.buscar(cp)) === 'usado', 'Y queda marcado como "ya 
 PEDIDOS.pop();
 GDO.Desc.guardar({ codigo: cp, tipo: 'personal', pct: 15, vence: en(15), soloEnvio: true }, GDO.Desc.buscar(cp));
 chk(GDO.Desc.buscar(cp).tel8 === '44441234' && GDO.Desc.buscar(cp).pct === 15, 'Editar un código personal no le borra el dueño');
+chk(GDO.Desc.colorDe(GDO.Desc.buscar(cp)) === 'negro' && GDO.Desc.colorDe(GDO.Desc.buscar('VIEJO5')) === 'naranja'
+  && GDO.Desc.colorDe({ tipo: 'campana' }) === 'naranja' && GDO.Desc.colorDe({ tipo: 'personal' }) === 'negro',
+  'Sin elegir color, la campaña sale naranja y el personal negro (como antes)');
+GDO.Desc.guardar({ codigo: 'NEGRA20', tipo: 'campana', pct: 20, nombre: 'Black', color: 'negro' });
+chk(GDO.Desc.buscar('NEGRA20').color === 'negro', 'Se puede elegir el voucher NEGRO para una campaña');
+GDO.Desc.guardar({ codigo: 'NEGRA20', tipo: 'campana', pct: 25, nombre: 'Black' }, GDO.Desc.buscar('NEGRA20'));
+chk(GDO.Desc.buscar('NEGRA20').color === 'negro' && GDO.Desc.buscar('NEGRA20').pct === 25, 'Editar el código sin tocar el color lo conserva');
+GDO.Desc.guardar({ codigo: 'NARANJA-JUAN', tipo: 'personal', pct: 10, clienteNombre: 'Juan', telefono: '1144441111', color: 'naranja' });
+chk(GDO.Desc.colorDe(GDO.Desc.buscar('NARANJA-JUAN')) === 'naranja', 'Y un personal puede ser NARANJA');
 const msgV = GDO.Desc.mensajeVuelta({ nombre: 'Juan Pérez' }, GDO.Desc.buscar(cp));
 chk(/^Hola Juan!/.test(msgV) && /hace tiempo que no sabemos nada de vos/i.test(msgV) && /15% de descuento/.test(msgV)
   && msgV.indexOf(cp) >= 0 && /a domicilio/.test(msgV), 'El mensaje saluda por el nombre y dice el %, "a domicilio" y el código');
