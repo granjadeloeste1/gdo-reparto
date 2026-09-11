@@ -103,7 +103,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const cants = items.map((it) => Number(it.cantidad != null ? it.cantidad : it.cant) || 0);
     const propios = items.map((it, i) => (GDO.Lista ? GDO.Lista.montoItem(it) : cants[i] * (Number(it.precio) || 0)));
     // Si TODOS los renglones traen su precio, no hay nada que reconstruir.
-    if (items.every((it) => Number(it.precio) > 0)) return propios.map((v) => ({ monto: v, aprox: false }));
+    // Con un CÓDIGO DE DESCUENTO el cliente pagó menos que la suma de los
+    // renglones (el total del pedido ya viene neto): el descuento se reparte en
+    // proporción, así la columna de cada producto cierra con lo cobrado.
+    if (items.every((it) => Number(it.precio) > 0)) {
+      const sumaP = propios.reduce((a, v) => a + v, 0);
+      const tot = Number(p.totalEstimado) || 0;
+      const f = (p.descuento && tot && sumaP) ? tot / sumaP : 1;
+      return propios.map((v) => ({ monto: v * f, aprox: false }));
+    }
     const total = Number(p.totalEstimado) || 0;
     if (!total || !GDO.Lista) return propios.map((v) => ({ monto: v, aprox: false }));
     // Valor de referencia de cada renglón con la lista de hoy.

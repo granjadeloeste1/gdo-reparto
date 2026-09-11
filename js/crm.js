@@ -980,7 +980,7 @@ window.GDO = window.GDO || {};
   GDO.CRM = {
     fichas, sugerencias, agenda, agendaPartida, guardar, unir, marcarContactado,
     registrarContacto, rechazarUnion, posponer, dormido, sinFecha, posiblesDuplicados,
-    seguimiento, sugPrimera, primerasCompras, diasCal,
+    seguimiento, sugPrimera, primerasCompras, diasCal, nombrePila,
     norm, telKey, dirKey, nomKey, senales, prodKey, fechaDe, montoDe, listaProd,
     TIPOS, DIAS, LISTA_URL, CANALES, RESULTADOS, TEMAS, PRIMERA_DESDE, NUEVO_DIAS,
   };

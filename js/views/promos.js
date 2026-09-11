@@ -26,10 +26,26 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const kb = (s) => Math.round(String(s || '').length * 0.75 / 1024);  // dataURL → KB reales
 
   let cache = [];
+  let tabPr = 'codigos';
 
+  /* Dos pestañas: los CÓDIGOS DE DESCUENTO (js/views/descuentos.js) y las
+     IMÁGENES que rotan arriba de la lista de precios. */
   GDO.Views.promos = function (c) {
     c.innerHTML = `
-      <div class="section-title"><h2>Promos de la tienda</h2></div>
+      <div class="section-title"><h2>Promos y descuentos</h2></div>
+      <div class="crm-tabs">
+        <button class="crm-tab ${tabPr === 'codigos' ? 'on' : ''}" data-prt="codigos">🎟️ Códigos de descuento</button>
+        <button class="crm-tab ${tabPr === 'imagenes' ? 'on' : ''}" data-prt="imagenes">🖼️ Imágenes de la tienda</button>
+      </div>
+      <div id="pr-body"></div>`;
+    c.querySelectorAll('[data-prt]').forEach((b) => b.onclick = () => { tabPr = b.dataset.prt; GDO.Views.promos(c); });
+    const body = c.querySelector('#pr-body');
+    if (tabPr === 'codigos' && GDO.Views.descuentos) GDO.Views.descuentos(body);
+    else imagenes(body);
+  };
+
+  function imagenes(c) {
+    c.innerHTML = `
       <div class="note">Estas imágenes se muestran en el <b>menú inicial</b> de
         <b>lista.granjadeloeste.com</b>, antes de que el cliente elija la lista. Son las mismas
         piezas <b>verticales</b> que subís a los estados de WhatsApp (formato 9:16).

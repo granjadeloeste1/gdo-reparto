@@ -126,6 +126,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       L.push('    ' + cant + ' ' + u + (pr ? (' × ' + m(cant ? st / cant : pr) + ' = *' + m(st) + '*') : ''));
     });
     L.push('━━━━━━━━━━━━━━');
+    if (p.descuento && p.descuento.codigo && p.descuento.monto) {
+      L.push('• *Subtotal:* ' + m(p.descuento.subtotal || sub));
+      L.push('• 🎟️ *Descuento ' + p.descuento.codigo + ' (' + p.descuento.pct + '%):* −' + m(p.descuento.monto));
+    }
     L.push('💰 *TOTAL: ' + m(p.totalEstimado || sub) + '*');
     return L.join('\n');
   }
@@ -576,6 +580,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return '<b>' + esc(diaSemanaDe(f)) + '</b><div class="small muted">' + fmtFecha(f)
       + (esRetiro(p) ? ' · retira' + (p.ventana ? ' ' + esc(p.ventana) : '') : '') + '</div>';
   }
+  /* Marca del código de descuento en las tablas. Si el código NO vale para ese
+     pedido (vino de la tienda y ese cliente ya lo había usado, el teléfono no
+     es el del dueño del código…) sale en rojo: hay que abrirlo antes de cobrar. */
+  function chipDesc(p) {
+    if (!p.descuento || !p.descuento.codigo) return '';
+    const v = GDO.Desc ? GDO.Desc.validar(p.descuento.codigo, { telefono: p.telefono, modalidad: esRetiro(p) ? 'retiro' : 'envio',
+      pedidoId: p.id, creado: p.creado || p.ts, guardado: true }) : { ok: true };
+    return v.ok
+      ? ' <span class="chip chip-desc" style="font-size:10px" title="Código ' + esc(p.descuento.codigo) + '">🎟️ ' + esc(String(p.descuento.pct)) + '% OFF</span>'
+      : ' <span class="chip chip-desc mal" style="font-size:10px" title="' + esc(v.error) + '">🎟️ Revisar código</span>';
+  }
+
   function renderPedidosTabla(box, list, opts) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }
     const sel = opts && opts.sel;            // Set de ids tildados (si la vista lo pide)
@@ -588,7 +604,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </tr></thead><tbody>${list.map((p) => `
         <tr${checkable && sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
           ${checkable ? `<td><input type="checkbox" data-sel="${p.id}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
-          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
+          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
           <td class="small">${esRetiro(p) ? '<span class="muted">🏪 Retira en el local</span>' : esc(p.direccion) + (p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : '')}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${celdaEntrega(p)}</td>
@@ -662,7 +678,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </tr></thead><tbody>${list.map((p) => `
         <tr>
           <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>
-            ${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}
+            ${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}
             <div class="small muted">${esc(p.telefono || '')}</div></td>
           <td class="small">${esc(resumenItems(p.items)) || '<span class="muted">Sin detalle</span>'}</td>
           <td class="small">${cuando(p)}</td>
@@ -1084,6 +1100,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               <span class="help" id="f-items-total"></span>
             </div>
             <span class="help" id="f-lista-estado">Escribí el producto y elegilo de la <b>lista de precios</b>: así vienen la unidad (kg, cajón, caja…) y el precio del escalón que corresponde.</span></div>
+          <div class="field col-2"><label>🎟️ Código de descuento</label>
+            <div id="f-desc"></div></div>
           <div class="field col-2"><label>Comentarios / especificaciones de entrega</label>
             <textarea id="f-esp" placeholder="Aclaraciones para el repartidor: a quién entregar, accesos, formas de pago, demoras habituales…">${esc(p ? p.especificaciones : (pf.especificaciones || ''))}</textarea></div>
         </div>`,
@@ -1119,7 +1137,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             ? '🏪 No entra al armado de rutas: el cliente lo pasa a buscar por el local.'
             : '🚚 Entra en la lista de pedidos para armar la ruta del día.';
         };
-        node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; pintarModo(); });
+        // Cambiar la modalidad puede invalidar un código "solo envío": se revisa.
+        node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; pintarModo(); pintarDesc(); pintarTotal(); });
         pintarModo();
 
         /* RENGLONES DEL PEDIDO. Cada uno lleva producto, CANTIDAD y UNIDAD.
@@ -1150,13 +1169,92 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         });
         pintarLista();
 
+        /* CÓDIGO DE DESCUENTO (la lógica está en js/descuentos.js). Lo carga el
+           cliente en la tienda antes de mandar el pedido o, si no, quien toma el
+           pedido acá. Se valida contra el TELÉFONO y la MODALIDAD del pedido: uno
+           de campaña vale una vez por cliente, uno personal solo para su dueño, y
+           los "solo envío" no valen para retirar. Un pedido que YA traía el
+           código se juzga con la fecha en que se hizo, no con la de hoy. */
+        const pedCreado = p ? (p.creado || p.ts || Date.now()) : Date.now();
+        var desc = (p && p.descuento && p.descuento.codigo)
+          ? { codigo: p.descuento.codigo, pct: p.descuento.pct, guardado: true } : null;
+        const descBox = node.querySelector('#f-desc');
+        const ctxDesc = () => ({ telefono: node.querySelector('#f-tel').value, modalidad: mod,
+          pedidoId: p ? p.id : null, creado: pedCreado, guardado: !!(desc && desc.guardado) });
+        const validarDesc = () => (desc && GDO.Desc ? GDO.Desc.validar(desc.codigo, ctxDesc()) : null);
+        // El % que se aplica: el que quedó guardado en el pedido (si después se
+        // edita el código, el pedido no cambia) o, si es nuevo, el del código.
+        const pctDesc = (v) => ((desc && desc.guardado && desc.pct) ? desc.pct : (v && v.d ? v.d.pct : 0));
+        function pintarDesc() {
+          if (!descBox) return;
+          if (!GDO.Desc) { descBox.innerHTML = '<span class="help">Los códigos de descuento no están disponibles.</span>'; return; }
+          if (desc) {
+            const v = validarDesc();
+            const ok = !!(v && v.ok);
+            const quien = ok ? (v.d.tipo === 'personal' ? '👤 Código personal de ' + (v.d.clienteNombre || 'este cliente') : '📣 ' + (v.d.nombre || 'Campaña')) : '';
+            descBox.innerHTML = `<div class="desc-ok${ok ? '' : ' mal'}">
+                <div class="desc-pct">${ok ? esc(String(pctDesc(v))) + '%' : '!'}</div>
+                <div class="desc-tx"><b>${esc(desc.codigo)}</b><span>${esc(ok ? quien : (v ? v.error : ''))}</span></div>
+                <button class="btn btn-ghost btn-sm" type="button" id="f-desc-x">Quitar</button>
+              </div>`;
+            descBox.querySelector('#f-desc-x').onclick = () => { desc = null; pintarDesc(); pintarTotal(); };
+            return;
+          }
+          descBox.innerHTML = `<div class="desc-in">
+              <input id="f-desc-cod" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="¿El cliente tiene un código? Ej: VOLVE10"/>
+              <button class="btn btn-dark" type="button" id="f-desc-ap">Aplicar</button>
+            </div>
+            <div class="desc-msg" id="f-desc-msg"></div>
+            <div class="desc-sug" id="f-desc-sug"></div>`;
+          const inp = descBox.querySelector('#f-desc-cod');
+          const aplicarCod = (cod) => {
+            desc = { codigo: GDO.Desc.normCodigo(cod) };
+            const v = validarDesc();
+            if (!v.ok) {
+              desc = null;
+              const m = descBox.querySelector('#f-desc-msg');
+              m.textContent = '⚠️ ' + v.error; m.className = 'desc-msg err';
+              return;
+            }
+            pintarDesc(); pintarTotal();
+            toast('Código ' + v.d.id + ' aplicado: ' + v.d.pct + '% de descuento', 'ok');
+          };
+          descBox.querySelector('#f-desc-ap').onclick = () => aplicarCod(inp.value);
+          inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); aplicarCod(inp.value); } };
+          // Si ESTE cliente tiene un código personal sin usar, se ofrece a mano.
+          // Las campañas no se sugieren: se aplican solo si el cliente las pide.
+          const pintarSug = () => {
+            const box = descBox.querySelector('#f-desc-sug');
+            if (!box) return;
+            const suyos = GDO.Desc.todos().filter((d) => d.tipo === 'personal' && GDO.Desc.estado(d) === 'activo'
+              && GDO.Desc.validar(d.id, ctxDesc()).ok);
+            box.innerHTML = suyos.length ? '<span class="help">🎁 Este cliente tiene un código sin usar:</span>'
+              + suyos.map((d) => `<button type="button" class="pers" data-cod="${esc(d.id)}">🎟️ ${esc(d.id)} · ${d.pct}%</button>`).join('') : '';
+            box.querySelectorAll('[data-cod]').forEach((b) => b.onclick = () => aplicarCod(b.dataset.cod));
+          };
+          descBox._sug = pintarSug;
+          inp.onfocus = pintarSug;
+          pintarSug();
+        }
+        // El teléfono decide si el código vale (uso por cliente, dueño del personal).
+        node.querySelector('#f-tel').addEventListener('input', () => {
+          if (desc) { pintarDesc(); pintarTotal(); } else if (descBox && descBox._sug) descBox._sug();
+        });
+        pintarDesc();
+
         const itemsBox = node.querySelector('#f-items');
         const fmtP = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
         const totalItems = () => items.reduce((a, it) => a + (GDO.Lista ? GDO.Lista.montoItem(it) : (Number(it.cantidad) || 0) * (Number(it.precio) || 0)), 0);
         const pintarTotal = () => {
           const t = node.querySelector('#f-items-total');
           const tot = totalItems();
-          t.innerHTML = tot ? 'Total del pedido: <b>' + fmtP(tot) + '</b> <span class="muted">(con los precios de la lista)</span>' : '';
+          const v = validarDesc();
+          if (tot && v && v.ok) {
+            const a = GDO.Desc.aplicar(tot, { pct: pctDesc(v) });
+            t.innerHTML = 'Subtotal ' + fmtP(a.subtotal) + ' · <span class="desc-menos">🎟️ −' + fmtP(a.monto) + ' (' + a.pct + '%)</span> · Total del pedido: <b>' + fmtP(a.total) + '</b>';
+          } else {
+            t.innerHTML = tot ? 'Total del pedido: <b>' + fmtP(tot) + '</b> <span class="muted">(con los precios de la lista)</span>' : '';
+          }
         };
         const drawItems = () => {
           itemsBox.innerHTML = items.map((it, i) => `
@@ -1345,6 +1443,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const esRet = mod === 'retiro';
           if (!cli) { toast('Completá el nombre del cliente', 'err'); return; }
           if (!esRet && !dir) { toast('Completá la dirección de entrega', 'err'); return; }
+          // El código de descuento tiene que valer para ESTE pedido (teléfono y
+          // modalidad incluidos). Si no vale, se dice por qué y no se guarda.
+          const vDesc = validarDesc();
+          if (vDesc && !vDesc.ok) { toast(vDesc.error + ' Quitá el código para guardar el pedido.', 'err'); return; }
           let coord = esRet ? null : coordFromInput();
           // Si se EDITÓ la dirección pero las coordenadas siguen siendo las de antes
           // (el cliente/vendedor tipeó otra dirección sin elegir una sugerencia del
@@ -1386,6 +1488,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           // este pedido cuente en la facturación de Métricas (antes, un pedido
           // cargado a mano quedaba sin precio y no sumaba).
           const totalCalc = clean.reduce((a, i) => a + (GDO.Lista ? GDO.Lista.montoItem(i) : (i.cantidad || 0) * (i.precio || 0)), 0);
+          // Con código: se guarda qué se descontó y el total pasa a ser lo que se
+          // COBRA. Sin precios cargados no hay de qué descontar, pero el código
+          // queda registrado igual (así cuenta como usado).
+          let descuento = null;
+          let totalFinal = totalCalc || (p ? p.totalEstimado : 0) || 0;
+          if (vDesc && vDesc.ok) {
+            const base = totalCalc || (p && p.descuento ? p.descuento.subtotal : 0) || 0;
+            descuento = GDO.Desc.resumenPedido(Object.assign({}, vDesc.d, { pct: pctDesc(vDesc) }), base);
+            if (base) totalFinal = base - descuento.monto;
+          }
           const data = {
             id: p ? p.id : undefined, cliente: cli, direccion: dir,
             localidad: node.querySelector('#f-loc').value.trim(),
@@ -1402,7 +1514,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             lista: lista,
             // Solo lo pisamos si hay precios cargados: si el pedido se anotó sin
             // precios, no borramos un total que hubiera declarado el cliente.
-            totalEstimado: totalCalc || (p ? p.totalEstimado : 0) || 0,
+            totalEstimado: totalFinal,
+            descuento: descuento,
             creadoPor: p ? p.creadoPor : Store.current().id,
           };
           // Si un pedido que YA estaba en una ruta pasa a retiro, hay que sacarlo

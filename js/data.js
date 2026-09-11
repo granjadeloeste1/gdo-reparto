@@ -32,7 +32,7 @@ window.GDO = window.GDO || {};
   // Si Firebase está activo escribimos cada cambio a Firestore; los listeners
   // (onSnapshot) traen de vuelta los cambios de otros dispositivos y mantienen
   // la cache en memoria. Si no, todo queda en localStorage (modo local).
-  const FS_COLLS = ['users', 'vehiculos', 'pedidos', 'rutas', 'notificaciones', 'crm_clientes'];
+  const FS_COLLS = ['users', 'vehiculos', 'pedidos', 'rutas', 'notificaciones', 'crm_clientes', 'descuentos'];
   const fsOn = () => GDO.FB && GDO.FB.enabled && GDO.FB.db;
   const fsClean = (o) => JSON.parse(JSON.stringify(o)); // saca undefined/funciones
   function fsSet(coll, obj) {
@@ -179,6 +179,7 @@ window.GDO = window.GDO || {};
     // Bases guardadas ANTES del CRM no tienen esta colección: la creamos vacía para
     // que Store.crmClientes() no explote hasta que llegue el primer snapshot.
     if (!Array.isArray(d.crm_clientes)) d.crm_clientes = [];
+    if (!Array.isArray(d.descuentos)) d.descuentos = [];
     // La sesión NO sale del cache de datos: vive en sessionStorage (por pestaña). Al
     // cerrar la app se borra → al reabrir, la app pide login (no queda sesión vieja).
     d.session = null;
@@ -457,6 +458,24 @@ window.GDO = window.GDO || {};
     deleteCrmCliente(id) {
       db.crm_clientes = (db.crm_clientes || []).filter((x) => x.id !== id);
       persist(db); fsDel('crm_clientes', id);
+    },
+
+    // ----- códigos de descuento (la lógica está en js/descuentos.js) -----
+    // El id del documento ES el código en mayúsculas: así la tienda busca uno
+    // por su nombre sin poder listar los demás.
+    descuentos: () => db.descuentos || (db.descuentos = []),
+    upsertDescuento(d) {
+      db.descuentos = db.descuentos || [];
+      const ex = db.descuentos.find((x) => x.id === d.id);
+      let full;
+      if (ex) full = Object.assign(ex, d);
+      else { d.creado = d.creado || Date.now(); db.descuentos.push(d); full = d; }
+      full.actualizado = Date.now();
+      persist(db); fsSet('descuentos', full); return full;
+    },
+    deleteDescuento(id) {
+      db.descuentos = (db.descuentos || []).filter((x) => x.id !== id);
+      persist(db); fsDel('descuentos', id);
     },
 
     // ----- pedidos -----

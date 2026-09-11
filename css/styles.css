@@ -430,6 +430,88 @@ textarea{resize:vertical;min-height:74px}
 .crm-op.ok{border-color:#1d7a44}
 .crm-op.mal{border-color:#b32020}
 
+/* ═════════ Códigos de descuento: el ticket ═════════
+   Forma de cupón: el % en un bloque de color, una línea troquelada y dos
+   muescas (hechas con una máscara, así funcionan sobre cualquier fondo). */
+.dc-hero{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  background:linear-gradient(120deg,#fff1e0 0%,#fff9f2 55%,#fff 100%);border:1px solid #f6dcc0;
+  border-radius:var(--radio);padding:18px 20px;margin-bottom:14px}
+.dc-hero h3{font-size:19px;margin:0 0 4px}
+.dc-hero p{margin:0;font-size:13.5px;color:var(--gris);max-width:600px;line-height:1.5}
+.dc-hero-ac{display:flex;gap:8px;flex-wrap:wrap}
+.dc-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.dc-stats>div{background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 14px;
+  display:flex;flex-direction:column;gap:2px;box-shadow:var(--sombra)}
+.dc-stats b{font-family:var(--slab);font-size:24px;line-height:1.1}
+.dc-stats span{font-size:12px;color:var(--gris);font-weight:600;line-height:1.3}
+.dc-chips{display:flex;gap:6px;flex-wrap:wrap}
+.dc-chip{border:1px solid var(--gris-bd);background:#fff;border-radius:999px;padding:6px 13px;font:inherit;
+  font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+.dc-chip:hover{border-color:var(--naranja)}
+.dc-chip.on{background:var(--naranja);border-color:var(--naranja);color:#fff}
+.dc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:20px}
+.dc-item{display:flex;flex-direction:column;gap:9px}
+.dc-wrap{filter:drop-shadow(0 6px 14px rgba(0,0,0,.10)) drop-shadow(0 1px 2px rgba(0,0,0,.06))}
+.dc-wrap.off{filter:grayscale(.9) opacity(.62)}
+.dc-ticket{display:flex;min-height:128px;border-radius:16px;overflow:hidden;background:#fff;
+  -webkit-mask:radial-gradient(circle 11px at 92px 0,transparent 96%,#000 100%) top/100% 51% no-repeat,
+               radial-gradient(circle 11px at 92px 100%,transparent 96%,#000 100%) bottom/100% 51% no-repeat;
+          mask:radial-gradient(circle 11px at 92px 0,transparent 96%,#000 100%) top/100% 51% no-repeat,
+               radial-gradient(circle 11px at 92px 100%,transparent 96%,#000 100%) bottom/100% 51% no-repeat}
+.dc-pct{flex:0 0 92px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;
+  background:linear-gradient(165deg,#ffa24d 0%,#F58220 50%,#e0650a 100%)}
+.dc-ticket.personal .dc-pct{background:linear-gradient(165deg,#444 0%,#161616 100%)}
+.dc-pct b{font-family:var(--slab);font-size:32px;line-height:1;font-weight:800;text-shadow:0 2px 0 rgba(0,0,0,.14)}
+.dc-pct span{font-size:11px;letter-spacing:3px;font-weight:800;margin-top:6px;opacity:.95}
+.dc-body{flex:1;min-width:0;padding:13px 16px 13px 18px;border-left:2px dashed #f0cfa8;display:flex;flex-direction:column;gap:5px}
+.dc-ticket.personal .dc-body{border-left-color:#d6d6d6}
+.dc-h{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.dc-tipo{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#a85f1a}
+.dc-ticket.personal .dc-tipo{color:#444}
+.dc-est{font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;background:#eef2f7;color:#4b5563}
+.dc-est.vencido,.dc-est.usado{background:#fde4e4;color:#b32020}
+.dc-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:18px;font-weight:800;letter-spacing:2px;
+  color:var(--negro);align-self:flex-start;max-width:100%;background:#fff7ea;border:1.5px dashed #f3c48f;border-radius:8px;
+  padding:3px 10px;word-break:break-all}
+.dc-code[data-copy]{cursor:pointer}
+.dc-code[data-copy]:hover{background:#ffedd6}
+.dc-ticket.personal .dc-code{background:#f4f4f5;border-color:#cfcfd4}
+.dc-nom{font-size:14px;font-weight:700;color:#2b2b2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc-meta{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--gris);line-height:1.4}
+.dc-ac{display:flex;gap:5px;flex-wrap:wrap}
+.dc-ac .btn-sm{padding:6px 9px}
+.dc-prev{display:flex;justify-content:center;padding:4px 0 16px}
+.dc-prev .dc-wrap{width:100%;max-width:400px}
+.dc-in-cod{text-transform:uppercase;letter-spacing:1.5px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media(max-width:560px){.dc-stats{grid-template-columns:1fr 1fr 1fr}.dc-stats b{font-size:19px}.dc-grid{grid-template-columns:1fr}}
+
+/* El código en el formulario de pedido */
+.desc-in{display:flex;gap:8px}
+.desc-in input{flex:1;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.desc-in input::placeholder{text-transform:none;letter-spacing:0;font-weight:400;font-family:inherit}
+.desc-msg{font-size:12.5px;margin-top:6px}
+.desc-msg:empty{display:none}
+.desc-msg.err{color:#b32020;font-weight:600}
+.desc-sug{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.desc-sug:empty{display:none}
+.desc-sug button{border:1.5px dashed #f3c48f;background:#fff7ea;color:#8a4a00;border-radius:999px;padding:5px 12px;
+  font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.desc-sug button.pers{background:#161616;color:#fff;border-color:#161616}
+.desc-ok{display:flex;align-items:center;gap:12px;border-radius:14px;padding:10px 12px;
+  background:linear-gradient(120deg,#fff1e0,#fffaf4);border:1.5px dashed var(--naranja)}
+.desc-ok .desc-pct{flex:0 0 auto;min-width:54px;text-align:center;background:var(--naranja);color:#fff;font-family:var(--slab);
+  font-weight:800;font-size:20px;border-radius:10px;padding:9px 8px;line-height:1}
+.desc-ok .desc-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.desc-ok .desc-tx b{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:1.5px;font-size:15px;word-break:break-all}
+.desc-ok .desc-tx span{font-size:12.5px;color:#8a4a00}
+.desc-ok.mal{border-color:var(--rojo);background:#fff5f5}
+.desc-ok.mal .desc-pct{background:var(--rojo)}
+.desc-ok.mal .desc-tx span{color:#b32020;font-weight:600}
+.desc-menos{color:#1d7a44;font-weight:700}
+.chip-desc{background:#fff2e2;color:#a85f1a}
+.chip-desc.mal{background:#fde4e4;color:#b32020}
+
 /* ═════════ Promos de la tienda (formato vertical 9:16) ═════════ */
 .promo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
 .promo-card{background:#fff;border:1px solid var(--gris-bd);border-radius:var(--radio);

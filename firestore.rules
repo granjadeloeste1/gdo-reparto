@@ -76,7 +76,14 @@ service cloud.firestore {
         // Anti-estafa: el cliente NUNCA fija el monto de puntos a acreditar (lo
         // confirma el personal). totalEstimado es solo informativo.
         && (!('puntos' in d) || d.puntos == 0)
-        && (!('puntosAcreditados' in d) || d.puntosAcreditados == false);
+        && (!('puntosAcreditados' in d) || d.puntosAcreditados == false)
+        // Anti-estafa: si el pedido trae un CÓDIGO DE DESCUENTO, el código tiene
+        // que existir y el % tiene que ser el del código real (el cliente no
+        // puede inventarse un 50%). El resto (vencido, ya usado) lo revisa el panel.
+        && (!('descuento' in d) || d.descuento == null || (
+              d.descuento.codigo is string && d.descuento.codigo.size() <= 30
+              && exists(/databases/$(database)/documents/descuentos/$(d.descuento.codigo))
+              && d.descuento.pct == get(/databases/$(database)/documents/descuentos/$(d.descuento.codigo)).data.pct));
     }
 
     // ───────── Lista blanca de personal ─────────
@@ -120,6 +127,22 @@ service cloud.firestore {
     match /promos/{id} {
       allow read:  if true;
       allow write: if puedePromos();
+    }
+
+    // ───────── Códigos de descuento ─────────
+    // El id del documento ES el código (VOLVE10, VOLVE-JUAN-7K3). La tienda
+    // busca UNO por su nombre para validarlo antes de mandar el pedido: get
+    // público, como el seguimiento (hay que saber el código para leerlo), pero
+    // NO puede listar los demás. El personal los ve todos: hacen falta al cargar
+    // un pedido desde el panel.
+    // Crear/editar: quien maneja Promos. Los códigos PERSONALES también los crea
+    // quien tiene el CRM: se generan desde la ficha del cliente que se está yendo.
+    match /descuentos/{id} {
+      allow get:  if true;
+      allow list: if isStaff();
+      allow create, update: if puedePromos()
+                            || (puedeCRM() && request.resource.data.tipo == 'personal');
+      allow delete: if puedePromos();
     }
 
     // ───────── Pedidos ─────────

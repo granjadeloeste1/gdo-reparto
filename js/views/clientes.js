@@ -168,6 +168,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const bo = q('[data-ok]'); if (bo) bo.onclick = () => contactoModal(s.ficha, s, () => recargar(cont));
       const bp = q('[data-snz]'); if (bp) bp.onclick = () => posponerModal(s, () => recargar(cont));
       const bf = q('[data-ficha]'); if (bf) bf.onclick = () => fichaModal(s.ficha.id, () => recargar(cont));
+      const bd = q('[data-desc]'); if (bd) bd.onclick = () => GDO.Views.ofrecerDescuento(s.ficha, () => recargar(cont), s);
     });
   }
 
@@ -201,6 +202,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>
         <div class="crm-sug-ac">
           ${tel ? '<button class="btn btn-verde btn-sm" data-wsp>💬 WhatsApp</button>' : '<span class="help">Sin teléfono</span>'}
+          ${(s.tipo === 'dormido' || (s.otras || []).some((o) => o.tipo === 'dormido')) && GDO.Views.ofrecerDescuento
+            ? '<button class="btn btn-primary btn-sm" data-desc>🎁 Ofrecer descuento</button>' : ''}
           <button class="btn btn-ghost btn-sm" data-ok>✓ Ya lo contacté…</button>
           <button class="btn btn-ghost btn-sm" data-snz>🕓 Más adelante</button>
           <button class="btn btn-ghost btn-sm" data-ficha>Ver ficha</button>
@@ -487,6 +490,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   function buscarFicha(id) { return CRM().fichas().filter((f) => f.id === id)[0] || null; }
 
+  // Códigos personales que el cliente tiene y todavía no usó: para acordarse de
+  // mencionárselo (y no mandarle otro).
+  function codigosSinUsar(f) {
+    if (!GDO.Desc || !f.telefono) return '';
+    const t8 = CRM().telKey(f.telefono);
+    const suyos = GDO.Desc.todos().filter((d) => d.tipo === 'personal' && d.tel8 === t8 && GDO.Desc.estado(d) === 'activo');
+    return suyos.map((d) => `<div class="note" style="margin-top:14px">🎟️ Tiene el código <b>${esc(d.id)}</b> (${d.pct}% de descuento) sin usar · ${esc(GDO.Desc.textoVence(d))}.</div>`).join('');
+  }
+
   function fichaModal(id, after) {
     const f = buscarFicha(id);
     if (!f) { toast('No se encontró el cliente', 'err'); return; }
@@ -503,6 +515,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div><span class="n">${f.ticket ? fmtM(f.ticket) : '—'}</span><span class="l">pedido promedio</span></div>
           <div><span class="n">${f.total ? fmtM(f.total) : '—'}</span><span class="l">total comprado</span></div>
         </div>
+
+        ${codigosSinUsar(f)}
 
         ${f.nCompras ? `<div class="crm-bloque">
           <h4>Cómo recibe los pedidos</h4>
@@ -596,6 +610,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>`,
       footHTML: `
         ${tel ? '<button class="btn btn-verde" data-wsp>💬 WhatsApp</button>' : ''}
+        ${GDO.Views.ofrecerDescuento ? '<button class="btn btn-primary" data-desc>🎁 Descuento</button>' : ''}
         <button class="btn btn-dark" data-nuevo>+ Nuevo pedido</button>
         <button class="btn btn-ghost" data-unir title="Si el mismo cliente quedó dividido en dos fichas">🔗 Unir</button>
         <div class="spacer" style="flex:1"></div>
@@ -625,6 +640,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         };
 
         node.querySelector('[data-unir]').onclick = () => { close(); unirModal(f, after); };
+        const bdz = node.querySelector('[data-desc]');
+        if (bdz) bdz.onclick = () => { close(); GDO.Views.ofrecerDescuento(f, after); };
         node.querySelector('[data-ct]').onclick = () => { close(); contactoModal(f, null, after); };
 
         node.querySelector('[data-cancel]').onclick = close;

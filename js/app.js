@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v93';
+  const VERSION = 'v94';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -23,7 +23,7 @@ window.GDO = window.GDO || {};
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
       { hash: '#/club', ic: '⭐', t: 'GDO Club', st: 'Club' },
       { hash: '#/metricas', ic: '📈', t: 'Métricas' },
-      { hash: '#/promos', ic: '🖼️', t: 'Promos de la tienda' },
+      { hash: '#/promos', ic: '🎁', t: 'Promos y descuentos', st: 'Promos' },
       { hash: '#/usuarios', ic: '👥', t: 'Usuarios y roles' },
       { hash: '#/vehiculos', ic: '🚚', t: 'Vehículos' },
     ],
@@ -33,13 +33,13 @@ window.GDO = window.GDO || {};
     vendedor: [
       { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
-      { hash: '#/promos', ic: '🖼️', t: 'Promos de la tienda' },
+      { hash: '#/promos', ic: '🎁', t: 'Promos y descuentos', st: 'Promos' },
     ],
     cajero: [
       { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
       { hash: '#/club', ic: '⭐', t: 'GDO Club' },
-      { hash: '#/promos', ic: '🖼️', t: 'Promos de la tienda' },
+      { hash: '#/promos', ic: '🎁', t: 'Promos y descuentos', st: 'Promos' },
     ],
   };
 
@@ -238,7 +238,7 @@ window.GDO = window.GDO || {};
   function titleFor(hash, rol) {
     if (hash.startsWith('#/rutas/')) return 'Armador de ruta';
     if (vedada(hash, rol)) hash = '#/pedidos';
-    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/metricas': 'Métricas', '#/produccion': 'Producción', '#/club': 'GDO Club', '#/promos': 'Promos de la tienda', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
+    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/metricas': 'Métricas', '#/produccion': 'Producción', '#/club': 'GDO Club', '#/promos': 'Promos y descuentos', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
     return map[hash] || 'Granja del Oeste';
   }
 
