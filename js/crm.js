@@ -493,6 +493,9 @@ window.GDO = window.GDO || {};
     const ret = !!(s && s.primera && s.primera.modalidad === 'retiro');
     const d = s && s.dias != null ? s.dias : 0;
     return {
+      // `ficha` va SIEMPRE: la pestaña "Primeras compras" le pasa este objeto
+      // directo al mensaje de WhatsApp, que lee s.ficha (sin esto no se abría).
+      ficha: f, clienteId: f.id, id: f.id + ':primera',
       tipo: 'primera', grupo: 'hoy', prio: 85, ic: '🆕',
       titulo: 'Primera compra: preguntale cómo le fue',
       motivo: (ret ? 'Retiró' : 'Recibió') + ' su primer pedido hace ' + d + ' día' + (d === 1 ? '' : 's') +
