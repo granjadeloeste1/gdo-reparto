@@ -154,8 +154,22 @@ window.GDO = window.GDO || {};
     pide: { t: 'Va a pedir más adelante', chip: 'crm-r-ok' },
     nocontesta: { t: 'No contestó', chip: 'crm-r-esp' },
     nonecesita: { t: 'No necesita por ahora', chip: 'crm-r-neu' },
-    problema: { t: 'Tuvo un problema / se quejó', chip: 'crm-r-mal' },
+    // Los dos de la OPINIÓN, que es lo que se pregunta después de la primera
+    // compra. "problema" es la crítica: se filtra aparte en "Qué se habló".
+    gusto: { t: 'Le gustó, todo bien', chip: 'crm-r-ok' },
+    problema: { t: 'Tuvo una crítica o un problema', chip: 'crm-r-mal' },
     nocompra: { t: 'Ya no nos compra', chip: 'crm-r-mal' },
+  };
+
+  // Sobre qué fue la crítica. Sirve para ver juntas las quejas del mismo tema:
+  // tres críticas de "entrega" son un problema del reparto, no tres clientes.
+  const TEMAS = {
+    producto: '🐔 Producto / calidad',
+    cantidad: '⚖️ Peso o cantidad',
+    entrega: '🚚 Entrega / horario',
+    atencion: '🙋 Atención',
+    precio: '💲 Precio',
+    otro: '· Otro',
   };
 
   /* ═════════════════ armado de fichas ═════════════════ */
@@ -412,6 +426,85 @@ window.GDO = window.GDO || {};
   const HOY0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const dormido = (f) => f.ritmo != null && f.diasDesde != null && f.diasDesde > Math.max(21, f.ritmo * 2.5);
 
+  // Días de CALENDARIO desde una fecha: lo que se entregó ayer a la tarde es
+  // "hace 1 día" aunque hayan pasado 18 horas. Es como cuenta una persona.
+  const diasCal = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return Math.round((HOY0() - d.getTime()) / DIA); };
+
+  /* ═════════════════ la primera compra ═════════════════
+     El cliente nuevo es el que más se pierde sin que nadie se entere (de 53
+     clientes, solo ~5 repiten). A los 2 días de RECIBIR el primer pedido —ni
+     antes, que todavía no lo probó, ni un mes después, que ya se olvidó— se le
+     pregunta cómo le fue. Si tuvo una crítica, queda anotada con su tema. */
+  const PRIMERA_DESDE = 2;    // días después de recibido
+  const PRIMERA_HASTA = 11;   // desde el día 12 lo toma "compró una sola vez"
+  const NUEVO_DIAS = 30;      // cuánto tiempo se lo sigue viendo como cliente nuevo
+
+  /* En qué quedó el seguimiento de la primera compra:
+       curso   · su primer pedido todavía no se entregó
+       espera  · lo recibió hace menos de 2 días (todavía no se pregunta)
+       toca    · hay que preguntarle cómo le fue
+       escrito · se le escribió y falta anotar qué contestó
+       hablado · se habló, pero sin opinión (no contestó, va a pedir…)
+       gusto   · le gustó
+       critica · tuvo una crítica
+       volvio  · ya volvió a comprar (y nadie anotó su opinión)
+     Vale cualquier contacto desde que recibió el pedido: si alguien ya habló
+     con él, no se le vuelve a preguntar. Devuelve null si no es cliente nuevo. */
+  function seguimiento(f) {
+    const primera = (f._compras || [])[0] || null;
+    const enCurso = (f.pedidos || []).filter((p) => ['pendiente', 'asignado', 'en_ruta'].indexOf(p.estado) >= 0)[0] || null;
+    if (!primera && !enCurso) return null;
+    const cts = primera ? (f.contactos || []).filter((ct) => ct.ts >= primera.ts) : [];   // del más nuevo al más viejo
+    const s = {
+      primera: primera ? primera.p : enCurso,
+      ts: primera ? primera.ts : null,
+      dias: primera ? diasCal(primera.ts) : null,
+      volvio: f.nCompras >= 2,
+      contacto: cts[0] || null,
+      opinion: cts.filter((ct) => ct.resultado === 'gusto' || ct.resultado === 'problema')[0] || null,
+    };
+    if (s.opinion) s.estado = s.opinion.resultado === 'problema' ? 'critica' : 'gusto';
+    else if (cts.length) s.estado = cts[0].resultado === 'enviado' ? 'escrito' : 'hablado';
+    else if (s.volvio) s.estado = 'volvio';
+    else if (!primera || primera.p.estado !== 'entregado') s.estado = 'curso';
+    else if (s.dias < PRIMERA_DESDE) s.estado = 'espera';
+    else s.estado = 'toca';
+    return s;
+  }
+
+  // La tarjeta "preguntale cómo le fue". Sin nada para ofrecer a propósito: es
+  // un llamado para escuchar, no para vender.
+  function sugPrimera(f, seg) {
+    const s = seg || seguimiento(f);
+    const ret = !!(s && s.primera && s.primera.modalidad === 'retiro');
+    const d = s && s.dias != null ? s.dias : 0;
+    return {
+      tipo: 'primera', grupo: 'hoy', prio: 85, ic: '🆕',
+      titulo: 'Primera compra: preguntale cómo le fue',
+      motivo: (ret ? 'Retiró' : 'Recibió') + ' su primer pedido hace ' + d + ' día' + (d === 1 ? '' : 's') +
+        '. Es el momento de saber qué le pareció y si tuvo alguna crítica.',
+      oferta: '', msg: msgPrimera(f, s),
+    };
+  }
+
+  /* Los clientes NUEVOS: primera compra en los últimos 30 días (o el primer
+     pedido todavía en curso), cada uno con su seguimiento. Primero lo que pide
+     una acción: preguntarle, o anotar qué contestó. */
+  const ORDEN_SEG = { toca: 0, escrito: 1, critica: 2, curso: 3, espera: 4, hablado: 5, gusto: 6, volvio: 7 };
+  function primerasCompras(lista) {
+    const out = [];
+    (lista || fichas()).forEach((f) => {
+      if (f.pausado) return;
+      const s = seguimiento(f);
+      if (!s) return;
+      if (s.ts == null && f.nCompras > 0) return;     // compró antes: no es nuevo
+      if (s.dias != null && s.dias > NUEVO_DIAS) return;
+      out.push({ ficha: f, seg: s });
+    });
+    out.sort((a, b) => (ORDEN_SEG[a.seg.estado] - ORDEN_SEG[b.seg.estado]) || ((b.seg.ts || 0) - (a.seg.ts || 0)));
+    return out;
+  }
+
   // ¿Está pospuesta esta sugerencia para este cliente?
   function silenciada(f, tipo) {
     const s = f.snooze || {};
@@ -462,6 +555,12 @@ window.GDO = window.GDO || {};
       }
 
       if (f.tienePendiente) return;    // ya tiene un pedido en curso: no molestar
+
+      /* 1b · PRIMERA COMPRA — a los 2 días de recibirla, preguntar cómo le fue. */
+      if (f.nCompras === 1) {
+        const seg = seguimiento(f);
+        if (seg && seg.estado === 'toca' && seg.dias <= PRIMERA_HASTA) push(sugPrimera(f, seg));
+      }
 
       /* 2 · CLIENTE DORMIDO — el que se está yendo sin avisar. */
       if (dormido(f)) {
@@ -711,8 +810,23 @@ window.GDO = window.GDO || {};
       (hab ? ' (' + hab + ')' : '') + '. Seguimos con reparto en tu zona y la lista al día está en ' + LISTA_URL +
       '. Si quedó algo pendiente de la última vez, decime y lo vemos.';
   }
+  function msgPrimera(f, seg) {
+    const ret = !!(seg && seg.primera && seg.primera.modalidad === 'retiro');
+    const p = f.productos[0];
+    const cuando = (seg && seg.dias != null && seg.dias <= 3) ? 'Hace un par de días' : 'Hace unos días';
+    return 'Hola ' + nombrePila(f) + '! ' + firma() + ' 🐔 ' + cuando + ' ' + (ret ? 'pasaste a retirar' : 'recibiste') +
+      ' tu primer pedido con nosotros' + (p ? ' (' + p.nombre + ')' : '') + ' y te quería preguntar: ¿qué tal te fue? ' +
+      (ret ? '¿Estuvo todo bien?' : '¿Llegó todo bien?') +
+      ' Si hubo algo que no te gustó, contámelo con confianza, que nos sirve para mejorar. ¡Gracias por elegirnos!';
+  }
   function msgSinSegunda(f) {
     const p = f.productos[0];
+    // Si ya se le preguntó cómo le fue (a los 2 días), no se le vuelve a preguntar.
+    const seg = seguimiento(f);
+    if (seg && ['escrito', 'hablado', 'gusto', 'critica'].indexOf(seg.estado) >= 0) {
+      return 'Hola ' + nombrePila(f) + '! ' + firma() + '. ¿Cómo venís? Si querés repetir el pedido' +
+        (p ? ' (' + p.nombre + ')' : '') + ' o probar otra cosa, la lista está en ' + LISTA_URL + ' y te lo preparamos.';
+    }
     return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Te escribo para saber qué tal te fue con el pedido de la vez pasada' +
       (p ? ' (' + p.nombre + ')' : '') + '. Si querés repetir o probar otra cosa, la lista está en ' + LISTA_URL +
       ' y te lo mandamos con el reparto.';
@@ -765,6 +879,7 @@ window.GDO = window.GDO || {};
       canal: datos.canal || 'otro',
       resultado: datos.resultado || 'enviado',
       nota: String(datos.nota || '').slice(0, 600),
+      tema: datos.resultado === 'problema' ? (datos.tema || 'otro') : '',
       por: u ? u.id : null,
       porNombre: u ? u.nombre : '',
       motivo: datos.motivoAviso || (tipo && tipo !== 'manual' ? tipo : ''),
@@ -848,7 +963,8 @@ window.GDO = window.GDO || {};
   GDO.CRM = {
     fichas, sugerencias, agenda, agendaPartida, guardar, unir, marcarContactado,
     registrarContacto, rechazarUnion, posponer, dormido, sinFecha, posiblesDuplicados,
+    seguimiento, sugPrimera, primerasCompras, diasCal,
     norm, telKey, dirKey, nomKey, senales, prodKey, fechaDe, montoDe, listaProd,
-    TIPOS, DIAS, LISTA_URL, CANALES, RESULTADOS,
+    TIPOS, DIAS, LISTA_URL, CANALES, RESULTADOS, TEMAS, PRIMERA_DESDE, NUEVO_DIAS,
   };
 })();

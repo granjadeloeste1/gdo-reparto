@@ -30,6 +30,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const sugs = part.hoy;
     const huerfanos = CRM().sinFecha();         // pedidos que no se pueden ubicar en el tiempo
     const dobles = CRM().posiblesDuplicados(fichas);  // fichas que serían el mismo cliente
+    // Clientes nuevos (primera compra en los últimos 30 días) con su seguimiento.
+    // El número naranja son los que piden algo: preguntarles, o anotar qué dijeron.
+    const nuevos = CRM().primerasCompras(fichas);
+    const nuevosPend = nuevos.filter((x) => x.seg.estado === 'toca' || x.seg.estado === 'escrito').length;
 
     // Todo lo hablado con todos los clientes, del más nuevo al más viejo. Es la
     // vista que responde "¿qué hizo el vendedor esta semana?" sin preguntarle.
@@ -66,6 +70,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
       <div class="crm-tabs">
         <button class="crm-tab ${tab === 'hoy' ? 'on' : ''}" data-tab="hoy">📞 Para hacer hoy${sugs.length ? ' <span class="crm-badge">' + sugs.length + '</span>' : ''}</button>
+        <button class="crm-tab ${tab === 'nuevos' ? 'on' : ''}" data-tab="nuevos">🆕 Primeras compras${nuevosPend ? ' <span class="crm-badge">' + nuevosPend + '</span>' : (nuevos.length ? ' <span class="crm-badge sec">' + nuevos.length + '</span>' : '')}</button>
         <button class="crm-tab ${tab === 'lista' ? 'on' : ''}" data-tab="lista">📇 Todos los clientes <span class="crm-badge sec">${fichas.length}</span></button>
         <button class="crm-tab ${tab === 'contactos' ? 'on' : ''}" data-tab="contactos">📋 Qué se habló${totalCts ? ' <span class="crm-badge sec">' + totalCts + '</span>' : ''}</button>
       </div>
@@ -79,6 +84,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
     const body = c.querySelector('#crm-body');
     if (tab === 'hoy') renderAgenda(body, part, c);
+    else if (tab === 'nuevos') renderNuevos(body, nuevos, c);
     else if (tab === 'contactos') renderContactos(body, cts, c);
     else renderLista(body, fichas, c);
   };
@@ -113,7 +119,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
       <div class="crm-sec">
         <h3>📞 Hoy${hoy.length ? ' · ' + hoy.length : ''}</h3>
-        <p>Clientes que <b>ya te venían comprando</b> y algo cambió. Es lo que se pierde si nadie llama.</p>
+        <p>Clientes que <b>ya te venían comprando</b> y algo cambió, y los que <b>recibieron su primer pedido</b> hace ${CRM().PRIMERA_DESDE} días (para preguntarles cómo les fue). Es lo que se pierde si nadie llama.</p>
       </div>
       ${hoy.length
         ? `<div class="crm-sugs">${hoyVis.map((s, i) => tarjeta(s, i, 'h')).join('')}</div>
@@ -207,7 +213,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         // sepa: obligar a completar un formulario acá frenaría el envío.
         send.onclick = () => {
           CRM().marcarContactado(f, s.tipo, 'whatsapp');
-          toast('Mensaje enviado · queda registrado en la ficha', 'ok');
+          toast(s.tipo === 'primera'
+            ? 'Queda registrado · cuando te conteste, anotá qué te dijo en "Primeras compras"'
+            : 'Mensaje enviado · queda registrado en la ficha', 'ok');
           setTimeout(() => { close(); after && after(); }, 400);
         };
       },
@@ -242,6 +250,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      quién lo hizo. Es la vista para el dueño: sin esto, saber qué hizo un
      vendedor implica preguntarle. Se puede filtrar por persona. */
   let filtroPor = '';
+  let filtroRes = '';
 
   function renderContactos(box, cts, cont) {
     if (!cts.length) {
@@ -253,6 +262,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </div></div></div>`;
       return;
     }
+    const R = CRM().RESULTADOS, T = CRM().TEMAS;
     const personas = [];
     cts.forEach((x) => { const n = x.ct.porNombre || '—'; if (personas.indexOf(n) < 0) personas.push(n); });
 
@@ -262,21 +272,130 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <option value="">Todo el equipo</option>
           ${personas.map((n) => `<option value="${esc(n)}"${filtroPor === n ? ' selected' : ''}>${esc(n)}</option>`).join('')}
         </select>
+        <select id="ct-resf" style="max-width:260px">
+          <option value="">Todos los resultados</option>
+          <option value="problema"${filtroRes === 'problema' ? ' selected' : ''}>⚠️ Críticas y problemas</option>
+          ${Object.keys(R).filter((k) => k !== 'problema').map((k) => `<option value="${k}"${filtroRes === k ? ' selected' : ''}>${esc(R[k].t)}</option>`).join('')}
+        </select>
         <div class="spacer"></div>
         <span class="help" id="ct-n"></span>
       </div>
+      <div id="ct-temas"></div>
       <div class="panel"><div class="panel-b"><div id="ct-lista"></div></div></div>`;
 
     const draw = () => {
-      const list = (filtroPor ? cts.filter((x) => (x.ct.porNombre || '—') === filtroPor) : cts).slice(0, 200);
+      const list = cts.filter((x) => (!filtroPor || (x.ct.porNombre || '—') === filtroPor)
+        && (!filtroRes || x.ct.resultado === filtroRes)).slice(0, 200);
       box.querySelector('#ct-n').textContent = list.length + ' de ' + cts.length;
+      // Con las críticas a la vista, cuántas hay de cada tema: tres quejas de la
+      // entrega son un problema del reparto, no tres clientes enojados.
+      const cnt = {};
+      if (filtroRes === 'problema') list.forEach((x) => { const k = x.ct.tema || 'otro'; cnt[k] = (cnt[k] || 0) + 1; });
+      box.querySelector('#ct-temas').innerHTML = Object.keys(cnt).length
+        ? '<div class="crm-prods" style="margin-bottom:12px">' + Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])
+          .map((k) => `<span class="chip crm-r-mal">${esc(T[k] || k)} <b>×${cnt[k]}</b></span>`).join('') + '</div>'
+        : '';
       box.querySelector('#ct-lista').innerHTML = list.length
         ? '<div class="crm-cts">' + list.map((x) => `<div data-ficha="${esc(x.f.id)}" style="cursor:pointer">${lineaContacto(x.ct, x.f.nombre)}</div>`).join('') + '</div>'
-        : '<div class="empty">Sin contactos de esa persona.</div>';
+        : '<div class="empty">No hay contactos con ese filtro.</div>';
       box.querySelectorAll('[data-ficha]').forEach((el) => el.onclick = () => fichaModal(el.dataset.ficha, () => recargar(cont)));
     };
     draw();
     box.querySelector('#ct-por').onchange = (e) => { filtroPor = e.target.value; draw(); };
+    box.querySelector('#ct-resf').onchange = (e) => { filtroRes = e.target.value; draw(); };
+  }
+
+  /* ─────────────────────── "Primeras compras" ───────────────────────
+     Los clientes que compraron por primera vez en los últimos 30 días y en qué
+     quedó cada uno: si ya se le preguntó cómo le fue, qué contestó, si tuvo una
+     crítica o si ya volvió a comprar. A los 2 días de recibido el pedido, la
+     app lo pone sola en "Para hacer hoy". */
+  const SEG = {
+    toca: { t: 'Toca preguntarle cómo le fue', chip: 'crm-r-neu', ic: '📞' },
+    escrito: { t: 'Falta anotar qué contestó', chip: 'crm-r-esp', ic: '💬' },
+    critica: { t: 'Tuvo una crítica', chip: 'crm-r-mal', ic: '⚠️' },
+    curso: { t: 'Su primer pedido todavía no se entregó', chip: 'crm-r-esp', ic: '📦' },
+    espera: { t: 'Recién lo recibió', chip: 'crm-r-esp', ic: '⏳' },
+    hablado: { t: 'Ya se habló con él', chip: 'crm-r-esp', ic: '✓' },
+    gusto: { t: 'Le gustó', chip: 'crm-r-ok', ic: '😀' },
+    volvio: { t: 'Ya volvió a comprar', chip: 'crm-r-ok', ic: '🔁' },
+  };
+
+  function renderNuevos(box, nuevos, cont) {
+    if (!nuevos.length) {
+      box.innerHTML = `<div class="panel"><div class="panel-b"><div class="empty" style="padding:40px 20px">
+        <div style="font-size:34px;margin-bottom:8px">🆕</div>
+        <b style="display:block;font-size:16px;color:var(--negro);margin-bottom:6px">No hay clientes nuevos en los últimos ${CRM().NUEVO_DIAS} días</b>
+        Cuando alguien compre por primera vez va a aparecer acá, y a los ${CRM().PRIMERA_DESDE} días de recibir el pedido la app te avisa para preguntarle cómo le fue.
+      </div></div></div>`;
+      return;
+    }
+    const cuenta = (e) => nuevos.filter((x) => x.seg.estado === e).length;
+    const volvieron = nuevos.filter((x) => x.seg.volvio).length;
+    const n = nuevos.length;
+
+    box.innerHTML = `
+      <div class="note">Clientes que compraron <b>por primera vez</b> en los últimos ${CRM().NUEVO_DIAS} días. A los <b>${CRM().PRIMERA_DESDE} días de recibir el pedido</b> la app te lo pone en “Para hacer hoy” para preguntarle cómo le fue. Lo que conteste —y si tuvo alguna crítica— anotalo con <b>✍️ Anotar cómo le fue</b>.</div>
+      <div class="crm-prods" style="margin-bottom:16px">
+        <span class="chip crm-t-none">🆕 ${n} cliente${n === 1 ? '' : 's'} nuevo${n === 1 ? '' : 's'}</span>
+        ${cuenta('toca') ? `<span class="chip crm-r-neu">📞 ${cuenta('toca')} para preguntar</span>` : ''}
+        ${cuenta('escrito') ? `<span class="chip crm-r-esp">💬 ${cuenta('escrito')} sin anotar la respuesta</span>` : ''}
+        ${cuenta('gusto') ? `<span class="chip crm-r-ok">😀 ${cuenta('gusto')} le gustó</span>` : ''}
+        ${cuenta('critica') ? `<span class="chip crm-r-mal">⚠️ ${cuenta('critica')} con crítica</span>` : ''}
+        ${volvieron ? `<span class="chip crm-r-ok">🔁 ${volvieron} ya volvi${volvieron === 1 ? 'ó' : 'eron'} a comprar</span>` : ''}
+      </div>
+      <div class="crm-sugs">${nuevos.map((x, i) => tarjetaNuevo(x, i)).join('')}</div>`;
+
+    box.querySelectorAll('[data-nv]').forEach((el) => {
+      const x = nuevos[+el.dataset.nv];
+      const q = (sel) => el.querySelector(sel);
+      const bw = q('[data-wsp]'); if (bw) bw.onclick = () => mensajeModal(CRM().sugPrimera(x.ficha, x.seg), () => recargar(cont));
+      const bc = q('[data-ct]'); if (bc) bc.onclick = () => contactoModal(x.ficha, CRM().sugPrimera(x.ficha, x.seg), () => recargar(cont));
+      const bf = q('[data-ficha]'); if (bf) bf.onclick = () => fichaModal(x.ficha.id, () => recargar(cont));
+    });
+  }
+
+  function tarjetaNuevo(x, i) {
+    const f = x.ficha, s = x.seg;
+    const e = SEG[s.estado] || SEG.hablado;
+    const R = CRM().RESULTADOS, T = CRM().TEMAS;
+    const tel = f.telefono && GDO.Wpp.tieneTel(f.telefono);
+    const p = s.primera;
+
+    // El estado, con el dato concreto de cada caso.
+    let det = e.t;
+    if (s.estado === 'hablado' && s.contacto) det = (R[s.contacto.resultado] || {}).t || e.t;
+    if (s.estado === 'escrito' && s.contacto) det = 'Le escribiste el ' + fmtD(s.contacto.ts) + ' · falta anotar qué contestó';
+    if (s.estado === 'espera') {
+      det = 'Lo recibió ' + (s.dias === 0 ? 'hoy' : 'ayer') + ' · le preguntás el '
+        + CRM().DIAS[new Date(s.ts + CRM().PRIMERA_DESDE * 86400000).getDay()];
+    }
+
+    const prods = p ? (p.items || []).map((it) => (GDO.Lista ? GDO.Lista.nombreItem(it) : (it.producto || it.nombre || '')))
+      .filter(Boolean).slice(0, 3).join(', ') : '';
+    const op = s.opinion;
+    const mal = op && op.resultado === 'problema';
+    const tema = mal && op.tema ? '<b>' + esc(T[op.tema] || '') + '</b>' : '';
+
+    return `
+      <div class="crm-sug prio-${s.estado === 'toca' || s.estado === 'critica' ? 'media' : 'baja'}" data-nv="${i}">
+        <div class="crm-sug-ic">${e.ic}</div>
+        <div class="crm-sug-tx">
+          <div class="crm-sug-h">
+            <b>${esc(f.nombre)}</b>
+            <span class="chip ${e.chip}">${esc(det)}</span>
+            ${s.volvio && s.estado !== 'volvio' ? '<span class="chip crm-r-ok">🔁 Ya volvió</span>' : ''}
+          </div>
+          <div class="crm-sug-m">Primera compra: <b>${s.ts ? fmtD(s.ts) : 'en curso'}</b> · ${p && GDO.UI.esRetiro(p) ? '🏪 retiro' : '🚚 envío'}${prods ? ' · ' + esc(prods) : ''}</div>
+          ${op && op.nota ? `<div class="crm-op ${mal ? 'mal' : 'ok'}">${tema ? tema + ': ' : ''}“${esc(op.nota)}”</div>`
+            : (tema ? `<div class="crm-op mal">${tema}</div>` : '')}
+        </div>
+        <div class="crm-sug-ac">
+          ${s.estado === 'toca' ? (tel ? '<button class="btn btn-verde btn-sm" data-wsp>💬 Preguntarle por WhatsApp</button>' : '<span class="help">Sin teléfono</span>') : ''}
+          ${s.ts ? `<button class="btn ${s.estado === 'escrito' ? 'btn-primary' : 'btn-ghost'} btn-sm" data-ct>✍️ ${s.estado === 'escrito' ? 'Anotar qué contestó' : 'Anotar cómo le fue'}</button>` : ''}
+          <button class="btn btn-ghost btn-sm" data-ficha>Ver ficha</button>
+        </div>
+      </div>`;
   }
 
   /* ───────────────────── "Todos los clientes" ───────────────────── */
@@ -496,19 +615,27 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      y el CRM se vuelve mentira. Queda guardado quién habló, por dónde, en qué
      quedó y si hay que volver a llamarlo. */
   function contactoModal(f, sug, after) {
-    const C = CRM().CANALES, R = CRM().RESULTADOS;
+    const C = CRM().CANALES, R = CRM().RESULTADOS, T = CRM().TEMAS;
     const canalPorDefecto = (f.telefono && GDO.Wpp.tieneTel(f.telefono)) ? 'whatsapp' : 'llamada';
+    // Después de la PRIMERA compra lo que se anota es la opinión: qué le pareció
+    // y, si tuvo una crítica, sobre qué fue.
+    const opinion = !!(sug && sug.tipo === 'primera');
     modal({
-      title: 'Contacto con ' + f.nombre, width: 520,
+      title: opinion ? '¿Cómo le fue a ' + f.nombre + '?' : 'Contacto con ' + f.nombre, width: 520,
       bodyHTML: `
-        ${sug && sug.titulo ? `<div class="note" style="margin-bottom:14px">Lo tenías en la lista por: <b>${esc(sug.titulo)}</b> — ${esc(sug.motivo)}</div>` : ''}
+        ${opinion ? `<div class="note" style="margin-bottom:14px">${esc(sug.motivo)}</div>`
+          : (sug && sug.titulo ? `<div class="note" style="margin-bottom:14px">Lo tenías en la lista por: <b>${esc(sug.titulo)}</b> — ${esc(sug.motivo)}</div>` : '')}
         <div class="form-grid">
           <div class="field"><label>¿Por dónde lo contactaste?</label>
             <select id="ct-canal">${Object.keys(C).map((k) => `<option value="${k}"${k === canalPorDefecto ? ' selected' : ''}>${C[k]}</option>`).join('')}</select></div>
-          <div class="field"><label>¿En qué quedaron?</label>
-            <select id="ct-res">${Object.keys(R).map((k) => `<option value="${k}"${k === 'pide' ? ' selected' : ''}>${esc(R[k].t)}</option>`).join('')}</select></div>
+          <div class="field"><label>${opinion ? '¿Qué le pareció el pedido?' : '¿En qué quedaron?'}</label>
+            <select id="ct-res">${Object.keys(R).map((k) => `<option value="${k}"${k === (opinion ? 'gusto' : 'pide') ? ' selected' : ''}>${esc(R[k].t)}</option>`).join('')}</select></div>
+          <div class="field col-2" id="ct-tema-box"><label>¿Sobre qué fue la crítica?</label>
+            <select id="ct-tema">${Object.keys(T).map((k) => `<option value="${k}">${esc(T[k])}</option>`).join('')}</select></div>
           <div class="field col-2"><label>¿Qué te dijo?</label>
-            <textarea id="ct-nota" rows="3" placeholder="Ej: está con stock hasta el jueves · pidió precio por 20 kg · se quejó de que la milanesa vino chica"></textarea></div>
+            <textarea id="ct-nota" rows="3" placeholder="${opinion
+              ? 'Ej: le encantó la suprema · el pollo vino con mucha agua · el pedido llegó tarde'
+              : 'Ej: está con stock hasta el jueves · pidió precio por 20 kg · se quejó de que la milanesa vino chica'}"></textarea></div>
           <div class="field"><label>¿Hay que volver a contactarlo?</label>
             <input id="ct-prox" type="date" value=""/>
             <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
@@ -524,10 +651,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       onMount(node, close) {
         const res = node.querySelector('#ct-res');
         const aviso = node.querySelector('#ct-aviso');
+        const temaBox = node.querySelector('#ct-tema-box');
         const refresh = () => {
+          temaBox.style.display = res.value === 'problema' ? '' : 'none';
           aviso.innerHTML = res.value === 'nocompra'
             ? '⚠️ Al guardar, este cliente <b>deja de aparecer</b> en la lista de contactos. Se puede volver a activar desde su ficha.'
-            : 'Si no ponés fecha, la app lo vuelve a proponer sola cuando le toque el próximo pedido.';
+            : (res.value === 'problema'
+              ? '⚠️ Queda anotada como <b>crítica</b>. Las ves todas juntas en <b>Qué se habló</b> → “Críticas y problemas”.'
+              : 'Si no ponés fecha, la app lo vuelve a proponer sola cuando le toque el próximo pedido.');
         };
         res.onchange = refresh; refresh();
         node.querySelectorAll('[data-prox]').forEach((b) => b.onclick = () => {
@@ -538,6 +669,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           CRM().registrarContacto(f, {
             canal: node.querySelector('#ct-canal').value,
             resultado: res.value,
+            tema: res.value === 'problema' ? node.querySelector('#ct-tema').value : '',
             nota: node.querySelector('#ct-nota').value.trim(),
             proximo: node.querySelector('#ct-prox').value,
             motivoProximo: node.querySelector('#ct-motivo').value.trim(),
@@ -559,6 +691,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         ${nombreCliente ? '<b>' + esc(nombreCliente) + '</b> · ' : ''}
         <span class="crm-ct-f">${fmtD(ct.ts)}</span>
         <span class="chip ${r.chip}">${esc(r.t)}</span>
+        ${ct.resultado === 'problema' && ct.tema ? '<span class="crm-ct-c">sobre: ' + esc(CRM().TEMAS[ct.tema] || ct.tema) + '</span>' : ''}
         <span class="crm-ct-c">${C[ct.canal] || ct.canal}</span>
         ${ct.porNombre ? '<span class="crm-ct-p">por ' + esc(String(ct.porNombre).split(' ')[0]) + '</span>' : ''}
       </div>

@@ -420,6 +420,11 @@ textarea{resize:vertical;min-height:74px}
 .crm-r-esp{background:#eef2f7;color:#4b5563}
 .crm-r-neu{background:#fff7da;color:#9a7400}
 .crm-r-mal{background:#fde4e4;color:#b32020}
+/* Opinión de la primera compra, tal cual la dijo el cliente */
+.crm-op{font-size:13px;margin-top:6px;border-left:3px solid var(--gris-bd);padding:2px 0 2px 9px;
+  color:#2b2b2e;line-height:1.45}
+.crm-op.ok{border-color:#1d7a44}
+.crm-op.mal{border-color:#b32020}
 
 /* ═════════ Promos de la tienda (formato vertical 9:16) ═════════ */
 .promo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}

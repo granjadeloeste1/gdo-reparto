@@ -33,9 +33,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const rutasAct = Store.rutas().filter((r) => ['asignada', 'aceptada', 'en_curso'].includes(r.estado));
     // Aviso del CRM: cuántos clientes hay para contactar hoy. Es lo primero que
     // conviene ver al abrir la app, porque es lo único que se pierde si nadie mira.
-    // El aviso cuenta SOLO lo urgente (clientes que ya compraban y algo cambió).
-    // Si sumáramos las primeras compras sin repetir, el número sería enorme todos
-    // los días y dejaría de significar nada.
+    // El aviso cuenta SOLO lo urgente (clientes que ya compraban y algo cambió, y
+    // los que recibieron su PRIMER pedido hace 2 días: se les pregunta cómo les fue).
+    // Si sumáramos todas las primeras compras sin repetir, el número sería enorme
+    // todos los días y dejaría de significar nada.
     let sugs = [];
     try { sugs = (GDO.CRM && Store.puedeCRM()) ? GDO.CRM.agendaPartida().hoy : []; } catch (e) { sugs = []; }
     // RETIROS EN SUCURSAL: no van a ninguna ruta, así que si no tuvieran su propio

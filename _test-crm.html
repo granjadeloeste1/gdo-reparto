@@ -244,7 +244,7 @@ L.push('<h2>4e · La agenda no se inunda de primeras compras</h2>');
 for (let k = 0; k < 40; k++) PEDIDOS.push(ped('Cliente Suelto ' + k, '11 5544-' + (1000 + k), 30 + k, [POLLO]));
 const part = GDO.CRM.agendaPartida();
 chk(part.hoy.length <= 10 || true, 'Hoy: ' + part.hoy.length + ' · Para cuando tengas un rato: ' + part.luego.length);
-chk(part.hoy.every((s) => s.ficha.nCompras >= 2), 'En "Hoy" solo entran clientes que ya venían comprando (2 compras o más)');
+chk(part.hoy.every((s) => s.ficha.nCompras >= 2 || s.tipo === 'primera'), 'En "Hoy" solo entran clientes que ya venían comprando (2 compras o más) y el "cómo le fue" de la primera compra');
 chk(part.luego.filter((s) => s.tipo === 'sin_segunda').length >= 40 && !part.hoy.some((s) => s.tipo === 'sin_segunda'),
   'Todas las primeras compras sin repetir van al segundo grupo, ninguna a "Hoy" (dio ' + part.luego.filter((s) => s.tipo === 'sin_segunda').length + ' en el segundo grupo)');
 chk(part.hoy.length < 10, 'La lista de hoy queda corta y hacible (dio ' + part.hoy.length + ')');
@@ -252,6 +252,64 @@ chk(part.hoy.length < 10, 'La lista de hoy queda corta y hacible (dio ' + part.h
 const tocaHoy = part.hoy.filter((s) => s.prio === 78).map((s) => s.ficha.total);
 chk(tocaHoy.every((v, i) => i === 0 || tocaHoy[i - 1] >= v), 'A igual urgencia, primero el cliente que más plata deja');
 for (let k = 0; k < 40; k++) PEDIDOS.pop();
+
+L.push('<h2>4h · Primera compra: a los 2 días, preguntar cómo le fue</h2>');
+// N · Recibió su primer pedido hace 3 días → hay que preguntarle.
+PEDIDOS.push(ped('Verdulería Nueva', '11 5522-0001', 3, [MILA]));
+// O · Lo recibió AYER → todavía no (no llegó a probarlo).
+PEDIDOS.push(ped('Almacén Recién', '11 5522-0002', 1, [POLLO]));
+// P · Su primer pedido todavía no se entregó.
+PEDIDOS.push(ped('Kiosco En Camino', '11 5522-0003', -1, [POLLO], 'pendiente'));
+// Q · Primer pedido RETIRADO en el local hace 2 días.
+const pq = ped('Rotisería Retira', '11 5522-0004', 2, [HAMB]); pq.modalidad = 'retiro'; PEDIDOS.push(pq);
+const fsN = GDO.CRM.fichas();
+const nd = (nom) => fsN.filter((f) => f.nombre.indexOf(nom) >= 0)[0];
+const sP = GDO.CRM.sugerencias(fsN);
+const sN = sP.filter((s) => s.tipo === 'primera' && s.ficha.nombre.indexOf('Verdulería Nueva') >= 0)[0];
+chk(!!sN, 'Recibió su primer pedido hace 3 días: aparece "preguntale cómo le fue"');
+chk(sN && sN.grupo === 'hoy', 'Y va a la lista de HOY (es el momento justo, no una tanda para después)');
+chk(sN && /primer pedido/.test(sN.msg) && /qué tal te fue/.test(sN.msg) && !/\$/.test(sN.msg), 'El mensaje pregunta cómo le fue y no nombra precios');
+chk(!sP.some((s) => s.tipo === 'primera' && s.ficha.nombre.indexOf('Recién') >= 0), 'Lo recibió ayer: todavía NO se le pregunta');
+chk(GDO.CRM.seguimiento(nd('Recién')).estado === 'espera', 'Queda "en espera" (dio ' + GDO.CRM.seguimiento(nd('Recién')).estado + ')');
+chk(!sP.some((s) => s.ficha.nombre.indexOf('En Camino') >= 0), 'Si el primer pedido no se entregó, no se le pregunta nada');
+chk(GDO.CRM.seguimiento(nd('En Camino')).estado === 'curso', 'Figura como "primer pedido en curso" (dio ' + GDO.CRM.seguimiento(nd('En Camino')).estado + ')');
+const sQ = sP.filter((s) => s.tipo === 'primera' && s.ficha.nombre.indexOf('Retira') >= 0)[0];
+chk(sQ && /pasaste a retirar/.test(sQ.msg), 'Si lo retiró en el local, el mensaje dice "pasaste a retirar" (no "recibiste")');
+const nv = GDO.CRM.primerasCompras(fsN);
+chk(nv.length >= 4 && nv[0].seg.estado === 'toca', 'La pestaña de primeras compras los lista, primero los que hay que preguntar (' + nv.map((x) => x.seg.estado).join(', ') + ')');
+chk(!nv.some((x) => x.ficha.nombre.indexOf('Kiosco Don') >= 0), 'Un cliente que compra hace meses no figura como nuevo');
+chk(!nv.some((x) => x.ficha.nombre.indexOf('Cuñados') >= 0), 'Tampoco un cliente habitual cuya primera compra fue hace más de 30 días');
+
+// Con la ficha guardada de verdad (contactos), el seguimiento avanza.
+DOCS = []; seq = 0;
+GDO.Store.crmClientes = function () { return DOCS; };
+GDO.Store.upsertCrmCliente = function (c) {
+  var ex = c.id ? DOCS.filter(function (x) { return x.id === c.id; })[0] : null;
+  if (ex) { Object.assign(ex, c); return ex; }
+  c.id = c.id || ('cli_' + (++seq)); DOCS.push(c); return c;
+};
+const fresca = (nom) => GDO.CRM.fichas().filter((f) => f.nombre.indexOf(nom) >= 0)[0];
+GDO.CRM.marcarContactado(fresca('Verdulería Nueva'), 'primera', 'whatsapp');
+chk(GDO.CRM.seguimiento(fresca('Verdulería Nueva')).estado === 'escrito', 'Después del WhatsApp queda "falta anotar qué contestó"');
+chk(!GDO.CRM.agenda().some((s) => s.clienteId === fresca('Verdulería Nueva').id), 'Y sale de la lista de hoy');
+GDO.CRM.registrarContacto(fresca('Verdulería Nueva'), { canal: 'whatsapp', resultado: 'problema', tema: 'entrega', nota: 'Le gustó la milanesa pero el pedido llegó tarde.' }, 'primera');
+const sg = GDO.CRM.seguimiento(fresca('Verdulería Nueva'));
+chk(sg.estado === 'critica', 'Con la respuesta anotada queda como CRÍTICA (dio ' + sg.estado + ')');
+chk(sg.opinion && sg.opinion.tema === 'entrega' && sg.opinion.nota.indexOf('tarde') >= 0, 'La crítica guarda su tema (entrega) y lo que dijo el cliente');
+GDO.CRM.registrarContacto(fresca('Rotisería Retira'), { canal: 'local', resultado: 'gusto', nota: 'Muy rica la hamburguesa.' }, 'primera');
+chk(GDO.CRM.seguimiento(fresca('Rotisería Retira')).estado === 'gusto', 'El que dijo que le gustó queda como "le gustó"');
+chk(fresca('Rotisería Retira').contactos[0].tema === '', 'Una opinión buena no lleva tema de crítica');
+// Si ya se le preguntó, el aviso de "compró una sola vez" (día 12+) no le vuelve a preguntar cómo le fue.
+GDO.CRM.registrarContacto(fresca('Estrella'), { canal: 'llamada', resultado: 'gusto' }, 'primera');
+GDO.CRM.guardar(fresca('Estrella'), { snooze: {} });
+const sE = GDO.CRM.sugerencias().filter((s) => s.tipo === 'sin_segunda' && s.ficha.nombre.indexOf('Estrella') >= 0)[0];
+chk(sE && !/qué tal te fue/.test(sE.msg), 'Si ya se le preguntó cómo le fue, el mensaje de "compró una sola vez" no se lo vuelve a preguntar');
+L.push('<b>primera → Verdulería Nueva</b><pre>' + (sN ? sN.msg : '—') + '</pre>');
+L.push('<b>primera (retiro) → Rotisería Retira</b><pre>' + (sQ ? sQ.msg : '—') + '</pre>');
+DOCS = []; seq = 0;
+GDO.Store.crmClientes = function () { return []; };
+GDO.Store.upsertCrmCliente = function (c) { return c; };
+for (let k = 0; k < 4; k++) PEDIDOS.pop();
 
 L.push('<h2>5 · Agrupación: una tarjeta por cliente</h2>');
 const ids = sugs.map((s) => s.clienteId);
