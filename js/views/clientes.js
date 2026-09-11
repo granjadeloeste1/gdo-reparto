@@ -21,6 +21,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   let tab = 'hoy';
   let filtro = '';
   let filtroTipo = '';
+  let filtroGrupo = '';   // el grupo elegido tocando una de las tarjetas de arriba
+
+  /* Los grupos de las tarjetas de arriba. Tocar una abre "Todos los clientes"
+     filtrado por ese grupo, y el número de la tarjeta sale de ESTE mismo
+     criterio: la lista siempre tiene exactamente los clientes que dice. */
+  const GRUPOS = {
+    compras: { t: 'Clientes con compras', f: (f) => f.nCompras > 0 },
+    repiten: { t: 'Repiten (2 compras o más)', f: (f) => f.nCompras >= 2 },
+    unavez: { t: 'Compraron una sola vez', f: (f) => f.nCompras === 1 },
+    dormidos: { t: 'Se están yendo', f: (f) => f.nCompras > 0 && GDO.CRM.dormido(f) },
+  };
 
   /* ─────────────────────────── pantalla ─────────────────────────── */
 
@@ -45,17 +56,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Los indicadores cuentan la historia del negocio, no el estado de la app:
     // cuántos repiten (la base real), cuántos vinieron una sola vez (la
     // oportunidad más grande) y cuántos se están yendo (lo que se pierde hoy).
-    const conCompras = fichas.filter((f) => f.nCompras > 0);
-    const repiten = conCompras.filter((f) => f.nCompras >= 2);
-    const unaVez = conCompras.length - repiten.length;
-    const dormidos = conCompras.filter((f) => CRM().dormido(f)).length;
+    // Cada tarjeta es un botón: lleva a la lista de esos clientes.
+    const cuantos = (k) => fichas.filter(GRUPOS[k].f).length;
+    const kpi = (k, color, ic) => `<div class="card kpi ${color}${tab === 'lista' && filtroGrupo === k ? ' crm-kpi-on' : ''}" data-grupo="${k}" title="Ver la lista de estos clientes">
+        <span class="ic">${ic}</span><span class="num">${cuantos(k)}</span><span class="lbl">${GRUPOS[k].t}</span></div>`;
 
     c.innerHTML = `
       <div class="cards" style="margin-bottom:20px">
-        <div class="card kpi naranja"><span class="ic">📇</span><span class="num">${conCompras.length}</span><span class="lbl">Clientes con compras</span></div>
-        <div class="card kpi negro"><span class="ic">🔁</span><span class="num">${repiten.length}</span><span class="lbl">Repiten (2 compras o más)</span></div>
-        <div class="card kpi amarillo"><span class="ic">🌱</span><span class="num">${unaVez}</span><span class="lbl">Compraron una sola vez</span></div>
-        <div class="card kpi rojo"><span class="ic">😴</span><span class="num">${dormidos}</span><span class="lbl">Se están yendo</span></div>
+        ${kpi('compras', 'naranja', '📇')}
+        ${kpi('repiten', 'negro', '🔁')}
+        ${kpi('unavez', 'amarillo', '🌱')}
+        ${kpi('dormidos', 'rojo', '😴')}
       </div>
 
       ${dobles.length ? `<div class="note" id="crm-dobles" style="cursor:pointer;background:#eef4ff;border-color:#c3d6f5;color:#1e3d78">
@@ -77,6 +88,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div id="crm-body"></div>`;
 
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.clientes(c); });
+    // Tocar una tarjeta: la lista de ese grupo. Tocar la misma otra vez: todos.
+    c.querySelectorAll('[data-grupo]').forEach((el) => el.onclick = () => {
+      const g = el.dataset.grupo;
+      filtroGrupo = (tab === 'lista' && filtroGrupo === g) ? '' : g;
+      tab = 'lista';
+      GDO.Views.clientes(c);
+    });
     const hb = c.querySelector('#crm-huerf');
     if (hb) hb.onclick = () => sinFechaModal(huerfanos, () => GDO.Views.clientes(c));
     const db = c.querySelector('#crm-dobles');
@@ -404,6 +422,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     box.innerHTML = `
       <div class="toolbar">
         <input type="search" id="cl-q" placeholder="Buscar por nombre, teléfono o dirección…" value="${esc(filtro)}"/>
+        <select id="cl-grupo" style="max-width:230px">
+          <option value="">Todos los clientes</option>
+          ${Object.keys(GRUPOS).map((k) => `<option value="${k}"${filtroGrupo === k ? ' selected' : ''}>${GRUPOS[k].t}</option>`).join('')}
+        </select>
         <select id="cl-tipo" style="max-width:200px">
           <option value="">Todos los tipos</option>
           <option value="revendedor">Revendedor</option>
@@ -423,6 +445,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const q = CRM().norm(filtro);
       const qDig = String(filtro || '').replace(/\D/g, '');
       const list = fichas.filter((f) => {
+        if (filtroGrupo && !GRUPOS[filtroGrupo].f(f)) return false;
         if (filtroTipo === '_sin' && f.tipo) return false;
         if (filtroTipo && filtroTipo !== '_sin' && f.tipo !== filtroTipo) return false;
         if (!q) return true;
@@ -456,6 +479,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const inp = box.querySelector('#cl-q');
     inp.oninput = () => { filtro = inp.value; draw(); };
     sel.onchange = () => { filtroTipo = sel.value; draw(); };
+    // Cambiar el grupo acá también marca (o desmarca) la tarjeta de arriba.
+    box.querySelector('#cl-grupo').onchange = (e) => { filtroGrupo = e.target.value; recargar(cont); };
   }
 
   /* ───────────────────────────── ficha ───────────────────────────── */

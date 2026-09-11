@@ -356,6 +356,10 @@ textarea{resize:vertical;min-height:74px}
 .crm-t-none{background:var(--gris-cl);color:var(--gris)}
 .chip-socio{background:#fff4e3;color:#b4600a}
 .crm-alerta{color:var(--rojo);font-weight:600}
+/* Tarjetas de arriba de Clientes: cada una abre la lista de ese grupo */
+.kpi[data-grupo]{cursor:pointer;transition:box-shadow .15s,transform .15s}
+.kpi[data-grupo]:hover{transform:translateY(-1px);box-shadow:0 0 0 2px var(--gris-bd),var(--sombra)}
+.kpi.crm-kpi-on{box-shadow:0 0 0 2px var(--negro),var(--sombra)}
 
 /* Ficha */
 .crm-ficha-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px}
