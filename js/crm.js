@@ -814,38 +814,36 @@ window.GDO = window.GDO || {};
   const listaProd = (arr) => (arr || []).slice(0, 3).map((x) => x.nombre).join(', ');
   const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
+  /* Regla del negocio: los mensajes NO enumeran lo que compró el cliente.
+     Listar sus productos entre paréntesis suena a mensaje automático; el
+     historial queda para el panel (el chip "oferta"), no para el texto. */
   function msgToca(f) {
-    const hab = listaProd(f.habituales);
+    const hab = (f.habituales || []).length > 0;
     const dia = f.diaHabitual != null ? ' Estamos armando el reparto del ' + DIAS[f.diaHabitual] + '.' : '';
     return 'Hola ' + nombrePila(f) + '! ¿Cómo andás? ' + firma() + ' 🐔' + dia +
-      (hab ? ' ¿Te preparo lo de siempre (' + hab + ')?' : ' ¿Te preparo el pedido?') +
+      (hab ? ' ¿Te preparo lo de siempre?' : ' ¿Te preparo el pedido?') +
       ' La lista actualizada está en ' + LISTA_URL + ' — decime qué necesitás y te lo dejo listo.';
   }
   function msgDormido(f) {
-    const hab = listaProd(f.habituales);
-    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Hace un tiempo que no te pasamos pedido y te quería preguntar si necesitás reponer' +
-      (hab ? ' (' + hab + ')' : '') + '. Seguimos con reparto en tu zona y la lista al día está en ' + LISTA_URL +
+    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Hace un tiempo que no te pasamos pedido y te quería preguntar si necesitás reponer. ' +
+      'Seguimos con reparto en tu zona y la lista al día está en ' + LISTA_URL +
       '. Si quedó algo pendiente de la última vez, decime y lo vemos.';
   }
   function msgPrimera(f, seg) {
     const ret = !!(seg && seg.primera && seg.primera.modalidad === 'retiro');
-    const p = f.productos[0];
     const cuando = (seg && seg.dias != null && seg.dias <= 3) ? 'Hace un par de días' : 'Hace unos días';
     return 'Hola ' + nombrePila(f) + '! ' + firma() + ' 🐔 ' + cuando + ' ' + (ret ? 'pasaste a retirar' : 'recibiste') +
-      ' tu primer pedido con nosotros' + (p ? ' (' + p.nombre + ')' : '') + ' y te quería preguntar: ¿qué tal te fue? ' +
+      ' tu primer pedido con nosotros y te quería preguntar: ¿qué tal te fue? ' +
       (ret ? '¿Estuvo todo bien?' : '¿Llegó todo bien?') +
       ' Si hubo algo que no te gustó, contámelo con confianza, que nos sirve para mejorar. ¡Gracias por elegirnos!';
   }
   function msgSinSegunda(f) {
-    const p = f.productos[0];
     // Si ya se le preguntó cómo le fue (a los 2 días), no se le vuelve a preguntar.
     const seg = seguimiento(f);
     if (seg && ['escrito', 'hablado', 'gusto', 'critica'].indexOf(seg.estado) >= 0) {
-      return 'Hola ' + nombrePila(f) + '! ' + firma() + '. ¿Cómo venís? Si querés repetir el pedido' +
-        (p ? ' (' + p.nombre + ')' : '') + ' o probar otra cosa, la lista está en ' + LISTA_URL + ' y te lo preparamos.';
+      return 'Hola ' + nombrePila(f) + '! ' + firma() + '. ¿Cómo venís? Si querés repetir el pedido o probar otra cosa, la lista está en ' + LISTA_URL + ' y te lo preparamos.';
     }
-    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Te escribo para saber qué tal te fue con el pedido de la vez pasada' +
-      (p ? ' (' + p.nombre + ')' : '') + '. Si querés repetir o probar otra cosa, la lista está en ' + LISTA_URL +
+    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Te escribo para saber qué tal te fue con el pedido de la vez pasada. Si querés repetir o probar otra cosa, la lista está en ' + LISTA_URL +
       ' y te lo mandamos con el reparto.';
   }
   function msgDejo(f, prod) {
