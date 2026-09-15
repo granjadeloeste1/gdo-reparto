@@ -814,21 +814,24 @@ window.GDO = window.GDO || {};
   const listaProd = (arr) => (arr || []).slice(0, 3).map((x) => x.nombre).join(', ');
   const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
-  /* Regla del negocio: los mensajes NO enumeran lo que compró el cliente.
-     Listar sus productos entre paréntesis suena a mensaje automático; el
-     historial queda para el panel (el chip "oferta"), no para el texto. */
+  /* Dos reglas del negocio, las dos por la misma razón (que no se note armado
+     por un programa):
+     1) los mensajes NO enumeran lo que compró el cliente — el historial queda
+        para el panel (el chip "oferta"), no para el texto;
+     2) la presentación ("Soy Matias de Granja del Oeste") va UNA sola vez, en
+        el mensaje que sigue a su primer pedido. Después ya sabe quién le
+        escribe: volver a presentarse en cada mensaje suena a mailing. */
   function msgToca(f) {
-    const hab = (f.habituales || []).length > 0;
-    const dia = f.diaHabitual != null ? ' Estamos armando el reparto del ' + DIAS[f.diaHabitual] + '.' : '';
-    return 'Hola ' + nombrePila(f) + '! ¿Cómo andás? ' + firma() + ' 🐔' + dia +
-      (hab ? ' ¿Te preparo lo de siempre?' : ' ¿Te preparo el pedido?') +
-      ' La lista actualizada está en ' + LISTA_URL + ' — decime qué necesitás y te lo dejo listo.';
+    return 'Hola ' + nombrePila(f) + '! ¿Cómo andás? Quería saber si esta semana estarías necesitando algo de mercadería, ' +
+      'la lista actualizada está en ' + LISTA_URL +
+      ' — me hacés el pedido y a partir de mañana ya podemos estar entregándolo en tu zona.';
   }
   function msgDormido(f) {
-    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Hace un tiempo que no te pasamos pedido y te quería preguntar si necesitás reponer. ' +
+    return 'Hola ' + nombrePila(f) + '! Hace un tiempo que no te pasamos pedido y te quería preguntar si necesitás reponer. ' +
       'Seguimos con reparto en tu zona y la lista al día está en ' + LISTA_URL +
       '. Si quedó algo pendiente de la última vez, decime y lo vemos.';
   }
+  // El único que se presenta: es el primer mensaje que recibe el cliente.
   function msgPrimera(f, seg) {
     const ret = !!(seg && seg.primera && seg.primera.modalidad === 'retiro');
     const cuando = (seg && seg.dias != null && seg.dias <= 3) ? 'Hace un par de días' : 'Hace unos días';
@@ -841,24 +844,24 @@ window.GDO = window.GDO || {};
     // Si ya se le preguntó cómo le fue (a los 2 días), no se le vuelve a preguntar.
     const seg = seguimiento(f);
     if (seg && ['escrito', 'hablado', 'gusto', 'critica'].indexOf(seg.estado) >= 0) {
-      return 'Hola ' + nombrePila(f) + '! ' + firma() + '. ¿Cómo venís? Si querés repetir el pedido o probar otra cosa, la lista está en ' + LISTA_URL + ' y te lo preparamos.';
+      return 'Hola ' + nombrePila(f) + '! ¿Cómo venís? Si querés repetir el pedido o probar otra cosa, la lista está en ' + LISTA_URL + ' y te lo preparamos.';
     }
-    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Te escribo para saber qué tal te fue con el pedido de la vez pasada. Si querés repetir o probar otra cosa, la lista está en ' + LISTA_URL +
+    return 'Hola ' + nombrePila(f) + '! Te escribo para saber qué tal te fue con el pedido de la vez pasada. Si querés repetir o probar otra cosa, la lista está en ' + LISTA_URL +
       ' y te lo mandamos con el reparto.';
   }
   function msgDejo(f, prod) {
-    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Vi que en los últimos pedidos no llevaste ' + prod.nombre +
+    return 'Hola ' + nombrePila(f) + '! Vi que en los últimos pedidos no llevaste ' + prod.nombre +
       '. ¿Te está sobrando o preferís cambiarlo por otra cosa? Si querés te lo sumo al próximo y me decís la cantidad.';
   }
   function msgBajo(f) {
-    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Quería saber cómo viene la venta y si hay algo que podamos mejorar de nuestro lado (cantidad, día de entrega, forma de pago). Cualquier cosa que necesites, la lista está en ' + LISTA_URL + '.';
+    return 'Hola ' + nombrePila(f) + '! Quería saber cómo viene la venta y si hay algo que podamos mejorar de nuestro lado (cantidad, día de entrega, forma de pago). Cualquier cosa que necesites, la lista está en ' + LISTA_URL + '.';
   }
   function msgProbar(f, nom) {
-    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. Te quería contar que además de lo que llevás siempre tenemos ' + nom +
+    return 'Hola ' + nombrePila(f) + '! Te quería contar que además de lo que llevás siempre tenemos ' + nom +
       ', que se lleva mucho entre los clientes como vos. Si te interesa te paso el precio y te lo sumo al próximo pedido.';
   }
   function msgRecordatorio(f) {
-    return 'Hola ' + nombrePila(f) + '! ' + firma() + '. ' +
+    return 'Hola ' + nombrePila(f) + '! ' +
       ((f.recordatorio && f.recordatorio.motivo) || '¿Cómo venís? ¿Necesitás algo para esta semana?');
   }
 
