@@ -821,10 +821,53 @@ window.GDO = window.GDO || {};
      2) la presentación ("Soy Matias de Granja del Oeste") va UNA sola vez, en
         el mensaje que sigue a su primer pedido. Después ya sabe quién le
         escribe: volver a presentarse en cada mensaje suena a mailing. */
+  /* DÍAS DE ENTREGA POR ZONA. Copia de CFG.zonas de gdo-tienda/vista-minorista.html
+     (lo que el cliente ve al pedir con envío): si cambian los días allá, cambiarlos
+     acá a mano. Villa Tesei es todos los días hábiles. */
+  const ZONAS_ENTREGA = [
+    { lugares: ['Hurlingham', 'William Morris', 'Morris', 'Altos de Podestá'], dias: [1] },
+    { lugares: ['Palomar', 'Ciudad Jardín'], dias: [2] },
+    { lugares: ['Ramos Mejía', 'Haedo', 'Villa Sarmiento', 'Ciudadela'], dias: [3] },
+    { lugares: ['Castelar', 'Ituzaingó', 'Morón'], dias: [4, 5] },
+    { lugares: ['Villa Tesei'], dias: [1, 2, 3, 4, 5, 6] },
+  ];
+  // Qué días se le puede entregar a este cliente. Orden de confianza: la zona que
+  // eligió él mismo en su último pedido con envío → su localidad → su dirección
+  // (el lugar más largo primero, así "Villa Tesei" gana a "Hurlingham") → el día
+  // en que suele recibir. Sin nada de eso, null.
+  function diasEntregaDe(f) {
+    const buscar = (texto) => {
+      const t = ' ' + norm(texto) + ' ';
+      if (!t.trim()) return null;
+      let mejor = null, largo = 0;
+      ZONAS_ENTREGA.forEach((z) => z.lugares.forEach((l) => {
+        const n = norm(l);
+        if (n.length > largo && t.indexOf(' ' + n + ' ') >= 0) { mejor = z; largo = n.length; }
+      }));
+      return mejor ? mejor.dias : null;
+    };
+    const conZona = (f.pedidos || []).filter((p) => p.zona && p.modalidad !== 'retiro');
+    const ult = conZona.length ? conZona.reduce((a, b) => ((fechaDe(b) || 0) > (fechaDe(a) || 0) ? b : a)) : null;
+    return (ult && buscar(ult.zona)) || buscar(f.localidad) || buscar(f.direccion) ||
+      (f.diaHabitual != null ? [f.diaHabitual] : null);
+  }
+  // "a partir de mañana" / "a partir del jueves": el próximo día de entrega desde
+  // mañana (hoy no: el pedido todavía no está hecho). '' si no se sabe.
+  function proximaEntregaTxt(f) {
+    const dias = diasEntregaDe(f);
+    if (!dias || !dias.length) return '';
+    const d = new Date();
+    for (let i = 1; i <= 7; i++) {
+      d.setDate(d.getDate() + 1);
+      if (dias.indexOf(d.getDay()) >= 0) return i === 1 ? 'a partir de mañana' : 'a partir del ' + DIAS[d.getDay()];
+    }
+    return '';
+  }
   function msgToca(f) {
+    const cuando = proximaEntregaTxt(f);
     return 'Hola ' + nombrePila(f) + '! ¿Cómo andás? Quería saber si esta semana estarías necesitando algo de mercadería, ' +
       'la lista actualizada está en ' + LISTA_URL +
-      ' — me hacés el pedido y a partir de mañana ya podemos estar entregándolo en tu zona.';
+      ' — me hacés el pedido y ' + (cuando ? cuando + ' ' : '') + 'ya podemos estar entregándolo en tu zona.';
   }
   function msgDormido(f) {
     return 'Hola ' + nombrePila(f) + '! Hace un tiempo que no te pasamos pedido y te quería preguntar si necesitás reponer. ' +
