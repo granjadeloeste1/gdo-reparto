@@ -821,16 +821,41 @@ window.GDO = window.GDO || {};
      2) la presentación ("Soy Matias de Granja del Oeste") va UNA sola vez, en
         el mensaje que sigue a su primer pedido. Después ya sabe quién le
         escribe: volver a presentarse en cada mensaje suena a mailing. */
-  /* DÍAS DE ENTREGA POR ZONA. Copia de CFG.zonas de gdo-tienda/vista-minorista.html
-     (lo que el cliente ve al pedir con envío): si cambian los días allá, cambiarlos
-     acá a mano. Villa Tesei es todos los días hábiles. */
-  const ZONAS_ENTREGA = [
-    { lugares: ['Hurlingham', 'William Morris', 'Morris', 'Altos de Podestá'], dias: [1] },
-    { lugares: ['Palomar', 'Ciudad Jardín'], dias: [2] },
-    { lugares: ['Ramos Mejía', 'Haedo', 'Villa Sarmiento', 'Ciudadela'], dias: [3] },
-    { lugares: ['Castelar', 'Ituzaingó', 'Morón'], dias: [4, 5] },
-    { lugares: ['Villa Tesei'], dias: [1, 2, 3, 4, 5, 6] },
-  ];
+  /* DÍAS DE ENTREGA POR ZONA: se leen EN VIVO de la hoja CONFIGURACION (la misma
+     que usa la lista minorista para ofrecer días de envío), así que si Matias
+     cambia "Hurlingham: solo LUNES" en la hoja, el mensaje lo dice solo. Se
+     guarda la última copia en el navegador para tenerla al instante la próxima
+     vez; sin hoja ni copia, el mensaje no promete día. */
+  const CONFIG_API = 'https://script.google.com/macros/s/AKfycbwH6JW35BRYcBk958OEr4sEvfVIfzgqzQeGwvz63xZYgukwxik8EsIego4d9O456bHURg/exec?lista=minorista';
+  const DIA_IDX = { domingo: 0, lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6 };
+  let zonasEntrega = null; // [{ lugares: ['hurlingham', 'morris', ...], dias: [1, 2, ...] }]
+
+  function prepararZonas(zonas) {
+    return (zonas || []).map((z) => {
+      const lugares = [];
+      String(z.nombre || '').split(',').forEach((l) => {
+        const n = norm(l);
+        if (!n) return;
+        lugares.push(n);
+        if (n.indexOf('barrio ') === 0) lugares.push(n.slice(7)); // "barrio altos de podesta" → "altos de podesta"
+      });
+      const dias = (z.dias || []).map((d) => DIA_IDX[norm(d)]).filter((d) => d != null);
+      return { lugares: lugares, dias: dias };
+    }).filter((z) => z.lugares.length && z.dias.length);
+  }
+  try {
+    const guardadas = JSON.parse(localStorage.getItem('gdo_crm_zonas') || 'null');
+    if (guardadas) zonasEntrega = prepararZonas(guardadas);
+  } catch (e) { /* sin copia guardada */ }
+  try {
+    fetch(CONFIG_API).then((r) => r.json()).then((d) => {
+      const zonas = d && d.config && d.config.zonas;
+      if (!Array.isArray(zonas)) return;
+      zonasEntrega = prepararZonas(zonas);
+      try { localStorage.setItem('gdo_crm_zonas', JSON.stringify(zonas)); } catch (e) { /* lleno o bloqueado */ }
+    }).catch(() => {});
+  } catch (e) { /* sin fetch */ }
+
   // Qué días se le puede entregar a este cliente. Orden de confianza: la zona que
   // eligió él mismo en su último pedido con envío → su localidad → su dirección
   // (el lugar más largo primero, así "Villa Tesei" gana a "Hurlingham") → el día
@@ -838,10 +863,9 @@ window.GDO = window.GDO || {};
   function diasEntregaDe(f) {
     const buscar = (texto) => {
       const t = ' ' + norm(texto) + ' ';
-      if (!t.trim()) return null;
+      if (!zonasEntrega || !t.trim()) return null;
       let mejor = null, largo = 0;
-      ZONAS_ENTREGA.forEach((z) => z.lugares.forEach((l) => {
-        const n = norm(l);
+      zonasEntrega.forEach((z) => z.lugares.forEach((n) => {
         if (n.length > largo && t.indexOf(' ' + n + ' ') >= 0) { mejor = z; largo = n.length; }
       }));
       return mejor ? mejor.dias : null;
