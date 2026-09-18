@@ -38,7 +38,7 @@ window.GDO = window.GDO || {};
     { re: /UNIDADES?|UNIDAD/, u: 'unidad', pl: 'unidades' },
   ];
   const TODAS = UNIDADES.map((d) => d.u);
-  function plural(u) { const d = UNIDADES.find((x) => x.u === u); return d ? d.pl : u; }
+  function plural(u) { const d = UNIDADES.find((x) => x.u === u); return d ? d.pl : (/[aeiou]$/i.test(u) ? u + 's' : u + 'es'); }
   function etiqueta(u, cant) {
     if (!u) return (Number(cant) === 1 ? 'unidad' : 'unidades');
     return Number(cant) === 1 ? u : plural(u);
@@ -55,6 +55,17 @@ window.GDO = window.GDO || {};
     if (!best) return null;
     const nm = str.slice(0, best.index).match(/(\d+)\s*$/);
     return { min: nm ? parseInt(nm[1], 10) : 1, unit: best.u };
+  }
+  /* Unidad NUEVA que no está en UNIDADES: la palabra del encabezado ("X 5 TARTAS"
+     → 5 tartas). COPIA de unidadLibre() de gdo-tienda/index.html. */
+  function unidadLibre(h) {
+    const s = String(h == null ? '' : h).toUpperCase()
+      .replace(/\b(PRECIOS?|POR|MINIMO|MÍNIMO|APROX|C\/U)\b/g, ' ');
+    const m = s.match(/(\d+)?\s*([A-ZÁÉÍÓÚÑ]{3,})/);
+    if (!m) return null;
+    let w = m[2].toLowerCase();
+    if (w.length > 4) w = w.replace(/([aeiou])s$/, '$1');
+    return { min: m[1] ? parseInt(m[1], 10) : 1, unit: w };
   }
   // Peso de la pieza declarado en el encabezado ("3 KG C/U APROX" → 3).
   function pesoKgDe(h) {
@@ -76,13 +87,17 @@ window.GDO = window.GDO || {};
     const out = [];
     (secciones || []).forEach((sec) => {
       const secPc = leerEncabezado(sec.title || '');
-      const secUnit = secPc ? secPc.unit : null;
       (sec.tables || []).forEach((tbl) => {
+        let secUnit = secPc ? secPc.unit : null;
+        // Si el título no dice la unidad, la dice la 1ª columna ("Precio por tarta").
+        if (!secUnit) { const h0 = leerEncabezado((tbl.headers || [])[0] || '') || unidadLibre((tbl.headers || [])[0]); secUnit = h0 ? h0.unit : null; }
         const cols = [];
         (tbl.headers || []).forEach((h, i) => {
           if (i === 0 || !h || !String(h).trim()) return;
           const pc = leerEncabezado(h);
           if (pc) { cols.push({ idx: i, min: pc.min, unit: pc.unit, pesoKg: pesoKgDe(h) }); return; }
+          const ul = unidadLibre(h);
+          if (ul) { cols.push({ idx: i, min: ul.min, unit: ul.unit, pesoKg: pesoKgDe(h) }); return; }
           // "X 30" sin unidad: la unidad la pone el título de la sección.
           if (secUnit) {
             const nm = String(h).toUpperCase().match(/(\d+)/);
