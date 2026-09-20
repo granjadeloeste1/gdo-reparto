@@ -70,7 +70,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (!cajero) { renderOnOff(c); renderCanjeToggle(c); renderJuegoToggle(c); }
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.club(c); });
     const body = c.querySelector('#club-body');
-    if (tab === 'mostrador') renderMostrador(body, c);
+    if (tab === 'mostrador') {
+      // Los tickets que el cajero mandó a revisar van ARRIBA de los check-ins:
+      // es lo primero que el admin tiene que resolver al abrir el Club.
+      if (!cajero) {
+        body.innerHTML = '<div id="club-revs"></div><div id="club-most"></div>';
+        renderRevisiones(body.querySelector('#club-revs'));
+        renderMostrador(body.querySelector('#club-most'), c);
+      } else renderMostrador(body, c);
+    }
     else if (tab === 'socios') renderSocios(body);
     else if (tab === 'premios' && !cajero) renderPremios(body);
     else if (tab === 'juego') renderJuego(body);
@@ -308,6 +316,56 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     }).catch(() => toast('No se pudo leer el premio del día.', 'error'));
   }
 
+  /* ---------------- TICKETS PARA REVISAR (solo admin) ----------------
+     Lo que el cajero escaneó y NO coincidía. Llega con la foto, así el admin
+     resuelve mirando el ticket sin moverse del panel: carga los puntos a mano
+     (él sí puede) y lo cierra. */
+  function renderRevisiones(box) {
+    subs.push(db().collection('revisiones').where('estado', '==', 'pendiente').onSnapshot((snap) => {
+      const arr = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; arr.push(x); });
+      if (!arr.length) { box.innerHTML = ''; return; }
+      arr.sort((a, b) => ((a.ts && a.ts.toMillis ? a.ts.toMillis() : 0) - (b.ts && b.ts.toMillis ? b.ts.toMillis() : 0)));
+      box.innerHTML =
+        `<div style="background:#fff;border:1px solid #f0c987;border-left:4px solid #F58220;border-radius:12px;padding:14px 16px;margin-bottom:16px">` +
+        `<div style="font-weight:800;margin-bottom:4px">⚠️ ${arr.length} ticket${arr.length === 1 ? '' : 's'} para revisar</div>` +
+        `<div class="small muted" style="margin-bottom:10px">El cajero escaneó pero lo leído no coincidía con el ticket. Mirá la foto y cargá los puntos vos.</div>` +
+        `<table><thead><tr><th>Socio</th><th>Leído</th><th>Avisó</th><th></th></tr></thead><tbody>` +
+        arr.map((r) => `<tr>
+          <td><b>${padNro(r.socioNro)}</b> ${esc(r.socioNombre || '')}</td>
+          <td class="small">${r.nroLeido ? 'N° ' + esc(r.nroLeido) : '<span class="muted">sin N°</span>'}${r.montoLeido ? ' · $' + fmt(r.montoLeido) : ''}</td>
+          <td class="small">${esc(r.porNombre || nombreStaff(r.por))} · ${horaCorta(r.ts)}</td>
+          <td class="t-actions">
+            <button class="btn btn-ghost btn-sm" data-rfoto="${esc(r._id)}" title="Ver la foto del ticket">📷</button>
+            <button class="btn btn-sm" data-rcargar="${esc(r._id)}">＋ Cargar puntos</button>
+            <button class="btn btn-ghost btn-sm" data-rcerrar="${esc(r._id)}" title="Cerrar sin cargar">✓</button>
+          </td>
+        </tr>`).join('') + `</tbody></table></div>`;
+      const de = (id) => arr.find((x) => x._id === id);
+      box.querySelectorAll('[data-rfoto]').forEach((b) => b.onclick = () => {
+        const r = de(b.dataset.rfoto);
+        modal({ title: 'Ticket para revisar', width: 520,
+          bodyHTML: r && r.foto ? `<img src="${r.foto}" alt="Ticket" style="width:100%;border-radius:10px"/>` : '<div class="empty">Este aviso no trae foto.</div>',
+          footHTML: '<button class="btn btn-ghost" data-no>Cerrar</button>',
+          onMount(mm, close) { mm.querySelector('[data-no]').onclick = close; } });
+      });
+      box.querySelectorAll('[data-rcargar]').forEach((b) => b.onclick = () => {
+        const r = de(b.dataset.rcargar); if (!r) return;
+        db().collection('clientes').doc(r.socioUid).get().then((d) => {
+          if (!d.exists) { toast('No encontré al socio.', 'error'); return; }
+          const s = Object.assign({ _id: d.id }, d.data());
+          cargarPuntos(s);
+        }).catch(() => toast('No se pudo abrir el socio.', 'error'));
+      });
+      box.querySelectorAll('[data-rcerrar]').forEach((b) => b.onclick = () => {
+        confirmDlg('¿Cerrar este aviso? Se saca de la lista (la foto queda guardada).', () => {
+          db().collection('revisiones').doc(b.dataset.rcerrar)
+            .update({ estado: 'resuelto', cerroPor: staffUid(), cierreTs: FV().serverTimestamp() })
+            .then(() => toast('Aviso cerrado.')).catch(() => toast('Error.', 'error'));
+        }, 'Cerrar', 'btn');
+      });
+    }, () => { box.innerHTML = ''; }));
+  }
+
   /* ---------------- MOSTRADOR (check-ins por QR) ----------------
      El socio escanea el QR único → se crea una /visitas 'pendiente'. Acá el
      cajero la ve en vivo y le carga los puntos de la compra. Los puntos los
@@ -490,6 +548,49 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     );
   }
 
+  /* Foto del ticket. No hay Firebase Storage en el plan gratis, así que la
+     imagen va comprimida dentro de un documento de Firestore (igual que las
+     promos de la tienda). El límite duro de un documento es 1 MB: 1080 px de
+     lado mayor y calidad 0.6 dan 80-200 KB, con margen de sobra. */
+  const FOTO_LADO = 1080, FOTO_CALIDAD = 0.6, FOTO_MAX_BYTES = 700 * 1024;
+
+  // Aviso en la campana a TODOS los admins activos.
+  function avisarAdmins(mensaje, meta) {
+    try {
+      const S = GDO.Store;
+      if (!S || !S.users || !S.pushNotif) return 0;
+      const admins = S.users().filter((u) => u.activo && (u.roles || []).indexOf('admin') >= 0);
+      admins.forEach((u) => S.pushNotif(u.id, mensaje, Object.assign({ tipo: 'cambio' }, meta || {})));
+      return admins.length;
+    } catch (e) { return 0; }
+  }
+
+  /* "No coincide": el cajero no puede corregir la lectura (no tiene carga
+     manual), así que el caso sube a un admin con la foto del ticket adjunta.
+     Queda en /revisiones y les suena la campana. El socio no se va sin sus
+     puntos: los carga el admin cuando mira la foto. */
+  function pedirRevision(socio, leido, close) {
+    const quien = (GDO.Store && GDO.Store.current && GDO.Store.current()) || {};
+    confirmDlg(
+      'Se le va a avisar a un administrador con la foto del ticket para que cargue los puntos de ' +
+      (socio.nombre || 'este socio') + '. ¿Mandamos el aviso?',
+      () => {
+        const ref = db().collection('revisiones').doc();
+        ref.set({
+          estado: 'pendiente',
+          socioUid: socio._id, socioNombre: socio.nombre || '', socioNro: socio.nroSocio || 0,
+          nroLeido: String(leido.nro || ''), montoLeido: parseInt(leido.monto, 10) || 0,
+          fechaLeida: String(leido.fecha || ''), foto: leido.foto || '',
+          por: staffUid(), porNombre: quien.nombre || '', ts: FV().serverTimestamp(),
+        }).then(() => {
+          avisarAdmins('🎟️ Ticket para revisar: ' + (socio.nombre || 'socio') + ' (N° ' + padNro(socio.nroSocio) + ')' +
+            (leido.nro ? ' · ticket ' + leido.nro : ' · no se pudo leer el N°'), { clubRevision: ref.id });
+          toast('✓ Aviso enviado. Un administrador lo va a revisar.');
+          if (close) close();
+        }).catch(() => toast('No se pudo enviar el aviso. Reintentá.', 'error'));
+      }, 'Avisar', 'btn');
+  }
+
   /* Carga de puntos por una compra en el local. Transacción atómica.
      visitaId (opcional): si viene de un check-in del QR, lo marca atendido.
 
@@ -535,47 +636,71 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const refreshPrev = () => { if (prev) prev.innerHTML = '= <b style="color:#F58220">' + fmt(ptsDe(inp.value)) + '</b> Puntos GDO <span class="muted">(1 punto cada $100)</span>'; };
         if (inp) inp.oninput = refreshPrev;
         let ticketFecha = '';
-        // Lo último que se leyó del ticket. Para el cajero ES el dato que se carga
-        // (no hay campos); para el admin solo completa los campos.
-        const leido = { nro: '', monto: 0, fecha: '' };
+        // Lo último que se escaneó. Para el cajero ES el dato que se carga (no hay
+        // campos); para el admin solo completa los campos. `foto` es la imagen
+        // comprimida que queda guardada junto a la carga.
+        const leido = { nro: '', monto: 0, fecha: '', foto: '' };
+        let confirmado = false;
         const okBtn = m.querySelector('[data-yes]');
         const lect = m.querySelector('#cp-lectura');
+        const fila = (k, v) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-top:4px"><span class="muted">${k}</span><b>${v}</b></div>`;
+        /* Tarjeta de confirmación. El escaneo NO alcanza: el cajero tiene el ticket
+           en la mano y es el único que puede decir si lo leído coincide. Recién
+           cuando dice que sí se habilita "Sumar puntos"; si dice que no, el caso
+           se va a revisión de un admin con la foto adjunta. */
         function pintarLectura() {
           if (!lect) return;
           const pts = ptsDe(leido.monto);
           lect.style.display = 'block';
+          lect.style.borderColor = confirmado ? '#2e9e5b' : '#cfd4da';
           lect.innerHTML =
-            `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px"><span class="muted">N° de ticket</span><b>${esc(leido.nro || '—')}</b></div>` +
-            (leido.fecha ? `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-top:4px"><span class="muted">Fecha</span><b>${esc(leido.fecha)}</b></div>` : '') +
-            `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-top:4px"><span class="muted">Total de la compra</span><b>$${fmt(leido.monto)}</b></div>` +
+            fila('N° de ticket', esc(leido.nro || '—')) +
+            (leido.fecha ? fila('Fecha', esc(leido.fecha)) : '') +
+            fila('Total de la compra', '$' + fmt(leido.monto)) +
             `<div style="display:flex;justify-content:space-between;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid #e6e9ed"><span class="muted">Puntos a sumar</span><b style="color:#F58220;font-size:18px">${fmt(pts)}</b></div>` +
-            `<div class="small muted" style="margin-top:8px">Revisá que coincida con el ticket. Si algo no cuadra, volvé a escanear.</div>`;
+            (leido.foto ? `<img src="${leido.foto}" alt="Foto del ticket" style="width:100%;max-height:180px;object-fit:contain;background:#f4f5f7;border-radius:8px;margin-top:10px"/>` : '') +
+            (confirmado
+              ? `<div style="margin-top:10px;color:#2e9e5b;font-weight:700;font-size:14px">✓ Confirmado. Ya podés sumar los puntos.</div>`
+              : `<div style="margin-top:10px;font-size:14px;font-weight:600">¿Coincide con el ticket que tenés en la mano?</div>` +
+                `<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-sm" data-coincide type="button" style="flex:1">✔ Sí, coincide</button>` +
+                `<button class="btn btn-ghost btn-sm" data-revisar type="button" style="flex:1;color:#c0392b">✖ No coincide</button></div>`);
+          const bSi = lect.querySelector('[data-coincide]');
+          if (bSi) bSi.onclick = () => { confirmado = true; if (okBtn) okBtn.disabled = false; pintarLectura(); };
+          const bNo = lect.querySelector('[data-revisar]');
+          if (bNo) bNo.onclick = () => pedirRevision(socio, leido, close);
         }
         // Leer ticket por FOTO: código de barras (N° exacto) + OCR (total, fecha y,
-        // si no hubo código de barras, también el N°).
+        // si no hubo código de barras, también el N°). En paralelo se comprime la
+        // imagen para guardarla junto a la carga.
         const fileInp = m.querySelector('#cp-file'), tmsg = m.querySelector('#cp-tmsg');
         m.querySelector('#cp-foto').onclick = () => fileInp.click();
         fileInp.onchange = () => {
           const f = fileInp.files && fileInp.files[0]; if (!f) return;
           tmsg.style.display = 'block'; tmsg.style.color = '#5b6470'; tmsg.textContent = 'Leyendo el ticket…';
+          confirmado = false;
           if (soloScan && okBtn) okBtn.disabled = true;
-          leerTicket(f, (s) => { tmsg.textContent = s; }).then((r) => {
+          const pFoto = GDO.Img.comprimir(f, FOTO_LADO, FOTO_CALIDAD).catch(() => '');
+          Promise.all([leerTicket(f, (s) => { tmsg.textContent = s; }), pFoto]).then(([r, foto]) => {
             leido.nro = r.nro || ''; leido.monto = r.monto || 0; leido.fecha = r.fecha || '';
+            leido.foto = (foto && foto.length * 0.75 < FOTO_MAX_BYTES) ? foto : '';
             ticketFecha = leido.fecha;
             if (soloScan) {
               // El cajero necesita LAS DOS COSAS: sin N° no hay respaldo, sin monto
-              // no hay puntos. Si falta alguna, no se habilita el botón.
+              // no hay puntos. Si falta alguna, no se puede seguir — pero sí se
+              // puede mandar el caso a un superior, con la foto que ya se sacó.
               const completo = !!(leido.nro && leido.monto && ptsDe(leido.monto) > 0);
               if (completo) {
-                tmsg.style.color = '#2e9e5b'; tmsg.textContent = '✓ Ticket leído';
+                tmsg.style.color = '#2e9e5b'; tmsg.textContent = '✓ Ticket leído — confirmá que coincide';
                 pintarLectura();
-                if (okBtn) okBtn.disabled = false;
               } else {
                 if (lect) lect.style.display = 'none';
                 tmsg.style.color = '#c0392b';
-                tmsg.innerHTML = !leido.nro && !leido.monto ? 'No pude leer el ticket. Sacá la foto de nuevo, derecha y con buena luz.'
+                tmsg.innerHTML = (!leido.nro && !leido.monto ? 'No pude leer el ticket. Sacá la foto de nuevo, derecha y con buena luz.'
                   : !leido.nro ? 'Leí el total pero no el <b>N° de ticket</b>. Sacá la foto de nuevo mostrando el número.'
-                  : 'Leí el N° pero no el <b>Total</b>. Sacá la foto de nuevo mostrando el total.';
+                  : 'Leí el N° pero no el <b>Total</b>. Sacá la foto de nuevo mostrando el total.') +
+                  (leido.foto ? '<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" data-revisar2 type="button" style="color:#c0392b">Avisar a un superior</button></div>' : '');
+                const b2 = tmsg.querySelector('[data-revisar2]');
+                if (b2) b2.onclick = () => pedirRevision(socio, leido, close);
               }
             } else {
               if (leido.monto && inp) { inp.value = leido.monto; refreshPrev(); }
@@ -601,10 +726,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (!pts || pts <= 0) { toast('El monto es muy chico para sumar puntos (mínimo $100).', 'error'); return; }
           // El CAJERO solo carga lo que salió del escaneo: sin N° no se sigue.
           if (soloScan && !nro) { toast('Escaneá el ticket: sin N° no se pueden cargar puntos.', 'error'); return; }
+          if (soloScan && !confirmado) { toast('Confirmá que lo leído coincide con el ticket.', 'error'); return; }
           const wppCb = m.querySelector('#cp-wpp');
           const avisar = !!(wppCb && wppCb.checked);
           const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Sumando…';
-          const op = nro ? acreditarPorTicket(socio._id, nro, ticketFecha, monto) : acreditar(socio._id, pts, mot, null, { monto: monto });
+          const op = nro ? acreditarPorTicket(socio._id, nro, ticketFecha, monto, leido.foto) : acreditar(socio._id, pts, mot, null, { monto: monto });
           op.then((saldo) => {
               if (visitaId) {
                 db().collection('visitas').doc(visitaId).update({ estado: 'atendido', puntos: pts, por: staffUid(), cierreTs: FV().serverTimestamp() }).catch(() => {});
@@ -763,19 +889,25 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   // Guarda el ticket en /tickets (id = N°): si ya existe, NO vuelve a cargar.
   // El log guarda TAMBIÉN el monto y la fecha del ticket: así el historial del
   // socio se puede auditar sin tener que abrir /tickets uno por uno.
-  function acreditarPorTicket(clienteUid, nro, fecha, monto){
+  function acreditarPorTicket(clienteUid, nro, fecha, monto, foto){
     const mn = parseInt(monto, 10) || 0;
     const pts = Math.floor(mn / 100);
     const cref = db().collection('clientes').doc(clienteUid);
     const tref = db().collection('tickets').doc(String(nro));
+    const fref = db().collection('ticket_fotos').doc(String(nro));
     const lref = db().collection('puntos_log').doc();
     return db().runTransaction((tx) => tx.get(tref).then((td) => {
       if (td.exists) throw new Error('duplicado');
       return tx.get(cref).then((cd) => {
         if (!cd.exists) throw new Error('socio');
         const nuevo = (cd.data().puntos || 0) + pts;
-        tx.update(cref, { puntos: nuevo });
-        tx.set(tref, { nro: String(nro), fecha: String(fecha || ''), monto: mn, puntos: pts, clienteUid: clienteUid, por: staffUid(), ts: FV().serverTimestamp() });
+        // 'ultimoTicket' no es adorno: es lo que le deja ver a la regla de
+        // Firestore cuál es el ticket que respalda esta suma (ver creditoConTicket).
+        tx.update(cref, { puntos: nuevo, ultimoTicket: String(nro) });
+        // La foto va PRIMERO en el mismo commit: la regla de /tickets exige que
+        // exista (existsAfter) para todo el que no sea admin.
+        if (foto) tx.set(fref, { nro: String(nro), foto: foto, clienteUid: clienteUid, por: staffUid(), ts: FV().serverTimestamp() });
+        tx.set(tref, { nro: String(nro), fecha: String(fecha || ''), monto: mn, puntos: pts, clienteUid: clienteUid, por: staffUid(), conFoto: !!foto, ts: FV().serverTimestamp() });
         tx.set(lref, { clienteUid: clienteUid, delta: pts, motivo: 'Ticket ' + nro, saldo: nuevo, ticketNro: String(nro), monto: mn, ticketFecha: String(fecha || ''), por: staffUid(), ts: FV().serverTimestamp() });
         return nuevo;
       });
@@ -885,6 +1017,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         fechaTxt: fechaHora(x.ts),
         motivo: esc(x.motivo || ((x.delta || 0) < 0 ? 'Canje' : 'Carga')),
         ref: x.ticketNro ? esc(x.ticketNro) : '—',
+        nro: x.ticketNro ? String(x.ticketNro) : '',
         compra: x.monto ? '$' + fmt(x.monto) : '—',
         delta: x.delta || 0,
         saldo: fmt(x.saldo),
@@ -900,6 +1033,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           motivo: `${esc(c.premioIco || '🎁')} ${esc(c.premioNombre || 'Canje')} ${estadoCanje(c)}` +
                   (c.origen === 'juego' ? ' <span class="chip" style="background:#eef2ff;color:#3730a3">🎮 juego</span>' : ''),
           ref: esc(c.codigo || d.id.slice(0, 8)),
+          nro: '',
           compra: '—',
           delta: -(c.costo || 0),
           saldo: '—',
@@ -918,7 +1052,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         arr.map((x) => `<tr>
             <td class="small">${x.fechaTxt}</td>
             <td>${x.motivo}</td>
-            <td class="small">${x.ref}</td>
+            <td class="small">${x.ref}${x.nro ? ` <button class="btn btn-ghost btn-sm" data-foto="${esc(x.nro)}" title="Ver la foto del ticket">📷</button>` : ''}</td>
             <td class="small">${x.compra}</td>
             <td><b style="color:${x.delta < 0 ? '#c0392b' : '#2e9e5b'}">${x.delta < 0 ? '−' : '+'}${fmt(Math.abs(x.delta))}</b></td>
             <td class="small">${x.saldo}</td>
@@ -927,8 +1061,29 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         `<div class="small muted" style="margin-top:8px">Los <b>canjes</b> los hace el socio desde su celular: por eso no tienen “saldo” ni quién los cargó — el respaldo es el código del voucher. La columna <b>Compra</b> aparece en las cargas hechas desde esta versión.` +
         (arr.length >= 300 ? ' Se muestran los primeros 300 movimientos.' : '') + `</div>` +
         `<div id="hp-juego"></div>`;
+      box.querySelectorAll('[data-foto]').forEach((b) => b.onclick = () => verFotoTicket(b.dataset.foto));
       partidasDelSocio(s, box.querySelector('#hp-juego'));
     }).catch(() => { box.innerHTML = '<div class="empty">No se pudo cargar el historial.</div>'; });
+  }
+
+  /* La foto del ticket que respalda una carga. Se guarda aparte del ticket
+     (/ticket_fotos) para no arrastrar la imagen en cada lectura del historial:
+     se baja SOLO cuando alguien la pide. */
+  function verFotoTicket(nro) {
+    const m = modal({
+      title: 'Ticket N° ' + nro, width: 520,
+      bodyHTML: '<div id="tf-body" class="empty">Buscando la foto…</div>',
+      footHTML: '<button class="btn btn-ghost" data-no>Cerrar</button>',
+      onMount(mm, close) { mm.querySelector('[data-no]').onclick = close; },
+    });
+    const box = m.node.querySelector('#tf-body');
+    db().collection('ticket_fotos').doc(String(nro)).get().then((d) => {
+      const foto = d.exists ? (d.data().foto || '') : '';
+      box.className = '';
+      box.innerHTML = foto
+        ? `<img src="${foto}" alt="Ticket ${esc(nro)}" style="width:100%;border-radius:10px"/>`
+        : '<div class="empty">Esta carga no tiene foto guardada.<br><span class="small muted">Las cargas anteriores a esta versión, y las que hace un administrador a mano, no la tienen.</span></div>';
+    }).catch(() => { box.innerHTML = '<div class="empty">No se pudo traer la foto.</div>'; });
   }
 
   /* ---------------- PREMIOS ---------------- */

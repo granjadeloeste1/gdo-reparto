@@ -57,6 +57,30 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/Staff/$(request.auth.uid)).data.get('promos', false) == true);
     }
 
+    /* ───────── Puntos del Club: el cajero SOLO carga contra ticket ─────────
+       El personal que NO es admin (cajero) puede tocar el saldo de un socio
+       únicamente para SUMARLE los puntos de un ticket que se está creando en el
+       MISMO commit. La pantalla ya lo obliga a escanear, pero eso es solo la
+       pantalla: esto es el candado del lado del servidor.
+
+       Qué se exige:
+       · que solo cambien 'puntos' y 'ultimoTicket' (nada de nombre, DNI, etc.);
+       · que 'ultimoTicket' apunte a un /tickets que se crea en este mismo commit
+         (getAfter), sea de ESTE socio y lo esté cargando ESTE empleado;
+       · que los puntos sumados sean EXACTAMENTE los del ticket — ni uno más.
+       La foto y la cuenta puntos↔monto las valida la regla de /tickets. */
+    function ticketDelCommit() {
+      return getAfter(/databases/$(database)/documents/tickets/$(request.resource.data.ultimoTicket)).data;
+    }
+    function creditoConTicket(uid) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puntos', 'ultimoTicket'])
+        && request.resource.data.ultimoTicket is string
+        && existsAfter(/databases/$(database)/documents/tickets/$(request.resource.data.ultimoTicket))
+        && ticketDelCommit().clienteUid == uid
+        && ticketDelCommit().por == request.auth.uid
+        && request.resource.data.puntos == resource.data.puntos + ticketDelCommit().puntos;
+    }
+
     // Validación de un pedido creado por la tienda (sesión anónima o socio
     // logueado). Limita lo que un no-staff puede escribir. Si trae clienteUid,
     // debe ser el del propio usuario (para acreditar puntos a quien corresponde).
@@ -92,7 +116,11 @@ service cloud.firestore {
     // Colección "Staff" con S MAYÚSCULA (ver nota en isStaff()).
     match /Staff/{uid} {
       allow read: if isStaff();
-      allow create, update, delete: if isStaff();
+      // SOLO un ADMIN toca la lista de personal. Antes era isStaff(), y eso dejaba
+      // un agujero grande: el cajero podía editar SU PROPIO doc, borrarse el campo
+      // rol: "cajero" y pasar a ser admin (isAdmin() trata como admin al doc sin
+      // rol, por retrocompatibilidad). Con eso se salteaba todo lo de abajo.
+      allow create, update, delete: if isAdmin();
     }
 
     // ───────── Datos internos: SOLO personal ─────────
@@ -176,12 +204,11 @@ service cloud.firestore {
       // NUNCA subirlos (sumar = solo personal) ni cambiar 'nroSocio'. La baja real
       // queda atada a un voucher válido por la regla de /canjes (getAfter).
       // El ADMIN edita todo. El CAJERO (y cualquier staff que no sea admin) SOLO
-      // puede mover 'puntos': es lo que necesita para cargar una compra. No puede
-      // tocar nombre, DNI, teléfono, email, dirección ni el marcador de demo —
-      // antes eso era solo una restricción de pantalla y se podía saltear.
+      // puede SUMAR puntos, y SOLO contra un ticket escaneado: ver creditoConTicket().
+      // Antes le alcanzaba con tocar 'puntos' y podía ponerle el número que quisiera
+      // desde la consola del navegador, salteándose la pantalla de escaneo.
       allow update: if isAdmin()
-                    || (isStaff()
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puntos']))
+                    || (isStaff() && creditoConTicket(uid))
                     || (isOwner(uid)
                         && request.resource.data.nroSocio == resource.data.nroSocio
                         && request.resource.data.puntos is int
@@ -335,14 +362,64 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Tickets cargados (id = N° de ticket). ANTI-DUPLICADO: el mismo N° no se puede
-    // cargar dos veces (la creación falla si ya existe). Solo personal. No se edita;
-    // el staff puede borrar para corregir un error de carga.
+    /* Tickets cargados (id = N° de ticket). ANTI-DUPLICADO: el mismo N° no se
+       puede cargar dos veces (la creación falla si ya existe).
+
+       El ticket es el RESPALDO del movimiento de puntos, así que la regla lo
+       revisa de verdad:
+       · el id del doc tiene que ser el N° que dice adentro (si no, se podría
+         guardar el respaldo con un número y declarar otro);
+       · los puntos tienen que ser los que salen del monto — 1 cada $100 — escrito
+         con multiplicaciones para no depender de cómo divide el motor de reglas;
+       · lo carga el empleado que está logueado, no se puede atribuir a otro;
+       · y tiene que venir con la FOTO del ticket en el mismo commit. El admin
+         queda exento: es el único que puede cargar a mano, sin foto.
+       BORRAR: solo un admin. Antes lo podía borrar cualquier staff, y borrar el
+       ticket habilitaba volver a cargar el mismo N° (se caía el anti-duplicado). */
     match /tickets/{id} {
       allow read:   if isStaff();
-      allow create: if isStaff();
+      allow create: if isStaff()
+                       && request.resource.data.nro == id
+                       && request.resource.data.clienteUid is string
+                       && request.resource.data.por == request.auth.uid
+                       && request.resource.data.monto is int
+                       && request.resource.data.monto > 0
+                       && request.resource.data.puntos is int
+                       && request.resource.data.puntos > 0
+                       && request.resource.data.puntos * 100 <= request.resource.data.monto
+                       && (request.resource.data.puntos + 1) * 100 > request.resource.data.monto
+                       && (isAdmin() || existsAfter(/databases/$(database)/documents/ticket_fotos/$(id)));
       allow update: if false;
-      allow delete: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    /* La FOTO del ticket, aparte del ticket. Va en su propio documento a
+       propósito: /tickets se lee en cada carga (para el anti-duplicado) y en el
+       historial del socio, y no tiene sentido arrastrar 200 KB de imagen en cada
+       una de esas lecturas. Acá no hay Storage (plan gratis), así que la foto va
+       como dataURL comprimido — igual que las promos de la tienda. */
+    match /ticket_fotos/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff()
+                       && request.resource.data.foto is string
+                       && request.resource.data.foto.size() > 1000
+                       && request.resource.data.foto.size() < 900000;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    /* Cola de REVISIÓN. Cuando el cajero escanea y lo leído NO coincide con el
+       ticket que tiene en la mano, no puede corregirlo (no tiene carga manual):
+       deja el caso acá con la foto y se lo avisa a los admins. El admin lo mira,
+       carga los puntos a mano y lo cierra. El cajero solo puede ABRIR casos. */
+    match /revisiones/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff()
+                       && request.resource.data.por == request.auth.uid
+                       && request.resource.data.estado == 'pendiente'
+                       && request.resource.data.foto is string
+                       && request.resource.data.foto.size() < 900000;
+      allow update, delete: if isAdmin();
     }
 
     // ═══════════════════ JUEGO "DIEZ EXACTO" ═══════════════════
