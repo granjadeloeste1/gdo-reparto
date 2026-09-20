@@ -490,62 +490,117 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     );
   }
 
-  // Carga MANUAL de puntos (compra en el local). Transacción atómica.
-  // visitaId (opcional): si viene de un check-in del QR, lo marca atendido.
+  /* Carga de puntos por una compra en el local. Transacción atómica.
+     visitaId (opcional): si viene de un check-in del QR, lo marca atendido.
+
+     DOS MODOS, según el rol:
+     · CAJERO → SOLO ESCANEO. No ve ningún campo para escribir: el N° y el monto
+       salen del ticket (código de barras + OCR) y no se pueden retocar. Si la
+       foto sale mal, vuelve a escanear. Es la única forma de que los puntos que
+       carga tengan siempre un comprobante real atrás.
+     · ADMIN → lo mismo, más la carga a mano (el escaneo le completa los campos).
+       Le queda la salida para arreglar una lectura mala o una compra sin ticket. */
   function cargarPuntos(socio, visitaId) {
     if (!socio) return;
+    const soloScan = esCajero();
+    const wppHTML = (GDO.Wpp && GDO.Wpp.tieneTel(socio.telefono))
+      ? `<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer"><input id="cp-wpp" type="checkbox" checked/> 💬 Avisarle por WhatsApp al ${esc(socio.telefono)}</label>`
+      : `<div class="small muted" style="margin-top:12px">💬 Este socio no tiene teléfono cargado: no se le puede avisar por WhatsApp.</div>`;
+    const scanHTML =
+      `<button class="btn" id="cp-foto" type="button" style="width:100%;margin-bottom:6px">📷 Escanear ticket</button>` +
+      `<input id="cp-file" type="file" accept="image/*" capture="environment" style="display:none"/>` +
+      `<div id="cp-tmsg" class="small" style="margin:0 0 8px;text-align:center;display:none"></div>`;
     modal({
       title: `Cargar puntos · ${socio.nombre || 'Socio'} (N° ${padNro(socio.nroSocio)})`, width: 440,
       bodyHTML:
         `<p class="small muted" style="margin:0 0 10px">Saldo actual: <b style="color:#F58220">${fmt(socio.puntos)}</b> puntos</p>` +
-        `<button class="btn btn-sm" id="cp-foto" type="button" style="width:100%;margin-bottom:6px">📷 Leer ticket (foto)</button>` +
-        `<input id="cp-file" type="file" accept="image/*" capture="environment" style="display:none"/>` +
-        `<div id="cp-tmsg" class="small" style="margin:0 0 8px;text-align:center;display:none"></div>` +
-        `<label style="font-size:13px;color:#5b6470;font-weight:600">Monto de la compra ($)</label>` +
-        `<input id="cp-monto" type="number" inputmode="numeric" min="1" placeholder="ej: 15000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
-        `<div id="cp-prev" style="margin-top:8px;font-size:13px;color:#5b6470">= <b style="color:#F58220">0</b> Puntos GDO <span class="muted">(1 punto cada $100)</span></div>` +
-        `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <span style="font-weight:400;color:#8a93a0">${esCajero() ? '(<b style=\"color:#c0392b\">obligatorio</b> · escaneá la foto o ponelo a mano)' : '(opcional · evita cargar 2 veces el mismo)'}</span></label>` +
-        `<input id="cp-nro" type="text" inputmode="numeric" placeholder="ej: 10080" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
-        `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Motivo (opcional)</label>` +
-        `<input id="cp-mot" type="text" placeholder="ej: compra en el local" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
-        (GDO.Wpp && GDO.Wpp.tieneTel(socio.telefono)
-          ? `<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer"><input id="cp-wpp" type="checkbox" checked/> 💬 Avisarle por WhatsApp al ${esc(socio.telefono)}</label>`
-          : `<div class="small muted" style="margin-top:12px">💬 Este socio no tiene teléfono cargado: no se le puede avisar por WhatsApp.</div>`),
-      footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes>Sumar puntos</button>`,
+        (soloScan
+          ? `<div class="note" style="margin:0 0 10px">Los puntos se cargan <b>escaneando el ticket</b> de la compra. Sacá la foto de modo que se vean el <b>N°</b> y el <b>Total</b>.</div>` +
+            scanHTML +
+            `<div id="cp-lectura" style="display:none;border:1px solid #cfd4da;border-radius:10px;padding:12px;margin-top:4px"></div>`
+          : scanHTML +
+            `<label style="font-size:13px;color:#5b6470;font-weight:600">Monto de la compra ($)</label>` +
+            `<input id="cp-monto" type="number" inputmode="numeric" min="1" placeholder="ej: 15000" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+            `<div id="cp-prev" style="margin-top:8px;font-size:13px;color:#5b6470">= <b style="color:#F58220">0</b> Puntos GDO <span class="muted">(1 punto cada $100)</span></div>` +
+            `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <span style="font-weight:400;color:#8a93a0">(opcional · evita cargar 2 veces el mismo)</span></label>` +
+            `<input id="cp-nro" type="text" inputmode="numeric" placeholder="ej: 10080" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
+            `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">Motivo (opcional)</label>` +
+            `<input id="cp-mot" type="text" placeholder="ej: compra en el local" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>`) +
+        wppHTML,
+      footHTML: `<button class="btn btn-ghost" data-no>Cancelar</button><button class="btn" data-yes${soloScan ? ' disabled' : ''}>Sumar puntos</button>`,
       onMount(m, close) {
         const ptsDe = (monto) => Math.floor((parseInt(monto, 10) || 0) / 100);   // $100 = 1 punto
         const inp = m.querySelector('#cp-monto');
         const prev = m.querySelector('#cp-prev');
-        const refreshPrev = () => { prev.innerHTML = '= <b style="color:#F58220">' + fmt(ptsDe(inp.value)) + '</b> Puntos GDO <span class="muted">(1 punto cada $100)</span>'; };
-        inp.oninput = refreshPrev;
+        const refreshPrev = () => { if (prev) prev.innerHTML = '= <b style="color:#F58220">' + fmt(ptsDe(inp.value)) + '</b> Puntos GDO <span class="muted">(1 punto cada $100)</span>'; };
+        if (inp) inp.oninput = refreshPrev;
         let ticketFecha = '';
-        // Leer ticket por FOTO: código de barras (N° exacto) + OCR (sugiere total y fecha).
-        // Best-effort: lo que no lee, lo completa el cajero a mano.
+        // Lo último que se leyó del ticket. Para el cajero ES el dato que se carga
+        // (no hay campos); para el admin solo completa los campos.
+        const leido = { nro: '', monto: 0, fecha: '' };
+        const okBtn = m.querySelector('[data-yes]');
+        const lect = m.querySelector('#cp-lectura');
+        function pintarLectura() {
+          if (!lect) return;
+          const pts = ptsDe(leido.monto);
+          lect.style.display = 'block';
+          lect.innerHTML =
+            `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px"><span class="muted">N° de ticket</span><b>${esc(leido.nro || '—')}</b></div>` +
+            (leido.fecha ? `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-top:4px"><span class="muted">Fecha</span><b>${esc(leido.fecha)}</b></div>` : '') +
+            `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-top:4px"><span class="muted">Total de la compra</span><b>$${fmt(leido.monto)}</b></div>` +
+            `<div style="display:flex;justify-content:space-between;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid #e6e9ed"><span class="muted">Puntos a sumar</span><b style="color:#F58220;font-size:18px">${fmt(pts)}</b></div>` +
+            `<div class="small muted" style="margin-top:8px">Revisá que coincida con el ticket. Si algo no cuadra, volvé a escanear.</div>`;
+        }
+        // Leer ticket por FOTO: código de barras (N° exacto) + OCR (total, fecha y,
+        // si no hubo código de barras, también el N°).
         const fileInp = m.querySelector('#cp-file'), tmsg = m.querySelector('#cp-tmsg');
         m.querySelector('#cp-foto').onclick = () => fileInp.click();
         fileInp.onchange = () => {
           const f = fileInp.files && fileInp.files[0]; if (!f) return;
           tmsg.style.display = 'block'; tmsg.style.color = '#5b6470'; tmsg.textContent = 'Leyendo el ticket…';
+          if (soloScan && okBtn) okBtn.disabled = true;
           leerTicket(f, (s) => { tmsg.textContent = s; }).then((r) => {
-            if (r.monto) { inp.value = r.monto; refreshPrev(); }
-            if (r.nro) m.querySelector('#cp-nro').value = r.nro;
-            ticketFecha = r.fecha || '';
-            tmsg.innerHTML = (r.monto || r.nro)
-              ? '✓ Leí ' + (r.monto ? '<b>$' + fmt(r.monto) + '</b>' : '') + (r.nro ? ' · N° ' + esc(r.nro) : '') + ' — <b style="color:#b9770e">verificá el total antes de cargar.</b>'
-              : 'No pude leer el ticket. Cargalo a mano 👇';
-          }).catch(() => { tmsg.textContent = 'No se pudo leer la foto. Cargalo a mano.'; });
+            leido.nro = r.nro || ''; leido.monto = r.monto || 0; leido.fecha = r.fecha || '';
+            ticketFecha = leido.fecha;
+            if (soloScan) {
+              // El cajero necesita LAS DOS COSAS: sin N° no hay respaldo, sin monto
+              // no hay puntos. Si falta alguna, no se habilita el botón.
+              const completo = !!(leido.nro && leido.monto && ptsDe(leido.monto) > 0);
+              if (completo) {
+                tmsg.style.color = '#2e9e5b'; tmsg.textContent = '✓ Ticket leído';
+                pintarLectura();
+                if (okBtn) okBtn.disabled = false;
+              } else {
+                if (lect) lect.style.display = 'none';
+                tmsg.style.color = '#c0392b';
+                tmsg.innerHTML = !leido.nro && !leido.monto ? 'No pude leer el ticket. Sacá la foto de nuevo, derecha y con buena luz.'
+                  : !leido.nro ? 'Leí el total pero no el <b>N° de ticket</b>. Sacá la foto de nuevo mostrando el número.'
+                  : 'Leí el N° pero no el <b>Total</b>. Sacá la foto de nuevo mostrando el total.';
+              }
+            } else {
+              if (leido.monto && inp) { inp.value = leido.monto; refreshPrev(); }
+              if (leido.nro) m.querySelector('#cp-nro').value = leido.nro;
+              tmsg.innerHTML = (leido.monto || leido.nro)
+                ? '✓ Leí ' + (leido.monto ? '<b>$' + fmt(leido.monto) + '</b>' : '') + (leido.nro ? ' · N° ' + esc(leido.nro) : '') + ' — <b style="color:#b9770e">verificá el total antes de cargar.</b>'
+                : 'No pude leer el ticket. Cargalo a mano 👇';
+            }
+          }).catch(() => {
+            tmsg.style.color = '#c0392b';
+            tmsg.textContent = soloScan ? 'No se pudo leer la foto. Probá de nuevo.' : 'No se pudo leer la foto. Cargalo a mano.';
+          });
           fileInp.value = '';
         };
         m.querySelector('[data-no]').onclick = close;
         m.querySelector('[data-yes]').onclick = () => {
-          const monto = parseInt(inp.value, 10);
+          const monto = soloScan ? leido.monto : parseInt(inp.value, 10);
           const pts = ptsDe(monto);
-          const nro = (m.querySelector('#cp-nro').value || '').replace(/\D/g, '');
-          const mot = (m.querySelector('#cp-mot').value || '').trim() || (nro ? ('Ticket ' + nro) : ('Compra $' + fmt(monto)));
-          if (!monto || monto <= 0) { toast('Poné el monto de la compra.', 'error'); return; }
+          const nro = soloScan ? leido.nro : (m.querySelector('#cp-nro').value || '').replace(/\D/g, '');
+          const mot = soloScan ? ('Ticket ' + nro)
+            : ((m.querySelector('#cp-mot').value || '').trim() || (nro ? ('Ticket ' + nro) : ('Compra $' + fmt(monto))));
+          if (!monto || monto <= 0) { toast(soloScan ? 'Escaneá el ticket primero.' : 'Poné el monto de la compra.', 'error'); return; }
           if (!pts || pts <= 0) { toast('El monto es muy chico para sumar puntos (mínimo $100).', 'error'); return; }
-          // Para el CAJERO el ticket es OBLIGATORIO (escaneo o manual): evita carga sin respaldo.
-          if (esCajero() && !nro) { toast('Cargá el N° de ticket (escaneá la foto o ponelo a mano). Es obligatorio.', 'error'); return; }
+          // El CAJERO solo carga lo que salió del escaneo: sin N° no se sigue.
+          if (soloScan && !nro) { toast('Escaneá el ticket: sin N° no se pueden cargar puntos.', 'error'); return; }
           const wppCb = m.querySelector('#cp-wpp');
           const avisar = !!(wppCb && wppCb.checked);
           const btn = m.querySelector('[data-yes]'); btn.disabled = true; btn.textContent = 'Sumando…';
@@ -632,16 +687,48 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   // ---- Lector de ticket (foto): barcode → N° ; OCR → total/fecha. Todo best-effort. ----
   function tkSoloDig(s){ return String(s == null ? '' : s).replace(/\D/g, ''); }
+  /* Un importe del ticket → entero en pesos. Los dos formatos usan coma de miles
+     y punto decimal ($102,148.00 / $95,822.50); si la foto corta el último dígito
+     queda un solo decimal ($102,148.0), así que los centavos son 1 o 2 dígitos. */
+  function tkImporte(s){
+    let x = String(s == null ? '' : s).replace(/\s/g, '');
+    x = x.replace(/[.,]\d{1,2}$/, '');   // centavos
+    x = x.replace(/[.,]/g, '');          // separadores de miles
+    const n = parseInt(x, 10); return isNaN(n) ? 0 : n;
+  }
+  /* TOTAL de la venta = el importe MÁS GRANDE pegado a la palabra "Total".
+     En los dos tickets la palabra aparece varias veces (encabezado de la columna
+     "Total", "Peso Total:", y el total de la venta), y cada renglón tiene su
+     propio importe. Quedarse con el primero devolvía el precio del primer
+     producto; el total de la venta es siempre el mayor de todos. */
   function tkTotal(txt){
-    // Busca "Total" y el número que lo sigue. Formato del remito: $93,700.00 (coma=miles).
-    const m = /total[^0-9]{0,14}\$?\s*([0-9][0-9.,]*)/i.exec(txt || '');
-    if (!m) return 0;
-    let s = m[1].replace(/[.,]\s*\d{2}\s*$/, '');   // saca centavos finales (.00)
-    s = s.replace(/[.,\s]/g, '');                   // saca separadores de miles
-    const n = parseInt(s, 10); return isNaN(n) ? 0 : n;
+    const t = String(txt || ''); let mejor = 0, m;
+    const re = /total[^0-9$]{0,16}\$?\s*([0-9][0-9.,\s]*)/ig;
+    while ((m = re.exec(t))) { const n = tkImporte(m[1]); if (n > mejor) mejor = n; }
+    if (mejor) return mejor;
+    // Sin ningún "Total" legible: el importe más grande que aparezca.
+    const re2 = /\$\s*([0-9][0-9.,]*)/g;
+    while ((m = re2.exec(t))) { const n = tkImporte(m[1]); if (n > mejor) mejor = n; }
+    return mejor;
   }
   function tkFecha(txt){ const m = /(\d{4}-\d{2}-\d{2})/.exec(txt || '') || /(\d{2}\/\d{2}\/\d{4})/.exec(txt || ''); return m ? m[1] : ''; }
-  function tkNro(txt){ const m = /n[°ºo:\.\s]{0,4}\s*([0-9]{3,})/i.exec(txt || ''); return m ? m[1] : ''; }
+  /* N° del comprobante. Tres intentos, del más confiable al menos:
+       1) "Venta n° 15747" / "REMITO N°: 15141" — el OCR suele leer el ° como ' o º,
+          por eso el hueco acepta cualquier cosa que no sea dígito.
+       2) cualquier "N<algo> 12345".
+       3) el número suelto en su renglón: el que va impreso DEBAJO del código de
+          barras del remito. Es el último del ticket, por eso se toma ese. */
+  function tkNro(txt){
+    const t = String(txt || ''); let m;
+    m = /(?:venta|remito|factura|comprobante)[^0-9]{0,12}?(\d{4,8})/i.exec(t);
+    if (m) return m[1];
+    m = /\bn[^0-9a-z]{0,4}(\d{4,8})\b/i.exec(t);
+    if (m) return m[1];
+    const sueltos = t.split(/\n/).map((s) => {
+      const x = /^\D{0,3}(\d{4,8})\D{0,3}$/.exec(s.trim()); return x ? x[1] : null;
+    }).filter(Boolean);
+    return sueltos.length ? sueltos[sueltos.length - 1] : '';
+  }
   function leerTicket(file, prog){
     const out = { nro: '', fecha: '', monto: 0 };
     const pBar = new Promise((res) => {
