@@ -139,10 +139,48 @@ window.GDO = window.GDO || {};
      (lista.granjadeloeste.com/?v=<id>&vn=<nombre>) traen `vendedorId`. Los que
      carga a mano alguien en modo vendedor también lo llevan. El nombre sale del
      usuario (si le cambian el nombre, se ve el nuevo) y si no, del que trajo el link. */
+  /* De qué vendedor es un pedido: el `vendedorId` si lo tiene; si no, quien lo
+     cargó a mano, siempre que sea un VENDEDOR (no admin). Así cuentan también
+     los pedidos que los vendedores cargaron antes de que existiera el campo. */
+  function vendedorIdDe(p) {
+    if (!p) return null;
+    if (p.vendedorId) return p.vendedorId;
+    const u = p.creadoPor && GDO.Store && GDO.Store.user ? GDO.Store.user(p.creadoPor) : null;
+    return (u && u.roles && u.roles.includes('vendedor') && !u.roles.includes('admin')) ? u.id : null;
+  }
   function vendedorDe(p) {
-    if (!p || !p.vendedorId) return null;
-    const u = GDO.Store && GDO.Store.user ? GDO.Store.user(p.vendedorId) : null;
-    return { id: p.vendedorId, nombre: (u && u.nombre) || p.vendedorNombre || 'Vendedor' };
+    const id = vendedorIdDe(p);
+    if (!id) return null;
+    const u = GDO.Store && GDO.Store.user ? GDO.Store.user(id) : null;
+    return { id, nombre: (u && u.nombre) || (p.vendedorId === id && p.vendedorNombre) || 'Vendedor' };
+  }
+  /* ¿El pedido entra en el filtro de vendedor `v`? '' = todos; '_sin' = los que
+     no son de ningún vendedor; si no, el id del vendedor. */
+  function deVendedor(p, v) {
+    if (!v) return true;
+    const id = vendedorIdDe(p);
+    return v === '_sin' ? !id : id === v;
+  }
+  /* Un VENDEDOR solo ve lo suyo (sus clientes, sus ventas, sus métricas): este
+     es su id cuando entra en modo vendedor; para el resto, ''. */
+  function vendedorForzado() {
+    const S = GDO.Store;
+    if (!S || S.rolActivo() !== 'vendedor') return '';
+    const u = S.current();
+    return u ? u.id : '';
+  }
+  // Vendedores para los filtros: usuarios con el rol + los que figuran en pedidos.
+  function vendedoresLista() {
+    const S = GDO.Store, m = new Map();
+    S.users().filter((u) => u.roles && u.roles.includes('vendedor')).forEach((u) => m.set(u.id, u.nombre));
+    S.pedidos().forEach((p) => { const v = vendedorDe(p); if (v && !m.has(v.id)) m.set(v.id, v.nombre); });
+    return [...m].map(([id, nombre]) => ({ id, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }
+  // <select> de vendedor para las pantallas del admin.
+  function selectVendedor(id, valor) {
+    return `<select id="${id}" title="Ver solo lo de un vendedor"><option value="">🏷️ Todos los vendedores</option>`
+      + vendedoresLista().map((v) => `<option value="${esc(v.id)}"${v.id === valor ? ' selected' : ''}>🏷️ ${esc(v.nombre)}</option>`).join('')
+      + `<option value="_sin"${valor === '_sin' ? ' selected' : ''}>Sin vendedor (tienda / mostrador)</option></select>`;
   }
   const vendedorChip = (p) => {
     const v = vendedorDe(p);
@@ -153,5 +191,5 @@ window.GDO = window.GDO || {};
 
   GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
     ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, fechaEfectiva,
-    vendedorDe, vendedorChip, linkVendedor };
+    vendedorDe, vendedorIdDe, vendedorChip, linkVendedor, deVendedor, vendedorForzado, vendedoresLista, selectVendedor };
 })();

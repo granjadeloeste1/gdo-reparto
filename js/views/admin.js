@@ -282,8 +282,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       // El vendedor ve lo que cargó él y lo que entró por SU link de la tienda.
       if (soyVend) { const yo = Store.current().id; list = list.filter((p) => p.creadoPor === yo || p.vendedorId === yo); }
       const vend = c.querySelector('#p-vend') ? c.querySelector('#p-vend').value : '';
-      if (vend === '_sin') list = list.filter((p) => !p.vendedorId);
-      else if (vend) list = list.filter((p) => p.vendedorId === vend);
+      if (vend) list = list.filter((p) => GDO.UI.deVendedor(p, vend));
       if (q) list = list.filter((p) => (p.cliente + ' ' + p.direccion + ' ' + (p.localidad || '') + ' ' + (p.razonSocial || '') + ' ' + (p.cuit || '')).toLowerCase().includes(q));
       if (est === 'activos') list = list.filter((p) => p.estado !== 'entregado');
       else if (est) list = list.filter((p) => p.estado === est);

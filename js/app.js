@@ -34,7 +34,8 @@ window.GDO = window.GDO || {};
     vendedor: [
       { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
       { hash: '#/mis-ventas', ic: '💰', t: 'Mis ventas y comisiones', st: 'Mis ventas' },
-      { hash: '#/clientes', ic: '📇', t: 'Clientes' },
+      { hash: '#/clientes', ic: '📇', t: 'Mis clientes' },
+      { hash: '#/metricas', ic: '📈', t: 'Mis métricas', st: 'Métricas' },
       { hash: '#/promos', ic: '🎁', t: 'Promos y descuentos', st: 'Promos' },
     ],
     cajero: [
@@ -50,7 +51,7 @@ window.GDO = window.GDO || {};
      "Usuarios y roles". Si no lo tiene, la opción no existe Y la ruta tampoco
      (ver routeContent): no alcanza con esconder el botón del menú. */
   const CON_PERMISO = {
-    '#/clientes': () => Store.puedeCRM(),
+    '#/clientes': () => Store.puedeVerCRM(),
     '#/promos': () => Store.puedePromos(),
   };
   function navDe(rol) {
@@ -170,8 +171,8 @@ window.GDO = window.GDO || {};
       case '#/pedidos': return V.pedidos(c);
       case '#/vendedores': return rol === 'admin' ? V.vendedores(c) : V.pedidos(c);
       case '#/mis-ventas': return rol === 'vendedor' ? V.misVentas(c) : V.pedidos(c);
-      case '#/clientes': return Store.puedeCRM() ? V.clientes(c) : V.pedidos(c);
-      case '#/metricas': return rol === 'admin' ? V.metricas(c) : V.pedidos(c);
+      case '#/clientes': return Store.puedeVerCRM() ? V.clientes(c) : V.pedidos(c);
+      case '#/metricas': return (rol === 'admin' || rol === 'vendedor') ? V.metricas(c) : V.pedidos(c);
       case '#/produccion': return rol === 'admin' ? V.produccion(c) : V.pedidos(c);
       case '#/club': return (rol === 'admin' || rol === 'cajero') ? V.club(c) : V.pedidos(c);
       case '#/promos': return Store.puedePromos() ? V.promos(c) : V.pedidos(c);
@@ -233,9 +234,10 @@ window.GDO = window.GDO || {};
      #/metricas por la URL veía sus pedidos pero con el título "Métricas". */
   function vedada(hash, rol) {
     switch (hash) {
-      case '#/panel': case '#/metricas': case '#/produccion': case '#/usuarios': case '#/vehiculos': case '#/vendedores': case '#/rutas': return rol !== 'admin';
+      case '#/metricas': return !(rol === 'admin' || rol === 'vendedor');
+      case '#/panel': case '#/produccion': case '#/usuarios': case '#/vehiculos': case '#/vendedores': case '#/rutas': return rol !== 'admin';
       case '#/mis-ventas': return rol !== 'vendedor';
-      case '#/clientes': return !Store.puedeCRM();
+      case '#/clientes': return !Store.puedeVerCRM();
       case '#/club': return !(rol === 'admin' || rol === 'cajero');
       case '#/promos': return !Store.puedePromos();
       default: return false;
@@ -246,7 +248,7 @@ window.GDO = window.GDO || {};
     if (hash.startsWith('#/rutas/')) return rol === 'admin' ? 'Armador de ruta' : 'Carga de pedidos';
     if (hash.startsWith('#/vendedores/')) return rol === 'admin' ? 'Vendedores' : 'Carga de pedidos';
     if (vedada(hash, rol)) hash = '#/pedidos';
-    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/metricas': 'Métricas', '#/produccion': 'Producción', '#/club': 'GDO Club', '#/promos': 'Promos y descuentos', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos', '#/vendedores': 'Vendedores', '#/mis-ventas': 'Mis ventas' };
+    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': rol === 'vendedor' ? 'Mis clientes' : 'Clientes', '#/metricas': rol === 'vendedor' ? 'Mis métricas' : 'Métricas', '#/produccion': 'Producción', '#/club': 'GDO Club', '#/promos': 'Promos y descuentos', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos', '#/vendedores': 'Vendedores', '#/mis-ventas': 'Mis ventas' };
     return map[hash] || 'Granja del Oeste';
   }
 

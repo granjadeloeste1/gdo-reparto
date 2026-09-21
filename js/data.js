@@ -426,6 +426,9 @@ window.GDO = window.GDO || {};
     // Son datos personales de terceros y el historial de compras del negocio: no es
     // algo que tenga que ver cualquiera que carga un pedido.
     puedeCRM(u) { return tienePermiso(u, 'crm'); },
+    // Clientes (CRM) en pantalla: quien tenga el permiso, y TODO vendedor, que ve
+    // solo SUS clientes (ver GDO.UI.vendedorForzado y GDO.CRM.fichas).
+    puedeVerCRM() { return tienePermiso(null, 'crm') || !!(db.session && db.session.rolActivo === 'vendedor'); },
 
     // ¿Puede cargar las promos de la tienda? Mismo criterio, pero ojo: esto NO es
     // mirar datos, es PUBLICAR. Lo que se activa acá lo ve todo el que entra a la

@@ -82,7 +82,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   }
 
   const fechaVenta = (p) => (GDO.CRM ? GDO.CRM.fechaDe(p) : (p.creado || p.ts)) || p.creado || p.ts || null;
-  const ventasDe = (vid) => Store.pedidos().filter((p) => p.vendedorId === vid);
+  const ventasDe = (vid) => Store.pedidos().filter((p) => GDO.UI.deVendedor(p, vid));
 
   /* Una venta ya resuelta: fecha, estado, facturación y comisión (la pagada, si
      ya se pagó; si no, la calculada con la configuración de hoy). */

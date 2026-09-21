@@ -37,6 +37,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   let desde = masDias(-29), hasta = hoyISO();
   let per = '30d';
   let mod = '';              // '' | 'envio' | 'retiro'
+  let vendF = '';            // ADMIN: filtro por vendedor ('' = todos)
+  // Alcance: el VENDEDOR ve solo sus ventas (forzado); el admin, lo que filtre.
+  const vendAlc = () => (GDO.UI.vendedorForzado() || vendF);
+  const enAlcance = (p) => GDO.UI.deVendedor(p, vendAlc());
   let tab = 'clientes';
   let ordProd = 'cant';      // cant (por unidad) | pedidos | monto
   let _listasPedidas = false;  // las listas de precios se piden una vez por sesión
@@ -46,7 +50,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   // una venta hecha y tiene que entrar.
   function rangoDatos() {
     let min = null, max = null;
-    (Store.pedidos() || []).forEach((p) => {
+    (Store.pedidos() || []).filter(enAlcance).forEach((p) => {
       const t = GDO.CRM ? GDO.CRM.fechaDe(p) : null;
       if (!t) return;
       if (min === null || t < min) min = t;
@@ -145,7 +149,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const t0 = desde ? Date.parse(desde + 'T00:00:00') : -Infinity;
     const t1 = hasta ? Date.parse(hasta + 'T23:59:59') : Infinity;
     const out = [];
-    (Store.pedidos() || []).forEach((p) => {
+    (Store.pedidos() || []).filter(enAlcance).forEach((p) => {
       if (p.estado === 'no_entregado') return;                 // no se lo llevó nadie
       if (mod === 'retiro' && !esRetiro(p)) return;
       if (mod === 'envio' && esRetiro(p)) return;
@@ -163,7 +167,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
        hay permiso que se pueda habilitar para dárselo (a diferencia de Clientes
        o Promos). El router ya no deja entrar por la URL; este chequeo es la
        segunda traba, por si alguien llega a la vista por otro camino. */
-    if (Store.rolActivo() !== 'admin') {
+    /* Excepción: el VENDEDOR entra a SUS métricas — todo se calcula solo con sus
+       pedidos (enAlcance), así que no ve nada del resto del negocio. */
+    const soyVend = !!GDO.UI.vendedorForzado();
+    if (Store.rolActivo() !== 'admin' && !soyVend) {
       c.innerHTML = '<div class="empty">Esta sección es solo para la administración.</div>';
       return;
     }
@@ -190,9 +197,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const rotulo = (desde === hasta) ? fFecha(desde) : (fFecha(desde) + ' → ' + fFecha(hasta));
 
     c.innerHTML = `
-      <div class="section-title"><h2>Métricas</h2></div>
+      <div class="section-title"><h2>${soyVend ? 'Mis métricas' : 'Métricas'}</h2></div>
+      ${soyVend ? '<div class="note">📈 Acá ves <b>solo tus ventas</b>: las de tus clientes (tu link o los pedidos cargados a tu nombre).</div>' : ''}
 
       <div class="mx-filtros">
+        ${soyVend ? '' : `<div class="mx-chips">${GDO.UI.selectVendedor('mx-vend', vendF)}</div>`}
         <div class="mx-fechas">
           <label>Desde<input type="date" id="mx-d" value="${esc(desde)}" max="${esc(hasta)}"/></label>
           <span class="mx-flecha">→</span>
@@ -250,6 +259,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       repintar();
     });
     c.querySelectorAll('#mx-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; repintar(); });
+    const mv = c.querySelector('#mx-vend');
+    if (mv) mv.onchange = () => { vendF = mv.value; repintar(); };
     c.querySelectorAll('#mx-tabs [data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; repintar(); });
 
     /* Calendario: al tocar el campo se abre el almanaque del navegador
@@ -335,7 +346,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="small muted">${new Date(f.ultima).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
         </tr>`).join('')}</tbody></table>`;
     box.querySelectorAll('[data-ficha]').forEach((tr) => tr.onclick = () => {
-      if (GDO.Views.fichaClienteModal && Store.puedeCRM()) GDO.Views.fichaClienteModal(tr.dataset.ficha, () => GDO.App.render());
+      if (GDO.Views.fichaClienteModal && Store.puedeVerCRM()) GDO.Views.fichaClienteModal(tr.dataset.ficha, () => GDO.App.render());
     });
   }
 

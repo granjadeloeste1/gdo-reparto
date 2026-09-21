@@ -111,8 +111,8 @@ window.GDO = window.GDO || {};
   // Pedidos ENTREGADOS que la app no puede ubicar en el tiempo: no suman al
   // historial ni al ritmo de compra. Solo importan los entregados: un pedido que
   // todavía no se entregó no es una venta para el CRM (ver calcular()).
-  function sinFecha() {
-    return (GDO.Store.pedidos() || []).filter((p) => p.estado === 'entregado' && !fechaDe(p));
+  function sinFecha(opts) {
+    return pedidosDe(alcance(opts)).filter((p) => p.estado === 'entregado' && !fechaDe(p));
   }
 
   // Plata del pedido. Si el cliente declaró un total lo usamos; si no, sumamos
@@ -325,10 +325,24 @@ window.GDO = window.GDO || {};
 
   // Devuelve TODAS las fichas, calculadas desde los pedidos y mezcladas con lo
   // guardado a mano. Ordenadas por última compra (lo más reciente primero).
-  function fichas() {
+  /* ALCANCE POR VENDEDOR: un vendedor ve SOLO sus clientes, armados SOLO con sus
+     pedidos (vendedorForzado, no se puede saltear). El admin puede pedir lo de un
+     vendedor con opts.vendedor (el filtro de la pantalla Clientes). Con alcance,
+     las fichas guardadas que no tienen ningún pedido de ese vendedor no salen. */
+  function alcance(opts) {
+    const UI = GDO.UI;
+    return (UI && UI.vendedorForzado && UI.vendedorForzado()) || (opts && opts.vendedor) || '';
+  }
+  function pedidosDe(v) {
+    const todos = GDO.Store.pedidos() || [];
+    return v ? todos.filter((p) => GDO.UI.deVendedor(p, v)) : todos;
+  }
+  function fichas(opts) {
     const Store = GDO.Store;
+    const v = alcance(opts);
     const docs = (Store.crmClientes && Store.crmClientes()) || [];
-    const out = agrupar(Store.pedidos() || [], docs).map((g) => calcular(armar(g)));
+    let out = agrupar(pedidosDe(v), docs).map((g) => calcular(armar(g)));
+    if (v) out = out.filter((f) => f.pedidos.length);
     out.sort((a, b) => (b.ultima || 0) - (a.ultima || 0));
     return out;
   }

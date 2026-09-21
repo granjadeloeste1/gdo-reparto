@@ -22,6 +22,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   let filtro = '';
   let filtroTipo = '';
   let filtroGrupo = '';   // el grupo elegido tocando una de las tarjetas de arriba
+  let filtroVend = '';    // ADMIN: ver solo los clientes de un vendedor ('' = todos)
+  // Alcance de vendedor: el vendedor ve siempre solo lo suyo (lo fuerza el CRM);
+  // el admin, lo que elija en el filtro.
+  const alc = () => ({ vendedor: GDO.UI.vendedorForzado() ? '' : filtroVend });
 
   /* Los grupos de las tarjetas de arriba. Tocar una abre "Todos los clientes"
      filtrado por ese grupo, y el número de la tarjeta sale de ESTE mismo
@@ -36,10 +40,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* ─────────────────────────── pantalla ─────────────────────────── */
 
   GDO.Views.clientes = function (c) {
-    const fichas = CRM().fichas();
+    const soyVend = !!GDO.UI.vendedorForzado();
+    const fichas = CRM().fichas(alc());
     const part = CRM().agendaPartida(fichas);   // { hoy, luego } — una tarjeta por cliente
     const sugs = part.hoy;
-    const huerfanos = CRM().sinFecha();         // pedidos que no se pueden ubicar en el tiempo
+    const huerfanos = CRM().sinFecha(alc());    // pedidos que no se pueden ubicar en el tiempo
     const dobles = CRM().posiblesDuplicados(fichas);  // fichas que serían el mismo cliente
     // Clientes nuevos (primera compra en los últimos 30 días) con su seguimiento.
     // El número naranja son los que piden algo: preguntarles, o anotar qué dijeron.
@@ -62,6 +67,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <span class="ic">${ic}</span><span class="num">${cuantos(k)}</span><span class="lbl">${GRUPOS[k].t}</span></div>`;
 
     c.innerHTML = `
+      ${soyVend
+        ? '<div class="note">📇 Acá ves <b>solo tus clientes</b>: los que te compraron por tu link o los pedidos cargados a tu nombre, con el historial de <b>tus</b> ventas.</div>'
+        : `<div class="toolbar" style="margin-bottom:12px">${GDO.UI.selectVendedor('crm-vend', filtroVend)}
+            ${filtroVend ? '<span class="small muted">Clientes y compras de ese vendedor solamente.</span>' : ''}</div>`}
       <div class="cards" style="margin-bottom:20px">
         ${kpi('compras', 'naranja', '📇')}
         ${kpi('repiten', 'negro', '🔁')}
@@ -88,6 +97,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div id="crm-body"></div>`;
 
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.clientes(c); });
+    const sv = c.querySelector('#crm-vend');
+    if (sv) sv.onchange = () => { filtroVend = sv.value; GDO.Views.clientes(c); };
     // Tocar una tarjeta: la lista de ese grupo. Tocar la misma otra vez: todos.
     c.querySelectorAll('[data-grupo]').forEach((el) => el.onclick = () => {
       const g = el.dataset.grupo;
@@ -488,7 +499,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   /* ───────────────────────────── ficha ───────────────────────────── */
 
-  function buscarFicha(id) { return CRM().fichas().filter((f) => f.id === id)[0] || null; }
+  // Con un filtro de vendedor puesto, las fichas se arman solo con esos pedidos
+  // (y su id puede cambiar): se busca primero ahí y, si no, entre todas.
+  function buscarFicha(id) {
+    return CRM().fichas(alc()).filter((f) => f.id === id)[0]
+      || (GDO.UI.vendedorForzado() ? null : CRM().fichas().filter((f) => f.id === id)[0]) || null;
+  }
 
   // Códigos personales que el cliente tiene y todavía no usó: para acordarse de
   // mencionárselo (y no mandarle otro).
