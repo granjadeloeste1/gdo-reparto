@@ -657,7 +657,6 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           lect.style.borderColor = confirmado ? '#2e9e5b' : '#cfd4da';
           lect.innerHTML =
             fila('N° de ticket', esc(leido.nro || '—')) +
-            (leido.fecha ? fila('Fecha', esc(leido.fecha)) : '') +
             fila('Total de la compra', '$' + fmt(leido.monto)) +
             `<div style="display:flex;justify-content:space-between;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid #e6e9ed"><span class="muted">Puntos a sumar</span><b style="color:#F58220;font-size:18px">${fmt(pts)}</b></div>` +
             (leido.foto ? `<img src="${leido.foto}" alt="Foto del ticket" style="width:100%;max-height:180px;object-fit:contain;background:#f4f5f7;border-radius:8px;margin-top:10px"/>` : '') +
@@ -671,8 +670,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const bNo = lect.querySelector('[data-revisar]');
           if (bNo) bNo.onclick = () => pedirRevision(socio, leido, close);
         }
-        // Leer ticket por FOTO: código de barras (N° exacto) + OCR (total, fecha y,
-        // si no hubo código de barras, también el N°). En paralelo se comprime la
+        // Leer ticket por FOTO: SOLO el N° (código de barras u OCR) y el TOTAL en
+        // negrita de abajo (OCR). En paralelo se comprime la
         // imagen para guardarla junto a la carga.
         const fileInp = m.querySelector('#cp-file'), tmsg = m.querySelector('#cp-tmsg');
         m.querySelector('#cp-foto').onclick = () => fileInp.click();
@@ -813,7 +812,22 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
 
-  // ---- Lector de ticket (foto): barcode → N° ; OCR → total/fecha. Todo best-effort. ----
+  /* ---- Lector de ticket (foto) ----
+     Del ticket se toman SOLO DOS DATOS: el N° de comprobante y el TOTAL (el
+     importe en negrita, el más grande, abajo de todo). Nada más: saldos,
+     precios, subtotales por renglón, pesos, teléfonos, CUIT y fecha se ignoran.
+
+     No alcanza con leer el texto de corrido: en una foto de mostrador el OCR
+     mete mucho ruido y en el remito hay importes MAYORES que la compra
+     ("Saldo actual: $171.568"). Por eso se usa la POSICIÓN y el TAMAÑO de cada
+     palabra que devuelve Tesseract:
+       · TOTAL = el importe que está a la derecha de la palabra "Total", en el
+         mismo renglón, y de todos esos, el de letra más alta (la negrita). En
+         los dos formatos el total de la venta es el importe más grande del
+         ticket en tamaño de letra (31 px contra 14-22 del resto, medido).
+       · N° = código de barras si se pudo leer; si no, el número impreso DEBAJO
+         del código (renglón solo, abajo del total); si no, "Venta n° 15747" /
+         "N°: 15141". Todo best-effort. */
   function tkSoloDig(s){ return String(s == null ? '' : s).replace(/\D/g, ''); }
   /* Un importe del ticket → entero en pesos. Los dos formatos usan coma de miles
      y punto decimal ($102,148.00 / $95,822.50); si la foto corta el último dígito
@@ -824,41 +838,91 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     x = x.replace(/[.,]/g, '');          // separadores de miles
     const n = parseInt(x, 10); return isNaN(n) ? 0 : n;
   }
-  /* TOTAL de la venta = el importe MÁS GRANDE pegado a la palabra "Total".
-     En los dos tickets la palabra aparece varias veces (encabezado de la columna
-     "Total", "Peso Total:", y el total de la venta), y cada renglón tiene su
-     propio importe. Quedarse con el primero devolvía el precio del primer
-     producto; el total de la venta es siempre el mayor de todos. */
-  function tkTotal(txt){
-    const t = String(txt || ''); let mejor = 0, m;
-    const re = /total[^0-9$]{0,16}\$?\s*([0-9][0-9.,\s]*)/ig;
-    while ((m = re.exec(t))) { const n = tkImporte(m[1]); if (n > mejor) mejor = n; }
+  // ¿La palabra es un importe? "$95,822.50", "$102,148.0(", "95.822,50", "$43180.0".
+  // Devuelve el entero en pesos, o 0 si no parece plata.
+  function tkPlata(w){
+    const t = String(w || '').replace(/^[^0-9$]+/, '').replace(/[^0-9]+$/, '');
+    if (!/^\$?\d{1,3}(?:[.,]?\d{3})+(?:[.,]\d{1,2})?$/.test(t)) return 0;
+    // Sin "$" y sin centavos puede ser cualquier número (cantidad, código): no.
+    if (t[0] !== '$' && !/[.,]\d{1,2}$/.test(t)) return 0;
+    return tkImporte(t.replace('$', ''));
+  }
+  // Palabras del OCR con su caja, y el texto del renglón al que pertenecen.
+  function tkPalabras(data){
+    const out = [];
+    ((data && data.lines) || []).forEach((l) => {
+      const lt = String(l.text || '');
+      (l.words || []).forEach((w) => {
+        const b = w.bbox || {};
+        out.push({ t: String(w.text || ''), x0: b.x0, x1: b.x1, y0: b.y0, y1: b.y1, h: (b.y1 - b.y0) || 0, linea: lt });
+      });
+    });
+    return out;
+  }
+  const tkMismoRenglon = (a, b) => a.y0 < b.y1 && a.y1 > b.y0 &&
+    Math.abs((a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2) < Math.max(a.h, b.h) * 0.8;
+  /* TOTAL: el importe de letra más alta a la derecha de una palabra "Total".
+     Se busca por posición (no por renglón del OCR) porque a veces Tesseract
+     parte "Total:" y "$102,148.00" en renglones distintos. "Peso Total: 16.930Kg"
+     no molesta: los kilos no son un importe. */
+  function tkTotalPos(ws){
+    let mejor = null;
+    const totales = ws.filter((w) => /total/i.test(w.t) && !/subtotal/i.test(w.t));
+    ws.forEach((w) => {
+      const n = tkPlata(w.t); if (n < 100) return;
+      if (!totales.some((t) => w.x0 > t.x0 && tkMismoRenglon(w, t))) return;
+      if (!mejor || w.h > mejor.h || (w.h === mejor.h && w.y0 > mejor.y0)) mejor = { n: n, h: w.h, y0: w.y0, y1: w.y1 };
+    });
     if (mejor) return mejor;
-    // Sin ningún "Total" legible: el importe más grande que aparezca.
-    const re2 = /\$\s*([0-9][0-9.,]*)/g;
-    while ((m = re2.exec(t))) { const n = tkImporte(m[1]); if (n > mejor) mejor = n; }
+    // Sin ningún "Total" legible: el importe de letra más alta, salvo saldos.
+    ws.forEach((w) => {
+      const n = tkPlata(w.t); if (n < 100 || /saldo/i.test(w.linea)) return;
+      if (!mejor || w.h > mejor.h) mejor = { n: n, h: w.h, y0: w.y0, y1: w.y1 };
+    });
     return mejor;
   }
-  function tkFecha(txt){ const m = /(\d{4}-\d{2}-\d{2})/.exec(txt || '') || /(\d{2}\/\d{2}\/\d{4})/.exec(txt || ''); return m ? m[1] : ''; }
-  /* N° del comprobante. Tres intentos, del más confiable al menos:
-       1) "Venta n° 15747" / "REMITO N°: 15141" — el OCR suele leer el ° como ' o º,
-          por eso el hueco acepta cualquier cosa que no sea dígito.
-       2) cualquier "N<algo> 12345".
-       3) el número suelto en su renglón: el que va impreso DEBAJO del código de
-          barras del remito. Es el último del ticket, por eso se toma ese. */
-  function tkNro(txt){
+  // Renglón que es SOLO un número de 4 a 8 cifras, con como mucho basura corta
+  // del OCR alrededor ("Cy 15141", "4 15141" — las barras se leen como letras
+  // o dígitos sueltos): el N° impreso debajo del código de barras.
+  function tkNroSuelto(linea){
+    const toks = String(linea || '').trim().split(/\s+/).filter(Boolean);
+    if (!toks.length || toks.length > 4) return '';
+    let nro = '';
+    for (const tk of toks) {
+      const x = /^\D{0,2}(\d{4,8})\D{0,2}$/.exec(tk);
+      if (x) { if (nro) return ''; nro = x[1]; }
+      else if (tk.length > 3 || /\d{2}/.test(tk)) return '';
+    }
+    return nro;
+  }
+  // N° por etiqueta: "Venta n° 15747" / "REMITO N°: 15141" (el ° sale como ' o º).
+  function tkNroEtiqueta(txt){
     const t = String(txt || ''); let m;
-    m = /(?:venta|remito|factura|comprobante)[^0-9]{0,12}?(\d{4,8})/i.exec(t);
+    m = /(?:venta|remito|factura|comprobante)\s*n[^0-9a-z]{0,4}(\d{4,8})\b/i.exec(t);
     if (m) return m[1];
-    m = /\bn[^0-9a-z]{0,4}(\d{4,8})\b/i.exec(t);
+    m = /(?:^|[^a-z0-9])n\s*[°º'"*:.]+\s*:?\s*(\d{4,8})\b/im.exec(t);
     if (m) return m[1];
-    const sueltos = t.split(/\n/).map((s) => {
-      const x = /^\D{0,3}(\d{4,8})\D{0,3}$/.exec(s.trim()); return x ? x[1] : null;
-    }).filter(Boolean);
-    return sueltos.length ? sueltos[sueltos.length - 1] : '';
+    m = /(?:venta|remito)[^0-9\n]{0,6}(\d{4,8})\b/i.exec(t);
+    return m ? m[1] : '';
+  }
+  function tkNroOcr(data, total){
+    const lineas = ((data && data.lines) || []);
+    // 1) Número suelto DEBAJO del total (el del código de barras). El de más abajo.
+    let abajo = '';
+    lineas.forEach((l) => {
+      if (total && l.bbox && l.bbox.y0 < total.y1) return;
+      const n = tkNroSuelto(l.text); if (n) abajo = n;
+    });
+    if (abajo) return abajo;
+    // 2) Por etiqueta.
+    const et = tkNroEtiqueta(lineas.map((l) => l.text).join('\n') || (data && data.text));
+    if (et) return et;
+    // 3) Sin total ubicado: el último número suelto del ticket.
+    if (!total) lineas.forEach((l) => { const n = tkNroSuelto(l.text); if (n) abajo = n; });
+    return abajo;
   }
   function leerTicket(file, prog){
-    const out = { nro: '', fecha: '', monto: 0 };
+    const out = { nro: '', monto: 0 };
     const pBar = new Promise((res) => {
       if (typeof Html5Qrcode === 'undefined' || typeof Html5QrcodeSupportedFormats === 'undefined') return res();
       let el = document.createElement('div'); el.id = 'tk-scan-' + Math.floor(Math.random() * 1e9);
@@ -868,23 +932,26 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const fmts = [Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_93, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.ITF];
         const tmp = new Html5Qrcode(el.id, { formatsToSupport: fmts, verbose: false });
         tmp.scanFile(file, false)
-          .then((t) => { out.nro = tkSoloDig(t); })
+          .then((t) => { const d = tkSoloDig(t); if (d.length >= 4 && d.length <= 8) out.nro = d; })
           .catch(() => {})
           .finally(() => { try { tmp.clear(); } catch (e) {} try { el.remove(); } catch (e) {} res(); });
       } catch (e) { try { el.remove(); } catch (e2) {} res(); }
     });
+    let ocrNro = '';
     const pOcr = new Promise((res) => {
       if (typeof Tesseract === 'undefined') return res();
       if (prog) prog('Reconociendo el texto del ticket…');
       try {
         Tesseract.recognize(file, 'eng').then((r) => {
-          const txt = (r && r.data && r.data.text) || '';
-          out.monto = tkTotal(txt); out.fecha = tkFecha(txt);
-          if (!out.nro) out.nro = tkNro(txt);
+          const data = (r && r.data) || {};
+          const tot = tkTotalPos(tkPalabras(data));
+          out.monto = tot ? tot.n : 0;
+          ocrNro = tkNroOcr(data, tot);
         }).catch(() => {}).finally(res);
       } catch (e) { res(); }
     });
-    return Promise.all([pBar, pOcr]).then(() => out);
+    // El código de barras manda sobre el OCR para el N° (es exacto).
+    return Promise.all([pBar, pOcr]).then(() => { if (!out.nro) out.nro = ocrNro; return out; });
   }
 
   // Acredita puntos a partir de un TICKET, en transacción, con anti-duplicado por N°.
