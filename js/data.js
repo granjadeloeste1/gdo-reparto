@@ -35,6 +35,13 @@ window.GDO = window.GDO || {};
   const FS_COLLS = ['users', 'vehiculos', 'pedidos', 'rutas', 'notificaciones', 'crm_clientes', 'descuentos'];
   const fsOn = () => GDO.FB && GDO.FB.enabled && GDO.FB.db;
   const fsClean = (o) => JSON.parse(JSON.stringify(o)); // saca undefined/funciones
+  // JSON con las claves ordenadas: para comparar dos versiones de un documento
+  // sin que el orden de los campos (que Firestore no garantiza) cuente como cambio.
+  function estable(v) {
+    if (Array.isArray(v)) return '[' + v.map(estable).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => JSON.stringify(k) + ':' + estable(v[k])).join(',') + '}';
+    return JSON.stringify(v === undefined ? null : v);
+  }
   function fsSet(coll, obj) {
     if (!fsOn() || !obj || !obj.id) return;
     try { GDO.FB.db.collection(coll).doc(obj.id).set(fsClean(obj)); } catch (e) {}
@@ -295,6 +302,20 @@ window.GDO = window.GDO || {};
       FS_COLLS.forEach((c) => {
         GDO.FB.db.collection(c).onSnapshot((snap) => {
           const arr = snap.docs.map((d) => Object.assign({}, d.data(), { id: d.id }));
+          /* El GPS del chofer escribe su posición en la ruta cada 15 s. Si ESO es
+             lo único que cambió, no se redibuja la pantalla (la hacía saltar en
+             los celulares): se actualiza la posición sobre los mismos objetos, que
+             son los que usa la vista del chofer para el ETA. */
+          if (c === 'rutas' && Array.isArray(db.rutas) && db.rutas.length === arr.length) {
+            const prev = {};
+            db.rutas.forEach((r) => { prev[r.id] = r; });
+            const sinPos = (r) => { if (!r) return ''; const o = Object.assign({}, r); delete o.choferPos; return estable(o); };
+            if (arr.every((r) => prev[r.id] && sinPos(prev[r.id]) === sinPos(r))) {
+              arr.forEach((r) => { prev[r.id].choferPos = r.choferPos; });
+              persist(db);
+              return;
+            }
+          }
           if (c === 'pedidos') {
             if (pedidosVistos === null) {
               pedidosVistos = new Set(arr.map((p) => p.id));

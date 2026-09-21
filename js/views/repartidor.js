@@ -46,6 +46,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      (no en el closure de la vista) para que los re-render NO creen watchers
      duplicados: hay un único watch activo a la vez. */
   let _gpsWatchId = null, _gpsLast = 0, _gpsRutaId = null;
+  // Cada vez que se abre (o se redibuja por un cambio de la nube) la vista de la
+  // ruta, se crea una vista NUEVA. Las viejas tienen que callarse: antes cada una
+  // dejaba su reloj de 20 s vivo y, tras un rato de reparto, decenas de relojes
+  // redibujaban la pantalla (con datos viejos) y la hacían saltar.
+  let _vistaActual = 0;
   function pararGPSChofer() {
     if (_gpsWatchId != null && navigator.geolocation) { try { navigator.geolocation.clearWatch(_gpsWatchId); } catch (e) {} }
     _gpsWatchId = null; _gpsRutaId = null;
@@ -110,6 +115,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   /* ---------- Ejecución de ruta ---------- */
   GDO.Views.rutaChofer = function (mount, rutaId) {
+    const miVista = ++_vistaActual;
     const me = Store.current();
     const ruta = Store.ruta(rutaId);
     if (!ruta || ruta.repartidorId !== me.id) { mount.innerHTML = '<div class="empty">Ruta no disponible.</div>'; return; }
@@ -227,7 +233,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       render();
     }
 
+    // Redibujo SIN mover la pantalla (ver GDO.conScroll) y solo si esta vista es
+    // la vigente: las anteriores quedan mudas.
     function render() {
+      if (miVista !== _vistaActual) return;
+      if (GDO.conScroll) GDO.conScroll(renderAhora); else renderAhora();
+    }
+    function renderAhora() {
       // Si el chofer YA salió de esta ruta (cambió el hash, p. ej. al finalizar y
       // volver a "Mis rutas"), NO re-pintamos. Sin esto, callbacks async que
       // siguen vivos unos segundos (ruteo OSRM, intervalo de ETA, ETA de Google)
@@ -575,9 +587,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // siga activa y la vista montada). Así el ETA avanza solo, sin tocar nada.
     let _lastMin = nowMin();
     const _timer = setInterval(() => {
-      if (!mount.isConnected || location.hash !== '#/ruta/' + rutaId) { clearInterval(_timer); return; }
+      if (miVista !== _vistaActual || !mount.isConnected || location.hash !== '#/ruta/' + rutaId) { clearInterval(_timer); return; }
       if (ruta.estado === 'finalizada' || ruta.salirAhora === false) return;
       const m = nowMin();
+      if (GDO.tocando && GDO.tocando()) return;   // está usando la pantalla: en la próxima vuelta
       if (m !== _lastMin) { _lastMin = m; render(); }
     }, 20000);
   };

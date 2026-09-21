@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v101';
+  const VERSION = 'v102';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -329,10 +329,43 @@ window.GDO = window.GDO || {};
   // Cambios llegados desde Firestore (otro dispositivo): re-render del contenido
   // actual. No interrumpe formularios: data.js ya evita disparar si hay un modal
   // abierto. El re-pintado respeta la sesión local de cada dispositivo.
+  /* SALTOS DE PANTALLA EN EL CELULAR. Cada cambio que llega de la nube (un pedido
+     nuevo, la posición GPS del chofer cada 15 s…) redibuja la pantalla entera, y
+     en Android eso la mandaba ARRIBA de golpe mientras el chofer bajaba a buscar
+     una parada. Dos arreglos:
+     1) conScroll: el redibujo conserva la posición de la pantalla.
+     2) Si la persona está tocando/desplazando la pantalla, el redibujo espera a
+        que suelte (no se le mueve nada bajo el dedo). */
+  let _ultimoToque = 0, _pendRender = null;
+  // Solo gestos REALES (no el evento scroll: lo dispara también nuestro scrollTo).
+  ['touchstart', 'touchmove', 'wheel', 'mousedown', 'keydown'].forEach((ev) =>
+    window.addEventListener(ev, () => { _ultimoToque = Date.now(); }, { passive: true, capture: true }));
+  GDO.tocando = () => (Date.now() - _ultimoToque) < 1200;
+  GDO.conScroll = function (fn) {
+    const y = window.scrollY || 0;
+    const t0 = Date.now();
+    fn();
+    if (y <= 0) return;
+    // Restaurar ahora y en los próximos cuadros (imágenes y mapas que todavía no
+    // tienen su alto). Si la persona ya volvió a mover la pantalla, no se pisa.
+    const volver = () => {
+      if (_ultimoToque > t0 + 50) return;
+      if (Math.abs((window.scrollY || 0) - y) > 2) window.scrollTo(0, y);
+    };
+    volver();
+    requestAnimationFrame(() => { volver(); setTimeout(volver, 150); setTimeout(volver, 450); });
+  };
   GDO._dataChanged = function () {
     if (GDO.Notify) GDO.Notify.check(); // avisos al celular (corre siempre)
     if (document.querySelector('.modal-bg, .notif-pop')) return; // no interrumpir formularios
-    render();
+    const espera = 1200 - (Date.now() - _ultimoToque);
+    if (espera > 0) {                    // está usando la pantalla: redibujamos cuando suelte
+      clearTimeout(_pendRender);
+      _pendRender = setTimeout(GDO._dataChanged, espera + 50);
+      return;
+    }
+    clearTimeout(_pendRender); _pendRender = null;
+    GDO.conScroll(render);
   };
 
   /* ---------- Botón "Instalar app" (solo celular, se va al instalar) ---------- */
