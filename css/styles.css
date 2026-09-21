@@ -20,7 +20,14 @@
   --sans:'Inter','Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
 }
 *{box-sizing:border-box}
-html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden}
+html,body{margin:0;padding:0;max-width:100%}
+/* Nada se sale por los costados. OJO: con `clip`, NO con `hidden` en html y body:
+   overflow-x:hidden en los dos convierte a la página en una caja con scroll propio
+   y en Chrome de Android la pantalla SALTABA ARRIBA sola mientras se bajaba
+   (sobre todo al esconderse/aparecer la barra de direcciones). `clip` recorta
+   igual pero sin crear esa caja. Navegadores viejos sin `clip`: solo en html. */
+body{overflow-x:clip}
+@supports not (overflow-x:clip){html{overflow-x:hidden}}
 body{
   font-family:var(--sans);
   color:var(--negro);
