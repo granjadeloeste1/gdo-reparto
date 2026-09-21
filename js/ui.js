@@ -134,6 +134,24 @@ window.GDO = window.GDO || {};
     cajero: '<span class="chip chip-rol cajero">Cajero</span>',
   };
 
+  /* ---------- Vendedor del pedido ----------
+     Los pedidos que entran por el LINK DE VENDEDOR de la tienda
+     (lista.granjadeloeste.com/?v=<id>&vn=<nombre>) traen `vendedorId`. Los que
+     carga a mano alguien en modo vendedor también lo llevan. El nombre sale del
+     usuario (si le cambian el nombre, se ve el nuevo) y si no, del que trajo el link. */
+  function vendedorDe(p) {
+    if (!p || !p.vendedorId) return null;
+    const u = GDO.Store && GDO.Store.user ? GDO.Store.user(p.vendedorId) : null;
+    return { id: p.vendedorId, nombre: (u && u.nombre) || p.vendedorNombre || 'Vendedor' };
+  }
+  const vendedorChip = (p) => {
+    const v = vendedorDe(p);
+    return v ? ` <span class="chip chip-rol vendedor" style="font-size:10px" title="Pedido del vendedor">🏷️ ${esc(v.nombre)}</span>` : '';
+  };
+  // Link de pedidos mayoristas de un vendedor (lo comparte con sus clientes).
+  const linkVendedor = (u) => 'https://lista.granjadeloeste.com/?v=' + encodeURIComponent(u.id) + '&vn=' + encodeURIComponent(u.nombre || '');
+
   GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
-    ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, fechaEfectiva };
+    ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, fechaEfectiva,
+    vendedorDe, vendedorChip, linkVendedor };
 })();

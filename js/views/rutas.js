@@ -2,7 +2,7 @@
 window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 (function () {
   const { Store, Route } = GDO;
-  const { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, proximoDiaFecha, diaSemanaDe } = GDO.UI;
+  const { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, proximoDiaFecha, diaSemanaDe, vendedorDe } = GDO.UI;
   const go = (hash) => { location.hash = hash; };
 
   const ESTADO_RUTA = {
@@ -186,22 +186,38 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // lista de pedidos elegibles con checkbox
     const pedsBox = $('#r-peds');
     let filtroDia = '';   // '' = todos los días; si no, una fecha ISO (YYYY-MM-DD) o 'sin'
+    // Filtro por VENDEDOR: '' = todos; '_sin' = los que no son de ningún vendedor
+    // (tienda / mostrador); si no, el id del vendedor. Se combina con el día.
+    let filtroVend = '';
+    const vendKey = (p) => { const v = vendedorDe(p); return v ? v.id : '_sin'; };
+    const pasaVend = (p) => !filtroVend || vendKey(p) === filtroVend;
     const drawPeds = () => {
       if (!elegibles.length) { pedsBox.innerHTML = `<div class="empty">No hay pedidos pendientes.</div>`; return; }
+      // Vendedores presentes en los pedidos disponibles. La fila de filtros solo
+      // aparece si hay al menos un pedido de vendedor.
+      const vends = []; const vv = {};
+      elegibles.forEach((p) => { const v = vendedorDe(p); if (v && !vv[v.id]) { vv[v.id] = true; vends.push(v); } });
+      vends.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      const vendBtn = (val, txt) => `<button type="button" class="btn btn-sm ${filtroVend === val ? '' : 'btn-ghost'}" data-vend="${esc(val)}">${txt}</button>`;
+      const vendChips = vends.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center"><span class="small muted" style="margin-right:2px">🏷️ Vendedor:</span>`
+        + vendBtn('', 'Todos')
+        + vends.map((v) => vendBtn(v.id, esc(v.nombre))).join('')
+        + vendBtn('_sin', 'Sin vendedor')
+        + `</div>` : '';
       // Días presentes en los pedidos disponibles (por fecha de entrega), del más cercano al más lejano.
       const dias = []; const vistos = {};
-      elegibles.forEach((p) => { const k = efFecha(p) || 'sin'; if (!vistos[k]) { vistos[k] = true; dias.push(efFecha(p)); } });
+      elegibles.filter(pasaVend).forEach((p) => { const k = efFecha(p) || 'sin'; if (!vistos[k]) { vistos[k] = true; dias.push(efFecha(p)); } });
       dias.sort((a, b) => (a && b) ? (a < b ? -1 : (a > b ? 1 : 0)) : (a ? -1 : 1));
       const chipBtn = (val, txt) => `<button type="button" class="btn btn-sm ${filtroDia === val ? '' : 'btn-ghost'}" data-dia="${val}">${txt}</button>`;
       const chips = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">`
         + chipBtn('', 'Todos')
         + dias.map((f) => chipBtn(f || 'sin', f ? (esc(diaSemanaDe(f)) + ' ' + fmtFecha(f)) : 'Sin fecha')).join('')
         + `</div>`;
-      const vis = filtroDia ? elegibles.filter((p) => (efFecha(p) || 'sin') === filtroDia) : elegibles;
-      pedsBox.innerHTML = chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
+      const vis = elegibles.filter(pasaVend).filter((p) => !filtroDia || (efFecha(p) || 'sin') === filtroDia);
+      pedsBox.innerHTML = vendChips + chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
         ${vis.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${p.id}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
-          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b></td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
+          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
           <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}</td>
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
         </tr>`; }).join('')}</tbody></table>`;
@@ -212,9 +228,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         if (filtroDia && filtroDia !== 'sin') {
           const fec = $('#r-fec'); if (fec) fec.value = filtroDia;
           ruta.fecha = filtroDia;
-          elegibles.forEach((p) => { if (efFecha(p) === filtroDia && !ruta.pedidoIds.includes(p.id)) ruta.pedidoIds.push(p.id); });
+          elegibles.forEach((p) => { if (efFecha(p) === filtroDia && pasaVend(p) && !ruta.pedidoIds.includes(p.id)) ruta.pedidoIds.push(p.id); });
           recompute();
         }
+        drawPeds();
+      });
+      // Chips de vendedor: solo filtran (no tildan nada). Si el día elegido no
+      // tiene pedidos de ese vendedor, se vuelve a "todos los días".
+      pedsBox.querySelectorAll('[data-vend]').forEach((b) => b.onclick = () => {
+        filtroVend = b.dataset.vend;
+        if (filtroDia && !elegibles.some((p) => pasaVend(p) && (efFecha(p) || 'sin') === filtroDia)) filtroDia = '';
         drawPeds();
       });
       pedsBox.querySelectorAll('[data-pid]').forEach((cb) => cb.onchange = () => {

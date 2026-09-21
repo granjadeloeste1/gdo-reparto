@@ -19,7 +19,7 @@
 window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 (function () {
   const { Store } = GDO;
-  const { esc, toast, confirmDlg, esRetiro, fechaEfectiva, diaSemanaDe } = GDO.UI;
+  const { esc, toast, confirmDlg, esRetiro, fechaEfectiva, diaSemanaDe, vendedorChip } = GDO.UI;
 
   const fmtM = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-AR');
   const nUm = (n) => {
@@ -237,7 +237,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           </tr></thead><tbody>${list.map((p) => `
             <tr>
               <td class="pr-tick"></td>
-              <td><b>${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★</span>' : ''}
+              <td><b>${esc(p.cliente)}</b>${vendedorChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★</span>' : ''}
                 ${p.telefono ? '<div class="small muted">' + esc(p.telefono) + '</div>' : ''}</td>
               <td class="small">
                 ${esRetiro(p)

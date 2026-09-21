@@ -3,7 +3,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 (function () {
   const { Store } = GDO;
   const { esc, h, toast, modal, confirmDlg, fmtFecha, proximoDiaFecha, diaSemanaDe, ESTADO_CHIP, ROL_CHIP,
-          estadoChip, esRetiro, modalidadChip } = GDO.UI;
+          estadoChip, esRetiro, modalidadChip, vendedorDe, vendedorChip, linkVendedor } = GDO.UI;
   // Exponemos el detalle del pedido para poder abrirlo desde otras vistas (rutas) al tocar el pedido.
   GDO.pedidoModal = function (id, after, prefill) { return pedidoModal(id, after, prefill); };
   const go = (hash) => { location.hash = hash; };
@@ -170,6 +170,48 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
 
+  /* ---------------- Vendedores ----------------
+     Cada vendedor tiene su LINK de pedidos mayoristas (la tienda con ?v=<id>).
+     Los pedidos que entran por ahí traen `vendedorId`: se ven con su chip en
+     Pedidos y se pueden separar por vendedor acá y en el armado de rutas. */
+  // Vendedores para los filtros: los usuarios con rol vendedor + cualquiera que
+  // figure en un pedido (por si el usuario se borró o se le sacó el rol).
+  function vendedoresConocidos() {
+    const m = new Map();
+    Store.users().filter((u) => u.roles && u.roles.includes('vendedor')).forEach((u) => m.set(u.id, u.nombre));
+    Store.pedidos().forEach((p) => { const v = vendedorDe(p); if (v && !m.has(v.id)) m.set(v.id, v.nombre); });
+    return [...m].map(([id, nombre]) => ({ id, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }
+  function opcionesVendedor() {
+    return `<option value="">Todos los vendedores</option>`
+      + vendedoresConocidos().map((v) => `<option value="${esc(v.id)}">🏷️ ${esc(v.nombre)}</option>`).join('')
+      + `<option value="_sin">Sin vendedor (tienda / mostrador)</option>`;
+  }
+  function linkVendedorHTML(u) {
+    if (!u) return '';
+    const url = linkVendedor(u);
+    return `<div class="note" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <div style="flex:1 1 260px">🔗 <b>Tu link de pedidos mayoristas</b> — mandáselo a tus clientes. Lo que pidan por acá entra con envío y a tu nombre.
+        <div class="small" style="word-break:break-all;margin-top:4px"><code>${esc(url)}</code></div></div>
+      <button class="btn btn-ghost btn-sm" data-vlink-copy="${esc(url)}">📋 Copiar</button>
+      <a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Hacé tu pedido mayorista de Granja del Oeste acá: ' + url)}">💬 Compartir</a>
+    </div>`;
+  }
+  function copiarTexto(txt) {
+    const ok = () => toast('Link copiado ✓', 'ok');
+    const aMano = () => {
+      try {
+        const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); ta.remove(); ok();
+      } catch (e) { toast('No se pudo copiar: ' + txt, 'error'); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, aMano);
+    else aMano();
+  }
+  function montarLinkVendedor(c) {
+    c.querySelectorAll('[data-vlink-copy]').forEach((b) => b.onclick = () => copiarTexto(b.dataset.vlinkCopy));
+  }
+
   /* ---------------- Pedidos ---------------- */
   GDO.Views.pedidos = function (c) {
     const soyVend = Store.rolActivo() === 'vendedor';
@@ -191,6 +233,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <option value="envio">🚚 Solo envíos a domicilio</option>
           <option value="retiro">🏪 Solo retiros en sucursal</option>
         </select>
+        ${soyVend ? '' : `<select id="p-vend" title="Pedidos de cada vendedor">${opcionesVendedor()}</select>`}
         <div class="p-fechas" title="Buscar por día de entrega o de retiro">
           <span class="ic">📅</span>
           <input type="date" id="p-d" title="Desde"/>
@@ -208,6 +251,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-ghost" id="p-import">📥 Importar</button>
         <button class="btn btn-primary" id="p-new">+ Nuevo pedido</button>
       </div>
+      ${soyVend ? linkVendedorHTML(Store.current()) : ''}
       <div class="note">Los pedidos hechos por los clientes en la <b>tienda online</b> entran acá automáticamente como “pendientes”. Solo resta ubicarlos en el mapa y asignarles chofer. El panel muestra los <b>pedidos activos</b>; los <b>entregados</b> quedan guardados (con su comprobante) y los ves eligiendo “Entregado” o “Todos”.<br>Los de <b>🏪 retiro en sucursal</b> no entran al armado de rutas: se cierran acá con <b>✓</b> cuando el cliente los pasa a buscar, o se pasan a envío con <b>🚚</b> si hace falta llevárselos.</div>
       <div id="p-bulk" class="toolbar" style="display:none;align-items:center;background:var(--gris-cl);border:1px solid var(--gris-bd);border-radius:10px;padding:8px 12px;margin-bottom:10px">
         <b id="p-bulk-n">0 seleccionados</b>
@@ -235,8 +279,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         else if (fb) return 1;
         return (b.ts || 0) - (a.ts || 0);
       });
-      if (soyVend) list = list.filter((p) => p.creadoPor === Store.current().id);
-      if (q) list = list.filter((p) => (p.cliente + ' ' + p.direccion + ' ' + (p.localidad || '')).toLowerCase().includes(q));
+      // El vendedor ve lo que cargó él y lo que entró por SU link de la tienda.
+      if (soyVend) { const yo = Store.current().id; list = list.filter((p) => p.creadoPor === yo || p.vendedorId === yo); }
+      const vend = c.querySelector('#p-vend') ? c.querySelector('#p-vend').value : '';
+      if (vend === '_sin') list = list.filter((p) => !p.vendedorId);
+      else if (vend) list = list.filter((p) => p.vendedorId === vend);
+      if (q) list = list.filter((p) => (p.cliente + ' ' + p.direccion + ' ' + (p.localidad || '') + ' ' + (p.razonSocial || '') + ' ' + (p.cuit || '')).toLowerCase().includes(q));
       if (est === 'activos') list = list.filter((p) => p.estado !== 'entregado');
       else if (est) list = list.filter((p) => p.estado === est);
       const mod = c.querySelector('#p-mod').value;
@@ -264,6 +312,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#p-q').oninput = draw;
     c.querySelector('#p-est').onchange = () => { sel.clear(); draw(); };
     c.querySelector('#p-mod').onchange = () => { sel.clear(); draw(); };
+    if (c.querySelector('#p-vend')) c.querySelector('#p-vend').onchange = () => { sel.clear(); draw(); };
+    montarLinkVendedor(c);
     // Calendario: al tocar el campo se abre el almanaque, y el filtro se aplica
     // solo. Si el "hasta" queda antes del "desde", se acomodan solos.
     const pD = c.querySelector('#p-d'), pH = c.querySelector('#p-h');
@@ -604,7 +654,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </tr></thead><tbody>${list.map((p) => `
         <tr${checkable && sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
           ${checkable ? `<td><input type="checkbox" data-sel="${p.id}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
-          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
+          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}${vendedorChip(p)}${p.razonSocial || p.cuit ? `<div class="small muted">${esc(p.razonSocial || '')}${p.cuit ? ' · CUIT ' + esc(p.cuit) : ''}</div>` : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
           <td class="small">${esRetiro(p) ? '<span class="muted">🏪 Retira en el local</span>' : esc(p.direccion) + (p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : '')}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${celdaEntrega(p)}</td>
@@ -1051,6 +1101,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <input id="f-cli" autocomplete="off" value="${esc(p ? p.cliente : (pf.cliente || ''))}" placeholder="Nombre del cliente / comercio — empezá a escribir y te lo busca"/>
             <div id="f-cli-sug" class="crm-ac"></div>
             <span class="help" id="f-cli-info"></span></div>
+          ${p && (p.razonSocial || p.cuit || p.email || p.contacto) ? `<div class="field col-2"><div class="note" style="margin:0;font-size:12.5px">🏢 <b>Datos del negocio</b>${p.fantasia ? ' · ' + esc(p.fantasia) : ''}<br>
+            ${p.razonSocial ? 'Razón social: <b>' + esc(p.razonSocial) + '</b> · ' : ''}${p.cuit ? 'CUIT: <b>' + esc(p.cuit) + '</b> · ' : ''}${p.email ? 'Mail: <a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a> · ' : ''}${p.contacto ? 'Contacto: <b>' + esc(p.contacto) + '</b>' : ''}</div></div>` : ''}
+          <div class="field col-2"><label>🏷️ Vendedor</label>${(() => {
+            const soyV = Store.rolActivo() === 'vendedor';
+            const actual = p ? (p.vendedorId || '') : (soyV ? Store.current().id : '');
+            const vs = vendedoresConocidos();
+            if (actual && !vs.some((v) => v.id === actual)) vs.push({ id: actual, nombre: (p && p.vendedorNombre) || 'Vendedor' });
+            return `<select id="f-vend"${soyV ? ' disabled' : ''}><option value="">— Sin vendedor —</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.id === actual ? ' selected' : ''}>${esc(v.nombre)}</option>`).join('')}</select>`;
+          })()}
+            <span class="help">Sirve para separar los pedidos y las rutas por vendedor.</span></div>
           <div class="field col-2"><label>¿Cómo lo recibe el cliente?</label>
             <div class="modsel" id="f-mod">
               <button type="button" data-mod="envio"${modIni === 'envio' ? ' class="on"' : ''}>🚚 Envío a domicilio</button>
@@ -1519,6 +1579,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             descuento: descuento,
             creadoPor: p ? p.creadoPor : Store.current().id,
           };
+          // Vendedor del pedido (para separar pedidos y rutas por vendedor).
+          const fv = node.querySelector('#f-vend');
+          if (fv) {
+            const vid = fv.value || null;
+            const vu = vid ? Store.user(vid) : null;
+            data.vendedorId = vid;
+            data.vendedorNombre = vid ? ((vu && vu.nombre) || (p && p.vendedorNombre) || '') : '';
+          }
           // Si un pedido que YA estaba en una ruta pasa a retiro, hay que sacarlo
           // de esa ruta (si no, queda una parada fantasma). Eso lo sabe hacer
           // setModalidad, así que en ese caso guardamos por ahí.
@@ -1541,7 +1609,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   GDO.Views.usuarios = function (c) {
     c.innerHTML = `
       <div class="section-title"><h2>Usuarios y roles</h2></div>
-      <div class="note">El <b>administrador</b> asigna los roles. Un usuario puede ser <b>vendedor y repartidor</b> a la vez.</div>
+      <div class="note">El <b>administrador</b> asigna los roles. Un usuario puede ser <b>vendedor y repartidor</b> a la vez. Cada vendedor tiene su <b>🔗 link de pedidos mayoristas</b> para mandarle a sus clientes: lo que pidan entra con envío y a su nombre.</div>
       <div class="toolbar"><div class="spacer"></div><button class="btn btn-primary" id="u-new">+ Nuevo usuario</button></div>
       <div class="panel"><div class="panel-b flush"><div id="u-tabla"></div></div></div>`;
     const draw = () => {
@@ -1553,10 +1621,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td>${u.roles.map((r) => ROL_CHIP[r]).join(' ')}${Store.puedeCRM(u) ? ' <span class="chip crm-t-rev" title="Puede ver la ficha de clientes">📇 Clientes</span>' : ''}${Store.puedePromos(u) ? ' <span class="chip crm-t-vol" title="Puede publicar promos en la tienda">🖼️ Promos</span>' : ''}</td>
           <td>${u.activo ? '<span class="chip chip-entreg">Activo</span>' : '<span class="chip chip-no">Inactivo</span>'}</td>
           <td class="t-actions">
+            ${u.roles.includes('vendedor') ? `<button class="btn btn-ghost btn-sm" data-vlink-copy="${esc(linkVendedor(u))}" title="Copiar el link de pedidos mayoristas de este vendedor">🔗 Link</button>` : ''}
             <button class="btn btn-ghost btn-sm" data-edit="${u.id}">✎ Roles</button>
             ${u.id === Store.current().id ? '' : `<button class="btn btn-ghost btn-sm" data-del="${u.id}">🗑</button>`}
           </td></tr>`).join('')}</tbody></table>`;
       c.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => userModal(b.dataset.edit, draw));
+      montarLinkVendedor(c);
       c.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
         const u = Store.user(b.dataset.del);
         confirmDlg(`¿Eliminar a "${u.nombre}"?`, () => { Store.deleteUser(u.id); toast('Usuario eliminado', 'ok'); draw(); });
