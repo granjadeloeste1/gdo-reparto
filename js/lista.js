@@ -485,7 +485,9 @@ window.GDO = window.GDO || {};
     cargar, buscar, renglon, precioPorEscalon, etiqueta, plural, kgDeItem,
     nombreOpcion, nombreItem, montoItem,
     UNIDADES: TODAS,
-    opciones: () => _opciones || [],
-    hay: () => !!(_opciones && _opciones.length),
+    // (Antes leían una variable `_opciones` que ya no existe desde que hay dos
+    // catálogos: tiraban error. Nadie las usaba hasta la sección Vendedores.)
+    opciones: (lista) => opsDe(lista || 'mayorista'),
+    hay: (lista) => opsDe(lista || 'mayorista').length > 0,
   };
 })();

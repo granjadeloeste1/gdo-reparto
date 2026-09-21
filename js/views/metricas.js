@@ -129,6 +129,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return ref.map((v, i) => ({ monto: v * f, aprox: !items[i].precio }));
   }
 
+  // La usa también la sección Vendedores (comisiones por producto).
+  GDO.Metricas = Object.assign(GDO.Metricas || {}, { valoresDe });
   /* Cómo se cuenta un "cliente distinto": por teléfono si lo hay (es el dato que
      no se escribe de dos maneras) y si no por el nombre normalizado. Es el mismo
      criterio que usa el CRM para unificar. */

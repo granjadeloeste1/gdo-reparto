@@ -327,7 +327,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#p-wsp').onclick = () => wspDelDiaModal();
     c.querySelector('#p-bulk-clear').onclick = () => { sel.clear(); draw(); };
     c.querySelector('#p-bulk-del').onclick = () => {
-      const ids = [...sel];
+      // El vendedor no borra lo que ya está en reparto (ver bloqueadoVend).
+      const ids = [...sel].filter((id) => !bloqueadoVend(Store.pedido(id)));
       if (!ids.length) return;
       const enRuta = ids.filter((id) => { const p = Store.pedido(id); return p && p.rutaId; }).length;
       const aviso = enRuta
@@ -642,6 +643,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       : ' <span class="chip chip-desc mal" style="font-size:10px" title="' + esc(v.error) + '">🎟️ Revisar código</span>';
   }
 
+  /* Un VENDEDOR no toca un pedido que ya salió del armado: si está en una ruta
+     o ya se entregó/no se entregó, lo ve pero no lo edita ni lo borra (la ruta en
+     curso es del administrador y del chofer). */
+  function bloqueadoVend(p) {
+    return Store.rolActivo() === 'vendedor' && !!p && (!!p.rutaId || p.estado !== 'pendiente');
+  }
   function renderPedidosTabla(box, list, opts) {
     if (!list.length) { box.innerHTML = `<div class="empty">No hay pedidos para mostrar.</div>`; return; }
     const sel = opts && opts.sel;            // Set de ids tildados (si la vista lo pide)
@@ -662,11 +669,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td class="t-actions">
             ${esRetiro(p) && p.estado === 'pendiente' ? `<button class="btn btn-ghost btn-sm" data-retirado="${p.id}" title="Marcar como retirado por el cliente">✓</button>` : ''}
             ${esRetiro(p) ? `<button class="btn btn-ghost btn-sm" data-modo="${p.id}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>` : ''}
-            ${p.estado === 'no_entregado' || p.estado === 'salteado' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
+            ${(p.estado === 'no_entregado' || p.estado === 'salteado') && Store.rolActivo() !== 'vendedor' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
             ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${p.id}" title="Ver comprobante de entrega">🧾</button>` : ''}
             ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
-            <button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
-            <button class="btn btn-ghost btn-sm" data-del="${p.id}">🗑</button>
+            ${bloqueadoVend(p) ? `<span class="small muted" title="Ya está en reparto: solo el administrador lo puede cambiar">🔒</span>` : `<button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
+            <button class="btn btn-ghost btn-sm" data-del="${p.id}">🗑</button>`}
           </td>
         </tr>`).join('')}</tbody></table>`;
     if (checkable) {
@@ -1165,7 +1172,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field col-2"><label>Comentarios / especificaciones de entrega</label>
             <textarea id="f-esp" placeholder="Aclaraciones para el repartidor: a quién entregar, accesos, formas de pago, demoras habituales…">${esc(p ? p.especificaciones : (pf.especificaciones || ''))}</textarea></div>
         </div>`,
-      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save>${p ? 'Guardar cambios' : 'Crear pedido'}</button>`,
+      footHTML: bloqueadoVend(p)
+        ? `<span class="small muted" style="margin-right:auto">🔒 Ya está en reparto: solo el administrador lo puede cambiar.</span><button class="btn btn-primary" data-cancel>Cerrar</button>`
+        : `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-save>${p ? 'Guardar cambios' : 'Crear pedido'}</button>`,
       onMount(node, close) {
         /* BUSCADOR DE CLIENTE. Es la pieza que evita que el mismo cliente se
            cargue dos veces con el nombre escrito distinto o con otro teléfono:
@@ -1498,7 +1507,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           }, { provincia: 'Buenos Aires', departamento: 'Hurlingham' });
         }
 
-        node.querySelector('[data-save]').onclick = async () => {
+        // Pedido bloqueado para el vendedor: no hay botón de guardar.
+        if (node.querySelector('[data-save]')) node.querySelector('[data-save]').onclick = async () => {
           const cli = node.querySelector('#f-cli').value.trim();
           const dir = node.querySelector('#f-dir').value.trim();
           const esRet = mod === 'retiro';

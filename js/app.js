@@ -7,7 +7,7 @@ window.GDO = window.GDO || {};
   const root = () => document.getElementById('app');
   // Versión visible en el pie (subir junto con el CACHE del sw.js en cada deploy)
   // para verificar de un vistazo que la app esté actualizada.
-  const VERSION = 'v97';
+  const VERSION = 'v98';
   GDO.VERSION = VERSION;
   GDO.footHTML = () => `<div class="gdo-foot" style="text-align:center;font-size:10.5px;color:#9a9a9d;padding:16px 10px 26px;opacity:.85;line-height:1.4">Propiedad de Granja del Oeste<sup style="font-size:8px">®</sup> · ${VERSION}</div>`;
 
@@ -23,6 +23,7 @@ window.GDO = window.GDO || {};
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
       { hash: '#/club', ic: '⭐', t: 'GDO Club', st: 'Club' },
       { hash: '#/metricas', ic: '📈', t: 'Métricas' },
+      { hash: '#/vendedores', ic: '🏷️', t: 'Vendedores' },
       { hash: '#/promos', ic: '🎁', t: 'Promos y descuentos', st: 'Promos' },
       { hash: '#/usuarios', ic: '👥', t: 'Usuarios y roles' },
       { hash: '#/vehiculos', ic: '🚚', t: 'Vehículos' },
@@ -32,6 +33,7 @@ window.GDO = window.GDO || {};
     // vendedor no le mostraría nada.
     vendedor: [
       { hash: '#/pedidos', ic: '📦', t: 'Carga de pedidos' },
+      { hash: '#/mis-ventas', ic: '💰', t: 'Mis ventas y comisiones', st: 'Mis ventas' },
       { hash: '#/clientes', ic: '📇', t: 'Clientes' },
       { hash: '#/promos', ic: '🎁', t: 'Promos y descuentos', st: 'Promos' },
     ],
@@ -159,11 +161,15 @@ window.GDO = window.GDO || {};
 
   function routeContent(c, hash, rol) {
     const parts = hash.split('/');
-    if (hash.startsWith('#/rutas/')) return V.rutaEditor(c, parts[2]);
+    // Rutas: solo el administrador. Un vendedor no puede ver ni tocar una ruta
+    // (antes no estaba en su menú, pero escribiendo la dirección entraba igual).
+    if (hash.startsWith('#/rutas')) return rol === 'admin' ? (hash.startsWith('#/rutas/') ? V.rutaEditor(c, parts[2]) : V.rutas(c)) : V.pedidos(c);
+    if (hash.startsWith('#/vendedores/')) return rol === 'admin' ? V.vendedores(c, decodeURIComponent(parts[2] || '')) : V.pedidos(c);
     switch (hash) {
       case '#/panel': return rol === 'admin' ? V.dashboard(c) : V.pedidos(c);
       case '#/pedidos': return V.pedidos(c);
-      case '#/rutas': return V.rutas(c);
+      case '#/vendedores': return rol === 'admin' ? V.vendedores(c) : V.pedidos(c);
+      case '#/mis-ventas': return rol === 'vendedor' ? V.misVentas(c) : V.pedidos(c);
       case '#/clientes': return Store.puedeCRM() ? V.clientes(c) : V.pedidos(c);
       case '#/metricas': return rol === 'admin' ? V.metricas(c) : V.pedidos(c);
       case '#/produccion': return rol === 'admin' ? V.produccion(c) : V.pedidos(c);
@@ -227,7 +233,8 @@ window.GDO = window.GDO || {};
      #/metricas por la URL veía sus pedidos pero con el título "Métricas". */
   function vedada(hash, rol) {
     switch (hash) {
-      case '#/panel': case '#/metricas': case '#/produccion': case '#/usuarios': case '#/vehiculos': return rol !== 'admin';
+      case '#/panel': case '#/metricas': case '#/produccion': case '#/usuarios': case '#/vehiculos': case '#/vendedores': case '#/rutas': return rol !== 'admin';
+      case '#/mis-ventas': return rol !== 'vendedor';
       case '#/clientes': return !Store.puedeCRM();
       case '#/club': return !(rol === 'admin' || rol === 'cajero');
       case '#/promos': return !Store.puedePromos();
@@ -236,9 +243,10 @@ window.GDO = window.GDO || {};
   }
 
   function titleFor(hash, rol) {
-    if (hash.startsWith('#/rutas/')) return 'Armador de ruta';
+    if (hash.startsWith('#/rutas/')) return rol === 'admin' ? 'Armador de ruta' : 'Carga de pedidos';
+    if (hash.startsWith('#/vendedores/')) return rol === 'admin' ? 'Vendedores' : 'Carga de pedidos';
     if (vedada(hash, rol)) hash = '#/pedidos';
-    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/metricas': 'Métricas', '#/produccion': 'Producción', '#/club': 'GDO Club', '#/promos': 'Promos y descuentos', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos' };
+    const map = { '#/panel': 'Tablero', '#/pedidos': rol === 'vendedor' ? 'Carga de pedidos' : 'Pedidos', '#/rutas': 'Rutas', '#/clientes': 'Clientes', '#/metricas': 'Métricas', '#/produccion': 'Producción', '#/club': 'GDO Club', '#/promos': 'Promos y descuentos', '#/usuarios': 'Usuarios y roles', '#/vehiculos': 'Vehículos', '#/vendedores': 'Vendedores', '#/mis-ventas': 'Mis ventas' };
     return map[hash] || 'Granja del Oeste';
   }
 
