@@ -445,7 +445,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     subs.push(db().collection('clientes').onSnapshot((snap) => {
       // Las cuentas de CLIENTES MAYORISTAS (se registran en el link de un vendedor)
       // comparten la colección /clientes pero no son socios del Club.
-      socios = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; if (x.tipo !== 'mayorista') socios.push(x); });
+      socios = []; snap.forEach((d) => { const x = d.data(); x._id = d.id; if (x.tipo !== 'mayorista' && !x.esMayorista) socios.push(x); });
       socios.sort((a, b) => (a.nroSocio || 0) - (b.nroSocio || 0));
       pintar();
     }, () => { lista.innerHTML = '<div class="empty">No se pudieron cargar los socios.</div>'; }));

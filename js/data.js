@@ -372,6 +372,9 @@ window.GDO = window.GDO || {};
           return dbf.collection('clientes').doc(fbu.uid).get().then((snap) => {
             if (snap && snap.exists) {
               const s = snap.data() || {};
+              // Cuenta MAYORISTA (cliente de un vendedor): no es personal ni socio del
+              // Club, así que no entra a esta app.
+              if (s.tipo === 'mayorista' || s.esMayorista) { try { GDO.FB.logout && GDO.FB.logout(); } catch (e) {} return null; }
               db.session = { userId: fbu.uid, rolActivo: 'socio', socio: {
                 uid: fbu.uid, nombre: s.nombre || fbu.displayName || mail.split('@')[0],
                 nroSocio: s.nroSocio || 0, puntos: s.puntos || 0,
