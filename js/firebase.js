@@ -83,5 +83,28 @@ window.GDO = window.GDO || {};
   };
   FB.logout = function () { return FB.auth.signOut(); };
 
+  /* ----- ALTA DE PERSONAL DESDE EL PANEL (sin consola de Firebase) -----
+     crearCuenta: crea el usuario de Firebase Auth (mail + contraseña) con una
+     SEGUNDA instancia de Firebase, sin persistencia. Si se hiciera con la
+     principal, Firebase loguearía al usuario nuevo y el admin perdería su sesión.
+     Devuelve el UID de la cuenta nueva. */
+  FB.crearCuenta = function (email, pass) {
+    const app2 = firebase.initializeApp(cfg, 'alta-' + Date.now());
+    const a2 = app2.auth();
+    const limpiar = () => a2.signOut().catch(() => {}).then(() => app2.delete().catch(() => {}));
+    return a2.setPersistence(firebase.auth.Auth.Persistence.NONE)
+      .then(() => a2.createUserWithEmailAndPassword(String(email || '').trim(), String(pass || '')))
+      .then((cred) => { const uid = cred.user.uid; return limpiar().then(() => uid); })
+      .catch((e) => limpiar().then(() => { throw e; }));
+  };
+  /* Lista blanca /Staff (la que miran las reglas). Solo un ADMIN la puede escribir
+     (regla isAdmin), así que esto funciona desde la sesión del administrador. */
+  FB.setStaff = function (uid, datos) {
+    return FB.db.collection('Staff').doc(uid).set(datos, { merge: true });
+  };
+  FB.delStaff = function (uid) {
+    return FB.db.collection('Staff').doc(uid).delete();
+  };
+
   finish(true);
 })();

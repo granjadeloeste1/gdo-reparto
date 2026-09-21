@@ -359,8 +359,13 @@ window.GDO = window.GDO || {};
           // Camino STAFF: espera los perfiles (users) y busca/crea el suyo.
           const staffPath = () => usersReady.then(() => {
             let u = db.users.find((x) => (x.email || '').toLowerCase() === mail && x.activo);
-            if (u) return setSession(u);
-            u = { id: fbu.uid, nombre: fbu.displayName || mail.split('@')[0], email: mail,
+            if (u) {
+              // Guardamos su UID de Firebase: con eso el admin le sincroniza el
+              // permiso en /Staff desde "Usuarios y roles" sin ir a la consola.
+              if (u.uid !== fbu.uid) { u.uid = fbu.uid; persist(db); fsSet('users', u); }
+              return setSession(u);
+            }
+            u = { id: fbu.uid, uid: fbu.uid, nombre: fbu.displayName || mail.split('@')[0], email: mail,
                   roles: esAdmin ? ['admin', 'vendedor'] : ['repartidor'], activo: true };
             db.users.push(u); fsSet('users', u);
             return setSession(u);
@@ -415,8 +420,11 @@ window.GDO = window.GDO || {};
     user: (id) => db.users.find((u) => u.id === id),
     upsertUser(u) {
       let full;
-      if (u.id) { full = Object.assign(db.users.find((x) => x.id === u.id), u); }
-      else { u.id = uid('u'); u.activo = true; db.users.push(u); full = u; }
+      const ex = u.id ? db.users.find((x) => x.id === u.id) : null;
+      if (ex) { full = Object.assign(ex, u); }
+      // Alta nueva. Puede venir con id propio: el UID de su cuenta de Firebase
+      // (alta desde "Usuarios y roles"), así perfil y cuenta quedan atados.
+      else { u.id = u.id || uid('u'); if (u.activo == null) u.activo = true; db.users.push(u); full = u; }
       persist(db); fsSet('users', full); return u;
     },
     deleteUser(id) { db.users = db.users.filter((u) => u.id !== id); persist(db); fsDel('users', id); },

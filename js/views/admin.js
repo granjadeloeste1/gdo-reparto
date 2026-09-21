@@ -1618,7 +1618,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   GDO.Views.usuarios = function (c) {
     c.innerHTML = `
       <div class="section-title"><h2>Usuarios y roles</h2></div>
-      <div class="note">El <b>administrador</b> asigna los roles. Un usuario puede ser <b>vendedor y repartidor</b> a la vez. Cada vendedor tiene su <b>🔗 link de pedidos mayoristas</b> para mandarle a sus clientes: lo que pidan entra con envío y a su nombre.</div>
+      <div class="note">El <b>administrador</b> asigna los roles. Un usuario puede ser <b>vendedor y repartidor</b> a la vez. Cada vendedor tiene su <b>🔗 link de pedidos mayoristas</b> para mandarle a sus clientes.<br>🔑 <b>Todo se hace desde acá:</b> “+ Nuevo usuario” crea su cuenta (mail + contraseña) y le da el permiso en Firebase; cambiar roles, permisos o desactivarlo se aplica solo. No hace falta entrar a la consola de Firebase.</div>
       <div class="toolbar"><div class="spacer"></div><button class="btn btn-primary" id="u-new">+ Nuevo usuario</button></div>
       <div class="panel"><div class="panel-b flush"><div id="u-tabla"></div></div></div>`;
     const draw = () => {
@@ -1626,7 +1626,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       c.querySelector('#u-tabla').innerHTML = `<table><thead><tr>
           <th>Nombre</th><th>Email</th><th>Roles</th><th>Estado</th><th></th></tr></thead><tbody>
         ${list.map((u) => `<tr>
-          <td><b>${esc(u.nombre)}</b></td><td class="small">${esc(u.email)}</td>
+          <td><b>${esc(u.nombre)}</b>${uidDe(u) ? '' : ' <span class="chip chip-pend" style="font-size:10px" title="Su cuenta de Firebase todavía no está vinculada: editalo">sin vincular</span>'}</td><td class="small">${esc(u.email)}</td>
           <td>${u.roles.map((r) => ROL_CHIP[r]).join(' ')}${Store.puedeCRM(u) ? ' <span class="chip crm-t-rev" title="Puede ver la ficha de clientes">📇 Clientes</span>' : ''}${Store.puedePromos(u) ? ' <span class="chip crm-t-vol" title="Puede publicar promos en la tienda">🖼️ Promos</span>' : ''}</td>
           <td>${u.activo ? '<span class="chip chip-entreg">Activo</span>' : '<span class="chip chip-no">Inactivo</span>'}</td>
           <td class="t-actions">
@@ -1638,12 +1638,49 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       montarLinkVendedor(c);
       c.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
         const u = Store.user(b.dataset.del);
-        confirmDlg(`¿Eliminar a "${u.nombre}"?`, () => { Store.deleteUser(u.id); toast('Usuario eliminado', 'ok'); draw(); });
+        confirmDlg(`¿Eliminar a "${u.nombre}"? También se le quita el acceso a los datos (su cuenta de Firebase queda, pero ya no puede entrar al panel).`, () => {
+          // Sin su doc en /Staff las reglas no le dejan leer ni escribir nada.
+          sincronizarStaff(Object.assign({}, u, { activo: false })).then(() => {});
+          Store.deleteUser(u.id); toast('Usuario eliminado', 'ok'); draw();
+        });
       });
     };
     c.querySelector('#u-new').onclick = () => userModal(null, draw);
     draw();
   };
+
+  /* ---- Permiso real en Firebase (/Staff) ----
+     Las REGLAS de Firestore no miran los roles de este panel: miran la lista
+     /Staff/<UID>. Antes había que cargarla a mano en la consola; ahora se escribe
+     sola cada vez que se guarda un usuario (lo permite la regla: solo un admin). */
+  function uidDe(u) {
+    if (!u) return null;
+    if (u.uid) return u.uid;
+    // Perfiles creados solos al primer ingreso: su id ES el UID de Firebase.
+    return /^[A-Za-z0-9]{28}$/.test(u.id || '') ? u.id : null;
+  }
+  const rolStaff = (roles) => (roles.includes('admin') ? 'admin'
+    : roles.includes('vendedor') ? 'vendedor'
+    : roles.includes('cajero') ? 'cajero' : 'repartidor');
+  // Devuelve una promesa con 'ok', 'sin-uid' o el código de error.
+  function sincronizarStaff(u) {
+    const uid = uidDe(u);
+    if (!u || !uid) return Promise.resolve('sin-uid');
+    if (!(GDO.FB && GDO.FB.enabled && GDO.FB.setStaff)) return Promise.resolve('sin conexión');
+    const yo = Store.current() || {};
+    // Nunca te sacás el acceso de administrador a vos mismo por un tilde de más.
+    if (uid === uidDe(yo) && rolStaff(u.roles) !== 'admin') return Promise.resolve('no se cambia tu propio acceso de administrador');
+    const op = u.activo
+      ? GDO.FB.setStaff(uid, {
+          rol: rolStaff(u.roles),
+          // El vendedor usa su CRM ("Mis clientes"): notas y agenda necesitan crm.
+          crm: !!(u.crm || u.roles.includes('vendedor') || u.roles.includes('admin')),
+          promos: !!(u.promos || u.roles.includes('admin')),
+          nombre: u.nombre || '', email: u.email || '',
+        })
+      : GDO.FB.delStaff(uid);            // inactivo = sin acceso a los datos
+    return op.then(() => 'ok').catch((e) => (e && e.code) || 'error');
+  }
 
   function userModal(id, after) {
     const u = id ? Store.user(id) : null;
@@ -1655,7 +1692,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="form-grid">
           <div class="field col-2"><label>Nombre y apellido *</label><input id="u-nom" value="${esc(u ? u.nombre : '')}"/></div>
           <div class="field col-2"><label>Email *</label><input id="u-email" type="email" value="${esc(u ? u.email : '')}"/></div>
-          <div class="field col-2"><div class="note" style="margin:0;font-size:12.5px">🔑 <b>El acceso (email + contraseña) se crea en la consola de Firebase</b>, no acá. En este panel definís el <b>nombre y los roles</b>; la persona entra por primera vez con la cuenta de Firebase y su perfil se vincula solo.</div></div>
+          ${u ? `<div class="field col-2"><div class="note" style="margin:0;font-size:12.5px">${uidDe(u)
+              ? '🔑 Acceso vinculado: los roles y permisos que guardes acá se aplican solos en Firebase.'
+              : '🔑 Todavía no está vinculado a su cuenta de Firebase. Si ya tenía acceso, se vincula solo la próxima vez que entre al panel. Si todavía no puede entrar, pegá acá abajo su <b>UID</b> (consola de Firebase → Authentication → columna “UID de usuario”) y guardá: desde ahí queda todo automático.'}</div></div>
+            ${uidDe(u) ? '' : '<div class="field col-2"><label>UID de Firebase (opcional)</label><input id="u-uid" placeholder="Ej: aBcD1234…"/></div>'}`
+          : `<div class="field col-2"><label>Contraseña inicial *</label><input id="u-pass" type="text" autocomplete="off" placeholder="Mínimo 6 caracteres"/>
+              <span class="help">Se crea la cuenta con este mail y esta contraseña. Pasásela a la persona; la puede cambiar desde “¿Olvidaste tu contraseña?” al entrar.</span></div>`}
           <div class="field col-2"><label>Roles asignados</label>
             <div class="roles-pick">${rolBox('admin', '👑 Administrador')}${rolBox('vendedor', '🏷️ Vendedor')}${rolBox('cajero', '💳 Cajero')}${rolBox('repartidor', '🚚 Repartidor')}</div>
             <span class="help">Administrador: acceso total · Vendedor: carga pedidos · Cajero: pedidos + Club (cargar puntos y escanear vouchers, con ticket obligatorio; no crea premios ni elimina) · Repartidor: ve sus rutas.</span></div>
@@ -1675,16 +1717,49 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         node.querySelector('[data-save]').onclick = () => {
           const nom = node.querySelector('#u-nom').value.trim();
           const email = node.querySelector('#u-email').value.trim();
-          const rs = [...node.querySelectorAll('.roles-pick input:checked')].map((x) => x.value);
+          // Solo los ROLES (los tildes de permisos extra no tienen value y daban un rol "on").
+          const rs = [...node.querySelectorAll('.roles-pick input[value]:checked')].map((x) => x.value);
           if (!nom || !email) { toast('Completá nombre y email', 'err'); return; }
           if (!rs.length) { toast('Asigná al menos un rol', 'err'); return; }
-          Store.upsertUser({
+          const datos = {
             id: u ? u.id : undefined, nombre: nom, email, roles: rs,
             crm: node.querySelector('#u-crm').checked,
             promos: node.querySelector('#u-promos').checked,
             activo: node.querySelector('#u-act').checked,
+          };
+          const uidMano = node.querySelector('#u-uid') ? node.querySelector('#u-uid').value.trim() : '';
+          if (uidMano) datos.uid = uidMano;
+          const btn = node.querySelector('[data-save]');
+          const fin = (guardado, msg, tipo) => {
+            sincronizarStaff(guardado).then((r) => {
+              toast(msg + (r === 'ok' ? '' : r === 'sin-uid' ? ' · falta vincular su cuenta: editalo y pegá su UID' : ' · ⚠️ no se pudo actualizar el permiso en Firebase (' + r + ')'), r === 'ok' || r === 'sin-uid' ? tipo : 'err');
+              close(); after && after();
+            });
+          };
+          // EDITAR: se guarda y se sincroniza el permiso.
+          if (u) { fin(Store.upsertUser(datos) && Store.user(u.id), 'Usuario guardado', 'ok'); return; }
+          // NUEVO: primero la cuenta de Firebase (mail + contraseña) y con su UID el perfil.
+          const pass = node.querySelector('#u-pass').value;
+          if (pass.length < 6) { toast('La contraseña inicial tiene que tener al menos 6 caracteres', 'err'); return; }
+          if (!(GDO.FB && GDO.FB.enabled && GDO.FB.crearCuenta)) { toast('Sin conexión con Firebase: no se puede crear la cuenta ahora.', 'err'); return; }
+          btn.disabled = true; btn.textContent = 'Creando cuenta…';
+          GDO.FB.crearCuenta(email, pass).then((nuevoUid) => {
+            datos.id = nuevoUid; datos.uid = nuevoUid;
+            Store.upsertUser(datos);
+            fin(Store.user(nuevoUid), 'Usuario creado ✓ Ya puede entrar con ' + email, 'ok');
+          }).catch((e) => {
+            btn.disabled = false; btn.textContent = 'Guardar';
+            const c = (e && e.code) || '';
+            if (c === 'auth/email-already-in-use') {
+              // Ya tiene cuenta (p. ej. es socio del Club, o se creó en la consola):
+              // guardamos el perfil y el acceso se vincula cuando entre.
+              Store.upsertUser(datos);
+              toast('Ese mail ya tenía cuenta en Firebase (por ejemplo, es socio del Club): se guardó el perfil. Para darle acceso, editalo y pegá su UID (Firebase → Authentication).', '');
+              close(); after && after();
+              return;
+            }
+            toast(c === 'auth/invalid-email' ? 'El mail no es válido.' : c === 'auth/weak-password' ? 'Contraseña muy débil (mínimo 6).' : 'No se pudo crear la cuenta (' + (c || 'error') + ').', 'err');
           });
-          toast('Usuario guardado', 'ok'); close(); after && after();
         };
       },
     });
