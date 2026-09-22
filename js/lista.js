@@ -423,6 +423,7 @@ window.GDO = window.GDO || {};
     ['Papas Smile Mc Cain x 1,5 kg', 'PAPA SMILES (MCCAIN) X 9 KG (6 X 1,5 KG)'],
     ['Papas Baston tradicional IMPORTADAS (BEM-BRASIL) x 2 kg', 'PAPAS BASTON TRADICIONAL BEM-BRASIL X 14 KG (7X2KG)'],
     ['Papas CARITAS GRANGYS x 1 kg', 'PAPAS CARITAS GRANGYS X 10.5 KG (10X1,05KG)'],
+    ['Papas NOISSETE GRANGYS x 1 kg', 'PAPAS NOISSETTE GRANGYS X 10.5 KG (10X1,05KG)'],
     ['Tequeños x 8 unidades', 'TEQUEÑOS (TEQUEPOPS)  80 UNIDADES (10X8 UNI)'],
     ['Bondiola Congelada', 'BONDIOLA IMPORTADA X CAJA DE 20 KG'],
     ['Suprema de pollo sin hueso y sin piel congelada x 10 kg Marca BELLO', 'SUPREMA CONGELADA BELLO - IQF X 10 KG'],
