@@ -73,6 +73,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   let dia = hoyISO();
   let incluirCerrados = false;   // sumar también lo ya entregado/retirado
   let unoPorHoja = false;        // al imprimir los pedidos para armar: uno por hoja
+  /* MAYORISTA y MINORISTA van en PLANILLAS SEPARADAS (pedido del usuario): se
+     preparan distinto (cajas y cajones contra bolsas de 1, 2 y 5 kg), así que cada
+     una tiene su comanda, sus pedidos para armar y su impresión. 'todas' las junta. */
+  let listaSel = 'mayorista';
+  const listaDe = (p) => (p && p.lista === 'minorista' ? 'minorista' : 'mayorista');
+  const LISTA_T = { mayorista: 'MAYORISTA', minorista: 'MINORISTA', todas: 'MAYORISTA + MINORISTA' };
   let _listasPedidas = false;    // las listas de precios se piden una vez por sesión
 
   /* ═══════ CATEGORÍAS ═══════
@@ -112,11 +118,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* Pedidos de ese día. Se van los "no entregados" (el cliente no se los llevó)
      y, salvo que se pida, también los ya cerrados: si la comanda se imprime a
      media mañana, lo que ya salió no hay que volver a producirlo. */
-  function pedidosDelDia() {
+  function pedidosDelDia(todasLasListas) {
     return (Store.pedidos() || []).filter((p) => {
       if (fechaEfectiva(p) !== dia) return false;
       if (p.estado === 'no_entregado') return false;
       if (!incluirCerrados && p.estado === 'entregado') return false;
+      if (!todasLasListas && listaSel !== 'todas' && listaDe(p) !== listaSel) return false;
       return true;
     }).sort((a, b) => {
       // Primero los retiros (el cliente los viene a buscar y hay hora), después
@@ -276,7 +283,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return `
       <div class="pr-ped">
         <div class="pr-ped-h">
-          <div class="pr-ped-cli"><b>${esc(p.cliente)}</b>${vendedorChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}
+          <div class="pr-ped-cli"><b>${esc(p.cliente)}</b>${listaSel === 'todas' ? ' <span class="chip ' + (listaDe(p) === 'minorista' ? 'chip-retiro' : 'chip-envio') + '" style="font-size:10px">' + (listaDe(p) === 'minorista' ? '🏠 Minorista' : '🏪 Mayorista') + '</span>' : ''}${vendedorChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}
             ${p.telefono ? '<span class="pr-ped-tel">📞 ' + esc(p.telefono) + '</span>' : ''}</div>
           <div class="pr-ped-donde">${donde}</div>
         </div>
@@ -320,6 +327,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         .then(() => { if (document.body.contains(c)) GDO.Views.produccion(c); })
         .catch(() => {});
     }
+    const delDia = pedidosDelDia(true);
+    const nLista = { mayorista: delDia.filter((p) => listaDe(p) === 'mayorista').length, minorista: delDia.filter((p) => listaDe(p) === 'minorista').length, todas: delDia.length };
     const list = pedidosDelDia();
     const com = consolidar(list);
     const orden = ordenCategorias();
@@ -343,15 +352,20 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-ghost" id="pr-xls-com">⬇ Comanda (Excel)</button>
         <button class="btn btn-ghost" id="pr-xls-det">⬇ Detalle (Excel)</button>
       </div>
+      <div class="crm-tabs no-print pr-listas">
+        <button class="crm-tab ${listaSel === 'mayorista' ? 'on' : ''}" data-lista="mayorista">🏪 Planilla MAYORISTA <span class="crm-badge sec">${nLista.mayorista}</span></button>
+        <button class="crm-tab ${listaSel === 'minorista' ? 'on' : ''}" data-lista="minorista">🏠 Planilla MINORISTA <span class="crm-badge sec">${nLista.minorista}</span></button>
+        <button class="crm-tab ${listaSel === 'todas' ? 'on' : ''}" data-lista="todas">Ambas <span class="crm-badge sec">${nLista.todas}</span></button>
+      </div>
       <div class="toolbar no-print pr-imprimir">
         <b>🖨 Imprimir:</b>
-        <button class="btn btn-primary btn-sm" data-imp="com">Comanda (lo que hay que preparar)</button>
-        <button class="btn btn-primary btn-sm" data-imp="ped">Pedidos para armar</button>
+        <button class="btn btn-primary btn-sm" data-imp="com">Comanda ${esc(listaSel === 'todas' ? '' : listaSel)}</button>
+        <button class="btn btn-primary btn-sm" data-imp="ped">Pedidos para armar ${esc(listaSel === 'todas' ? '' : listaSel)}</button>
         <button class="btn btn-ghost btn-sm" data-imp="todo">Todo</button>
         <label class="pr-check"><input type="checkbox" id="pr-una" ${unoPorHoja ? 'checked' : ''}/> Un pedido por hoja</label>
       </div>
 
-      ${!list.length ? `<div class="empty">No hay pedidos para el ${esc(largo(dia))}.</div>` : `
+      ${!list.length ? `<div class="empty">No hay pedidos ${listaSel === 'todas' ? '' : esc(listaSel === 'mayorista' ? 'mayoristas' : 'minoristas') + ' '}para el ${esc(largo(dia))}.</div>` : `
       <div class="cards no-print" style="margin-bottom:18px">
         <div class="card kpi naranja"><span class="ic">📦</span><span class="num">${list.length}</span><span class="lbl">Pedidos del día${nRet ? ' · ' + nRet + ' de retiro' : ''}</span></div>
         <div class="card kpi negro"><span class="ic">🧾</span><span class="num">${com.length}</span><span class="lbl">Productos distintos</span></div>
@@ -363,7 +377,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="solo-print pr-hoja">
           <div class="pr-hoja-h">
             <img src="assets/logo-horizontal-color.svg" alt="Granja del Oeste"/>
-            <div><b>Comanda de producción</b><span>${esc(largo(dia))} · ${list.length} pedidos</span></div>
+            <div><b>Comanda de producción · ${esc(LISTA_T[listaSel])}</b><span>${esc(largo(dia))} · ${list.length} pedidos</span></div>
           </div>
         </div>
         <div class="panel">
@@ -401,7 +415,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="solo-print pr-hoja">
           <div class="pr-hoja-h">
             <img src="assets/logo-horizontal-color.svg" alt="Granja del Oeste"/>
-            <div><b>Pedidos para armar</b><span>${esc(largo(dia))} · ${list.length} pedidos · anotá el peso real al lado de cada producto</span></div>
+            <div><b>Pedidos para armar · ${esc(LISTA_T[listaSel])}</b><span>${esc(largo(dia))} · ${list.length} pedidos · anotá el peso real al lado de cada producto</span></div>
           </div>
         </div>
         <div class="panel-h no-print" style="background:#fff;border:1px solid var(--gris-bd);border-radius:var(--radio) var(--radio) 0 0">
@@ -419,6 +433,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#pr-man').onclick = () => { dia = masDias(1); repintar(); };
     c.querySelector('#pr-cerr').onchange = (e) => { incluirCerrados = e.target.checked; repintar(); };
     c.querySelector('#pr-una').onchange = (e) => { unoPorHoja = e.target.checked; repintar(); };
+    c.querySelectorAll('[data-lista]').forEach((b) => b.onclick = () => { listaSel = b.dataset.lista; repintar(); });
     /* Qué se imprime: la comanda, los pedidos para armar o todo. Se marca en el
        <body> y el CSS de impresión esconde lo que no va. */
     c.querySelectorAll('[data-imp]').forEach((b) => b.onclick = () => {
@@ -470,7 +485,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         filas.push((i === 0 ? base : ['', '', '', '', '', '']).concat([x.prep, x.cant + ' ' + unidadTxt(x.unidad, x.cant), i === 0 ? r.pedidos : '', i === 0 ? notas : '']));
       });
     });
-    csv('gdo-comanda-' + dia + '.csv', filas);
+    csv('gdo-comanda-' + listaSel + '-' + dia + '.csv', filas);
   }
 
   function bajarDetalle(list) {
@@ -494,6 +509,6 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         ], cola));
       });
     });
-    csv('gdo-pedidos-detalle-' + dia + '.csv', filas);
+    csv('gdo-pedidos-' + listaSel + '-' + dia + '.csv', filas);
   }
 })();
