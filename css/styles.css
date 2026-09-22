@@ -647,7 +647,8 @@ textarea{resize:vertical;min-height:74px}
   body[data-pr="com"] .pr-salto,
   body[data-pr="ped"] .pr-salto{break-before:auto;page-break-before:auto}
   .pr-cat td{background:#e6e6e6 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;color:#000 !important}
-  .pr-ped{break-inside:avoid;page-break-inside:avoid;border:1.5px solid #000;box-shadow:none;margin:0 0 12px}
+  .pr-ped{break-inside:avoid;page-break-inside:avoid;border:1.5px solid #000;box-shadow:none;margin:0 0 8px}
+  .pr-arm,.pr-ped-h{break-inside:avoid;page-break-inside:avoid}
   .pr-una .pr-ped{break-after:page;page-break-after:always;border:0}
   .pr-una .pr-ped:last-child{break-after:auto;page-break-after:auto}
   .pr-arm .pr-bal{width:34%}
@@ -734,3 +735,10 @@ textarea{resize:vertical;min-height:74px}
 .pr-pdf .pr-peds{margin-top:0;gap:10px}
 .pr-pdf .pr-ped{box-shadow:none;border:1.5px solid #111;border-radius:10px;padding:10px 12px}
 .pr-pdf .pr-hoja-h img{height:40px}
+
+/* Línea de corte entre pedidos (las hojas se recortan y se pegan en cada pedido) */
+.pr-corte{display:flex;align-items:center;gap:8px;color:#9aa0a6;font-size:11px;margin:0;break-inside:avoid}
+.pr-corte::before,.pr-corte::after{content:'';flex:1;border-top:1.2px dashed #9aa0a6}
+.pr-pdf .pr-corte{margin:6px 0}
+/* Un pedido NUNCA se parte entre dos hojas: si no entra, pasa entero a la siguiente. */
+.pr-pdf .pr-ped,.pr-pdf .pr-arm,.pr-pdf .pr-ped-h{break-inside:avoid;page-break-inside:avoid}

@@ -453,7 +453,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <h3>📋 Pedidos para armar</h3>
           <span class="small muted">Uno por uno, con lugar para anotar el peso real de la balanza</span>
         </div>
-        <div class="pr-peds">${list.map((p) => hojaPedido(p, orden)).join('')}</div>
+        <!-- Entre pedido y pedido va una línea de corte: estas hojas se recortan y
+             cada parte se pega en su pedido. -->
+        <div class="pr-peds">${list.map((p) => hojaPedido(p, orden)).join(`<div class="pr-corte"><span>✂</span></div>`)}</div>
       </div>`}`;
 
     const repintar = () => GDO.Views.produccion(c);
@@ -625,13 +627,32 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       holder.className = 'pr-pdf-holder';
       holder.appendChild(cont);
       document.body.appendChild(holder);
+      /* NINGÚN PEDIDO PARTIDO ENTRE DOS HOJAS. Estas hojas se recortan y cada
+         parte se pega en su pedido, así que un pedido cortado al medio no sirve.
+         No lo dejamos librado a la librería: medimos dónde cae cada corte de
+         página y, si un pedido lo cruza, metemos un espacio para empujarlo entero
+         a la hoja siguiente. (Uno más alto que una hoja entera se parte igual: no
+         hay forma de evitarlo.) */
+      const mm = 96 / 25.4;
+      const alturaHoja = (297 - 10 - 12) * mm;      // A4 menos los márgenes de abajo
+      const y0 = cont.getBoundingClientRect().top;
+      cont.querySelectorAll('.pr-ped').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const desde = r.top - y0, hasta = r.bottom - y0;
+        if (r.height > alturaHoja) return;
+        if (Math.floor(desde / alturaHoja) === Math.floor((hasta - 1) / alturaHoja)) return;
+        const falta = (Math.floor(desde / alturaHoja) + 1) * alturaHoja - desde;
+        const sp = document.createElement('div');
+        sp.style.height = Math.ceil(falta) + 'px';
+        el.parentNode.insertBefore(sp, el);
+      });
       return h2p().set({
         margin: [10, 10, 12, 10],
         filename: nombreArchivo(qué === 'com' ? 'comanda' : qué === 'ped' ? 'pedidos' : 'produccion', 'pdf'),
         image: { type: 'jpeg', quality: 0.96 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], before: '.pr-pdf-salto' + (unoPorHoja ? ', .pr-una .pr-ped + .pr-ped' : ''), avoid: ['tr', '.pr-ped', '.pr-ped-h'] },
+        pagebreak: { mode: ['css', 'legacy'], before: '.pr-pdf-salto' + (unoPorHoja ? ', .pr-una .pr-ped + .pr-ped' : ''), avoid: ['tr'] },
       }).from(cont).save().then(() => { holder.remove(); toast('PDF descargado ✓', 'ok'); }, () => { holder.remove(); toast('No se pudo armar el PDF', 'err'); });
     }).catch(() => toast('No se pudo armar el PDF (¿sin internet?)', 'err'));
   }
