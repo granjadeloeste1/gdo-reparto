@@ -193,6 +193,35 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return { total: cant, totUni: uni, frac: env, fk: 0, cant: cant };
   }
   const totalTxt = (x) => nUm(x.total) + ' ' + (x.totUni === 'kg' ? 'kg' : unidadTxt(x.totUni, x.total));
+  /* PRESENTACIONES DE LA LISTA MINORISTA. Ahí cada producto por kilo viene en
+     bolsas fijas, que son las filas de la hoja: alitas en bolsas de 3 kg, la
+     milanesa de suprema en 1, 2 y 5 kg. El pedido guarda el total (alitas 6 kg) y
+     con esas bolsas se sabe la fracción: 3 kg × 2. Si hay varias bolsas posibles
+     se usan las más grandes que entran (7 kg = 5 kg × 1 + 2 kg × 1); lo que no
+     llega a una bolsa queda suelto. Solo para pedidos MINORISTAS: en la mayorista
+     los "5 / 60 / 100 kg" son escalones de precio, no bolsas. */
+  function bolsasMinorista(it) {
+    if (!GDO.Lista || !GDO.Lista.opcionPara) return [];
+    const op = GDO.Lista.opcionPara(String(it.producto || it.nombre || ''), 'minorista');
+    if (!op || op.lista !== 'minorista' || op.unidad !== 'kg' || !op.tiers) return [];
+    return op.tiers.map((t) => Number(t.min) || 0).filter((m) => m > 0)
+      .filter((m, i, a) => a.indexOf(m) === i).sort((a, b) => b - a);
+  }
+  // Una o más "partes" (renglones) por ítem del pedido.
+  function partesLista(it, p) {
+    const x = partesDe(it);
+    if (!(p && p.lista === 'minorista') || x.totUni !== 'kg' || x.fk || x.cant != null) return [x];
+    const bolsas = bolsasMinorista(it);
+    if (!bolsas.length) return [x];
+    let resto = x.total;
+    const out = [];
+    bolsas.forEach((m) => {
+      const n = Math.floor(resto / m + 1e-9);
+      if (n > 0) { out.push({ total: r2(n * m), totUni: 'kg', frac: nUm(m) + ' kg', fk: m, cant: n }); resto = r2(resto - n * m); }
+    });
+    if (resto > 0.001) out.push({ total: resto, totUni: 'kg', frac: '', fk: 0, cant: null });
+    return out.length ? out : [x];
+  }
   const fracTxt = (x) => x.frac || '—';
   const cantNum = (x) => (x.cant == null ? '—' : nUm(x.cant));
 
@@ -203,17 +232,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const nom = nomProd(it);
         if (!nom) return;
         const uni = uniDe(it);
-        const x = partesDe(it);
+        const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
         // Una fila por producto Y por fracción: 5 bolsas de 2 kg y 3 de 1 kg son
         // dos cosas distintas para preparar, aunque sea el mismo producto.
-        const clave = (GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase()) + '|' + x.totUni + '|' + x.fk + '|' + x.frac;
-        const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
-        const r = g[clave] || (g[clave] = { nombre: nom, cat: categoriaDe(it), total: 0, totUni: x.totUni, frac: x.frac, fk: x.fk, cant: 0, sinCant: false, kg: 0, pedidos: 0, preps: {}, notas: [] });
-        r.nombre = nom;                 // nos quedamos con la escritura más nueva
-        r.total += x.total;
-        if (x.cant == null) r.sinCant = true; else r.cant += x.cant;
-        r.kg += kgDe(it);
-        r.pedidos++;
+        let r = null;
+        partesLista(it, p).forEach((x, i) => {
+          const clave = (GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase()) + '|' + x.totUni + '|' + x.fk + '|' + x.frac;
+          const f = g[clave] || (g[clave] = { nombre: nom, cat: categoriaDe(it), total: 0, totUni: x.totUni, frac: x.frac, fk: x.fk, cant: 0, sinCant: false, kg: 0, pedidos: 0, preps: {}, notas: [] });
+          f.nombre = nom;                 // nos quedamos con la escritura más nueva
+          f.total += x.total;
+          if (x.cant == null) f.sinCant = true; else f.cant += x.cant;
+          f.pedidos++;
+          if (i === 0) { r = f; f.kg += kgDe(it); }   // cortes y notas van en la primera fila
+        });
         /* CÓMO PREPARARLO. Es lo que convierte la comanda en una orden de
            trabajo: no alcanza con "10 kg de suprema", hace falta saber que 3 van
            fileteados y 4 enteros. Se suma por preparación Y por unidad, porque
@@ -295,15 +326,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               const it = x.it;
               const prep = String(it.preparacion || '').trim();
               const nota = String(it.nota || '').trim();
-              const pt = partesDe(it);
-              return `<tr>
+              return partesLista(it, p).map((pt, i) => `<tr>
                 <td class="pr-tick"></td>
-                <td><b>${esc(nomProd(it))}</b>${prep ? '<div class="pr-prep">✂️ ' + esc(prep) + '</div>' : ''}${nota ? '<div class="pr-nota">📝 ' + esc(nota) + '</div>' : ''}</td>
+                <td><b>${esc(nomProd(it))}</b>${i === 0 && prep ? '<div class="pr-prep">✂️ ' + esc(prep) + '</div>' : ''}${i === 0 && nota ? '<div class="pr-nota">📝 ' + esc(nota) + '</div>' : ''}</td>
                 <td class="pr-cant">${esc(totalTxt(pt))}</td>
                 <td class="pr-frac">${esc(fracTxt(pt))}</td>
                 <td class="pr-cant">${esc(cantNum(pt))}</td>
                 <td class="pr-bal"><span class="pr-linea"></span> kg</td>
-              </tr>`;
+              </tr>`).join('');
             }).join('')}`).join('')}</tbody></table>`
           : '<div class="muted small" style="padding:8px 0">Sin detalle de productos</div>'}
         ${p.especificaciones ? '<div class="pr-esp">📝 ' + esc(p.especificaciones) + '</div>' : ''}
@@ -538,10 +568,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         porCategoria(items, (x) => x.cat).forEach((g) => {
           f2.push({ v: [g.cat, '', '', '', '', ''], estilo: st.cat, unir: true });
           g.filas.forEach((x) => {
-            const it = x.it, pt = partesDe(it);
+            const it = x.it;
             const acl = [String(it.preparacion || '').trim(), String(it.nota || '').trim()].filter(Boolean).join(' — ');
-            f2.push({ v: [nomProd(it), totalTxt(pt), fracTxt(pt), pt.cant == null ? '—' : pt.cant, '', acl],
-              estilos: [st.txt, st.num, st.num, st.num, st.peso, st.txt] });
+            partesLista(it, p).forEach((pt, i) => {
+              f2.push({ v: [nomProd(it), totalTxt(pt), fracTxt(pt), pt.cant == null ? '—' : pt.cant, '', i === 0 ? acl : ''],
+                estilos: [st.txt, st.num, st.num, st.num, st.peso, st.txt] });
+            });
           });
         });
         f2.push(vacia);

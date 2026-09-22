@@ -21,7 +21,9 @@
 window.GDO = window.GDO || {};
 (function () {
   const API = 'https://script.google.com/macros/s/AKfycbwH6JW35BRYcBk958OEr4sEvfVIfzgqzQeGwvz63xZYgukwxik8EsIego4d9O456bHURg/exec';
-  const CACHE = 'gdo_lista_cache_v1';
+  // v2 (2026-09-22): se corrigieron presentaciones en la hoja (milanesa 1/2/5 kg, noisette GRANGYS):
+  // cambiar la clave obliga a todos los dispositivos a bajar la lista de nuevo.
+  const CACHE = 'gdo_lista_cache_v2';
   const MAX_EDAD = 12 * 3600 * 1000;          // 12 h: la lista cambia por día, no por minuto
 
   // Unidades reconocidas en los encabezados de la planilla. Mismo orden y mismos
