@@ -52,6 +52,42 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   // Estado de la pantalla (se conserva mientras no se cambie de sección).
   let dia = hoyISO();
   let incluirCerrados = false;   // sumar también lo ya entregado/retirado
+  let unoPorHoja = false;        // al imprimir los pedidos para armar: uno por hoja
+  let _listasPedidas = false;    // las listas de precios se piden una vez por sesión
+
+  /* ═══════ CATEGORÍAS ═══════
+     La comanda y la hoja de armado van separadas por categoría, EN EL MISMO ORDEN
+     que la lista de precios (Cajones de pollo, Trozado, Elaborados…): así el que
+     prepara recorre la cámara igual que la lista. La categoría sale de buscar el
+     producto en la lista mayorista (y si no está, en la minorista). Lo que no está
+     en ninguna (un producto cargado a mano con otro nombre) va a "OTROS". */
+  const OTROS = 'OTROS PRODUCTOS';
+  const sinForma = (s) => String(s || '').split(' · ')[0].trim();
+  const sinParen = (s) => String(s || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+  function opcionDe(nom) {
+    if (!GDO.Lista || !GDO.Lista.opcionPara) return null;
+    return GDO.Lista.opcionPara(nom, 'mayorista')
+      || GDO.Lista.opcionPara(sinForma(nom), 'mayorista')
+      || GDO.Lista.opcionPara(sinParen(sinForma(nom)), 'mayorista');
+  }
+  // Orden de las categorías: el de la lista mayorista, después las de la minorista.
+  function ordenCategorias() {
+    const orden = {};
+    let i = 0;
+    const may = (GDO.Lista && GDO.Lista.opciones) ? GDO.Lista.opciones('mayorista') : [];
+    const min = (GDO.Lista && GDO.Lista.opciones) ? GDO.Lista.opciones('minorista') : [];
+    may.forEach((o) => { const c = o.seccion || OTROS; if (orden[c] == null) orden[c] = i++; });
+    min.forEach((o) => { const c = String(o.seccion || '').split(' · ')[0] || OTROS; if (orden[c] == null) orden[c] = 1000 + i++; });
+    return orden;
+  }
+  function categoriaDe(it) {
+    const op = opcionDe(nomDe(it));
+    if (!op) return OTROS;
+    const s = String(op.seccion || '').trim();
+    // En la minorista la sección es "Categoría · Subcategoría": va la categoría.
+    return (op.lista === 'minorista' ? s.split(' · ')[0] : s) || OTROS;
+  }
+  const posCat = (orden, cat) => (cat === OTROS ? 99999 : (orden[cat] != null ? orden[cat] : 50000));
 
   /* Pedidos de ese día. Se van los "no entregados" (el cliente no se los llevó)
      y, salvo que se pida, también los ya cerrados: si la comanda se imprime a
@@ -86,7 +122,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const uni = uniDe(it);
         const clave = GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase();
         const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
-        const r = g[clave] || (g[clave] = { nombre: nom, unidades: {}, kg: 0, pedidos: 0, preps: {}, notas: [] });
+        const r = g[clave] || (g[clave] = { nombre: nom, cat: categoriaDe(it), unidades: {}, kg: 0, pedidos: 0, preps: {}, notas: [] });
         r.nombre = nom;                 // nos quedamos con la escritura más nueva
         r.unidades[uni] = (r.unidades[uni] || 0) + cant;
         r.kg += kgDe(it);
@@ -107,7 +143,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         if (nota) r.notas.push({ texto: nota, cant: cant, unidad: uni });
       });
     });
-    return Object.keys(g).map((k) => g[k]).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    const orden = ordenCategorias();
+    return Object.keys(g).map((k) => g[k]).sort((a, b) =>
+      (posCat(orden, a.cat) - posCat(orden, b.cat)) || a.nombre.localeCompare(b.nombre, 'es'));
+  }
+  // Filas ya ordenadas → grupos { cat, filas } en el mismo orden.
+  function porCategoria(filas, catDe) {
+    const out = [];
+    filas.forEach((f) => {
+      const cat = catDe(f);
+      const ult = out[out.length - 1];
+      if (ult && ult.cat === cat) ult.filas.push(f); else out.push({ cat: cat, filas: [f] });
+    });
+    return out;
   }
 
   // "cajón"→"cajones", "caja"→"cajas", "kg"→"kg". El plural sale de la misma
@@ -152,6 +200,60 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     ).join(' · ') + '</div>';
   }
 
+  /* Cantidad de un renglón, SIEMPRE con su unidad y su presentación: "5 kg",
+     "2 cajones", "3 paquetes". No es lo mismo 5 paquetes de 1 kg que 1 de 5 kg:
+     la presentación viaja en el nombre del producto (va en la columna de al lado)
+     y la unidad acá. Si además se sabe el peso, va aparte. */
+  const cantItem = (it) => {
+    const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
+    const uni = uniDe(it);
+    return nUm(cant) + ' ' + unidadTxt(uni, cant);
+  };
+  const kgItem = (it) => {
+    const uni = uniDe(it);
+    const kg = uni.toLowerCase() === 'kg' ? 0 : kgDe(it);
+    return kg ? '≈ ' + nUm(kg) + ' kg' : '';
+  };
+
+  /* Hoja de ARMADO de un pedido: lo que lleva, por categoría, con un espacio a la
+     derecha de cada producto para anotar a mano el peso REAL de la balanza (lo
+     que se pidió en kilos casi nunca pesa exacto: 5 kg de suprema son 5,12). */
+  function hojaPedido(p, orden) {
+    const items = (p.items || []).map((it, i) => ({ it: it, i: i, cat: categoriaDe(it) }))
+      .sort((a, b) => (posCat(orden, a.cat) - posCat(orden, b.cat)) || (a.i - b.i));
+    const grupos = porCategoria(items, (x) => x.cat);
+    const donde = esRetiro(p)
+      ? '🏪 <b>Retira en el local</b>' + (p.ventana ? ' · ' + esc(p.ventana) : ' · horario a coordinar')
+      : '🚚 <b>Envío</b> · ' + esc(p.direccion || '') + (p.localidad ? ', ' + esc(p.localidad) : '') + (p.entrecalles ? ' <span class="muted">(' + esc(p.entrecalles) + ')</span>' : '') + (p.ventana ? ' · ' + esc(p.ventana) : '');
+    return `
+      <div class="pr-ped">
+        <div class="pr-ped-h">
+          <div class="pr-ped-cli"><b>${esc(p.cliente)}</b>${vendedorChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}
+            ${p.telefono ? '<span class="pr-ped-tel">📞 ' + esc(p.telefono) + '</span>' : ''}</div>
+          <div class="pr-ped-donde">${donde}</div>
+        </div>
+        ${items.length ? `<table class="pr-arm"><thead><tr>
+            <th style="width:26px"></th><th style="width:118px">Cantidad</th><th>Producto</th><th class="pr-bal-h">Peso real (balanza)</th>
+          </tr></thead><tbody>${grupos.map((g) => `
+            <tr class="pr-cat"><td colspan="4">${esc(g.cat)}</td></tr>
+            ${g.filas.map((x) => {
+              const it = x.it;
+              const prep = String(it.preparacion || '').trim();
+              const nota = String(it.nota || '').trim();
+              const kg = kgItem(it);
+              return `<tr>
+                <td class="pr-tick"></td>
+                <td class="pr-cant">${esc(cantItem(it))}${kg ? '<div class="pr-kg">' + esc(kg) + '</div>' : ''}</td>
+                <td><b>${esc(nomDe(it))}</b>${prep ? '<div class="pr-prep">✂️ ' + esc(prep) + '</div>' : ''}${nota ? '<div class="pr-nota">📝 ' + esc(nota) + '</div>' : ''}</td>
+                <td class="pr-bal"><span class="pr-linea"></span> kg</td>
+              </tr>`;
+            }).join('')}`).join('')}</tbody></table>`
+          : '<div class="muted small" style="padding:8px 0">Sin detalle de productos</div>'}
+        ${p.especificaciones ? '<div class="pr-esp">📝 ' + esc(p.especificaciones) + '</div>' : ''}
+        <div class="pr-firma"><span>Armó: <span class="pr-linea"></span></span><span>Bultos: <span class="pr-linea corta"></span></span><span>Controló: <span class="pr-linea"></span></span></div>
+      </div>`;
+  }
+
   /* ─────────────────────────── pantalla ─────────────────────────── */
   GDO.Views.produccion = function (c) {
     // Solo administración, igual que Métricas: acá está todo lo que se vende en
@@ -160,8 +262,18 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       c.innerHTML = '<div class="empty">Esta sección es solo para la administración.</div>';
       return;
     }
+    /* Las listas de precios dicen a qué CATEGORÍA pertenece cada producto. Se piden
+       una vez por sesión y, cuando llegan, se vuelve a pintar ordenado. */
+    if (GDO.Lista && !_listasPedidas) {
+      _listasPedidas = true;
+      Promise.all([GDO.Lista.cargar('mayorista'), GDO.Lista.cargar('minorista')])
+        .then(() => { if (document.body.contains(c)) GDO.Views.produccion(c); })
+        .catch(() => {});
+    }
     const list = pedidosDelDia();
     const com = consolidar(list);
+    const orden = ordenCategorias();
+    const gruposCom = porCategoria(com, (r) => r.cat);
     const nRet = list.filter((p) => esRetiro(p)).length;
     const kgTot = com.reduce((a, r) => a + r.kg, 0);
     const total = list.reduce((a, p) => a + (GDO.CRM ? GDO.CRM.montoDe(p) : 0), 0);
@@ -180,14 +292,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="spacer"></div>
         <button class="btn btn-ghost" id="pr-xls-com">⬇ Comanda (Excel)</button>
         <button class="btn btn-ghost" id="pr-xls-det">⬇ Detalle (Excel)</button>
-        <button class="btn btn-primary" id="pr-print">🖨 Imprimir</button>
       </div>
-
-      <div class="solo-print pr-hoja">
-        <div class="pr-hoja-h">
-          <img src="assets/logo-horizontal-color.svg" alt="Granja del Oeste"/>
-          <div><b>Comanda de producción</b><span>${esc(largo(dia))}</span></div>
-        </div>
+      <div class="toolbar no-print pr-imprimir">
+        <b>🖨 Imprimir:</b>
+        <button class="btn btn-primary btn-sm" data-imp="com">Comanda (lo que hay que preparar)</button>
+        <button class="btn btn-primary btn-sm" data-imp="ped">Pedidos para armar</button>
+        <button class="btn btn-ghost btn-sm" data-imp="todo">Todo</button>
+        <label class="pr-check"><input type="checkbox" id="pr-una" ${unoPorHoja ? 'checked' : ''}/> Un pedido por hoja</label>
       </div>
 
       ${!list.length ? `<div class="empty">No hay pedidos para el ${esc(largo(dia))}.</div>` : `
@@ -198,60 +309,55 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="card kpi negro"><span class="ic">💰</span><span class="num">${total ? fmtM(total) : '—'}</span><span class="lbl">Valor del día</span></div>
       </div>
 
-      <div class="panel">
-        <div class="panel-h">
-          <h3>🍗 Hay que preparar</h3>
-          <span class="small muted no-print">Sumado entre los ${list.length} pedidos del día · orden alfabético</span>
+      <div class="pr-bloque-com">
+        <div class="solo-print pr-hoja">
+          <div class="pr-hoja-h">
+            <img src="assets/logo-horizontal-color.svg" alt="Granja del Oeste"/>
+            <div><b>Comanda de producción</b><span>${esc(largo(dia))} · ${list.length} pedidos</span></div>
+          </div>
         </div>
-        <div class="panel-b flush">
-          <table class="pr-com"><thead><tr>
-            <th style="width:34px"></th><th>Producto</th><th>Cantidad</th><th>Kg</th><th class="no-print">En pedidos</th>
-          </tr></thead><tbody>${com.map((r) => `
-            <tr>
-              <td class="pr-tick"></td>
-              <td>
-                <b>${esc(r.nombre)}</b>
-                ${prepsHTML(r)}
-                ${notasHTML(r)}
-              </td>
-              <td class="pr-cant">${esc(cantTxt(r))}</td>
-              <td>${r.kg ? nUm(r.kg) + ' kg' : '<span class="muted">—</span>'}</td>
-              <td class="small muted no-print">${r.pedidos}</td>
-            </tr>`).join('')}</tbody></table>
-          <div class="help" style="padding:10px 18px;line-height:1.6">
-            Las cantidades se suman <b>por unidad</b>: cajones, kilos y unidades no se mezclan
-            en un solo número. Si un producto se pidió de las dos formas, la fila muestra las dos
-            (“3 cajones + 12 kg”). <b>Kg</b> es el peso que informa el pedido, cuando lo trae.
+        <div class="panel">
+          <div class="panel-h">
+            <h3>🍗 Hay que preparar</h3>
+            <span class="small muted no-print">Sumado entre los ${list.length} pedidos del día · por categoría, como la lista de precios</span>
+          </div>
+          <div class="panel-b flush">
+            <table class="pr-com"><thead><tr>
+              <th style="width:34px"></th><th>Producto</th><th>Cantidad</th><th>Kg</th><th class="no-print">En pedidos</th>
+            </tr></thead><tbody>${gruposCom.map((g) => `
+              <tr class="pr-cat"><td colspan="5">${esc(g.cat)}</td></tr>
+              ${g.filas.map((r) => `
+              <tr>
+                <td class="pr-tick"></td>
+                <td>
+                  <b>${esc(r.nombre)}</b>
+                  ${prepsHTML(r)}
+                  ${notasHTML(r)}
+                </td>
+                <td class="pr-cant">${esc(cantTxt(r))}</td>
+                <td>${r.kg ? nUm(r.kg) + ' kg' : '<span class="muted">—</span>'}</td>
+                <td class="small muted no-print">${r.pedidos}</td>
+              </tr>`).join('')}`).join('')}</tbody></table>
+            <div class="help no-print" style="padding:10px 18px;line-height:1.6">
+              Las cantidades se suman <b>por unidad y por presentación</b>: cajones, kilos y paquetes no se mezclan
+              en un solo número, y cada presentación del producto es su propia fila. <b>Kg</b> es el peso que informa el pedido, cuando lo trae.
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="panel pr-salto">
-        <div class="panel-h">
-          <h3>📋 Detalle por pedido</h3>
-          <span class="small muted no-print">Para armar cada pedido cuando la mercadería está lista</span>
+      <div class="pr-bloque-ped pr-salto${unoPorHoja ? ' pr-una' : ''}">
+        <div class="solo-print pr-hoja">
+          <div class="pr-hoja-h">
+            <img src="assets/logo-horizontal-color.svg" alt="Granja del Oeste"/>
+            <div><b>Pedidos para armar</b><span>${esc(largo(dia))} · ${list.length} pedidos · anotá el peso real al lado de cada producto</span></div>
+          </div>
         </div>
-        <div class="panel-b flush">
-          <table class="pr-det"><thead><tr>
-            <th style="width:34px"></th><th>Cliente</th><th>Cómo / cuándo</th><th>Qué lleva</th>
-          </tr></thead><tbody>${list.map((p) => `
-            <tr>
-              <td class="pr-tick"></td>
-              <td><b>${esc(p.cliente)}</b>${vendedorChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★</span>' : ''}
-                ${p.telefono ? '<div class="small muted">' + esc(p.telefono) + '</div>' : ''}</td>
-              <td class="small">
-                ${esRetiro(p)
-                  ? '🏪 <b>Retira en el local</b>' + (p.ventana ? '<div>' + esc(p.ventana) + '</div>' : '<div class="muted">horario a coordinar</div>')
-                  : '🚚 <b>Envío</b><div>' + esc(p.direccion || '') + '</div>' + (p.localidad ? '<div class="muted">' + esc(p.localidad) + '</div>' : '') + (p.ventana ? '<div>' + esc(p.ventana) + '</div>' : '')}
-              </td>
-              <td class="small">
-                ${(p.items || []).length
-                  ? '<ul class="pr-items">' + (p.items || []).map((it) => '<li>' + esc(itemTxt(it)) + (it.nota && String(it.nota).trim() ? ' <i>— ' + esc(String(it.nota).trim()) + '</i>' : '') + '</li>').join('') + '</ul>'
-                  : '<span class="muted">Sin detalle</span>'}
-                ${p.especificaciones ? '<div class="pr-esp">📝 ' + esc(p.especificaciones) + '</div>' : ''}
-              </td>
-            </tr>`).join('')}</tbody></table>
+        <div class="panel-h no-print" style="background:#fff;border:1px solid var(--gris-bd);border-radius:var(--radio) var(--radio) 0 0">
+          <h3>📋 Pedidos para armar</h3>
+          <span class="small muted">Uno por uno, con lugar para anotar el peso real de la balanza</span>
         </div>
+        <div class="pr-peds">${list.map((p) => hojaPedido(p, orden)).join('')}</div>
       </div>`}`;
 
     const repintar = () => GDO.Views.produccion(c);
@@ -261,10 +367,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#pr-hoy').onclick = () => { dia = hoyISO(); repintar(); };
     c.querySelector('#pr-man').onclick = () => { dia = masDias(1); repintar(); };
     c.querySelector('#pr-cerr').onchange = (e) => { incluirCerrados = e.target.checked; repintar(); };
-    c.querySelector('#pr-print').onclick = () => {
+    c.querySelector('#pr-una').onchange = (e) => { unoPorHoja = e.target.checked; repintar(); };
+    /* Qué se imprime: la comanda, los pedidos para armar o todo. Se marca en el
+       <body> y el CSS de impresión esconde lo que no va. */
+    c.querySelectorAll('[data-imp]').forEach((b) => b.onclick = () => {
       if (!list.length) { toast('No hay pedidos para imprimir en ese día', 'err'); return; }
+      document.body.setAttribute('data-pr', b.dataset.imp);
+      const limpiar = () => { document.body.removeAttribute('data-pr'); window.removeEventListener('afterprint', limpiar); };
+      window.addEventListener('afterprint', limpiar);
       window.print();
-    };
+    });
     c.querySelector('#pr-xls-com').onclick = () => bajarComanda(com, list);
     c.querySelector('#pr-xls-det').onclick = () => bajarDetalle(list);
   };
@@ -294,7 +406,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   function bajarComanda(com, list) {
     if (!com.length) { toast('No hay nada para producir ese día', 'err'); return; }
     const filas = [['COMANDA DE PRODUCCIÓN — ' + largo(dia)], ['Sumado entre ' + list.length + ' pedidos'], [],
-      ['Producto', 'Preparación', 'Cantidad', 'Unidad', 'Kg', 'En pedidos', 'Aclaraciones']];
+      ['Categoría', 'Producto', 'Preparación', 'Cantidad', 'Unidad', 'Kg', 'En pedidos', 'Aclaraciones']];
     /* Una fila por producto Y unidad; y si el producto se pide cortado de varias
        formas, una fila POR PREPARACIÓN. Así en Excel cada cantidad es un número
        suelto en su celda y se puede filtrar por corte. */
@@ -303,13 +415,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const preps = Object.keys(r.preps).map((k) => r.preps[k]);
       if (preps.length) {
         preps.sort((a, b) => b.cant - a.cant).forEach((x, i) => {
-          filas.push([r.nombre, x.prep, x.cant, unidadTxt(x.unidad, x.cant),
+          filas.push([r.cat, r.nombre, x.prep, x.cant, unidadTxt(x.unidad, x.cant),
             i === 0 ? (r.kg || '') : '', i === 0 ? r.pedidos : '', i === 0 ? notas : '']);
         });
         return;
       }
       Object.keys(r.unidades).forEach((u, i) => {
-        filas.push([r.nombre, '', r.unidades[u], unidadTxt(u, r.unidades[u]),
+        filas.push([r.cat, r.nombre, '', r.unidades[u], unidadTxt(u, r.unidades[u]),
           i === 0 ? (r.kg || '') : '', i === 0 ? r.pedidos : '', i === 0 ? notas : '']);
       });
     });
@@ -321,19 +433,20 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Una fila POR PRODUCTO (no por pedido): así en Excel se puede filtrar,
     // ordenar y hacer tabla dinámica sin desarmar nada a mano.
     const filas = [['DETALLE DE PEDIDOS — ' + largo(dia)], [],
-      ['Cliente', 'Teléfono', 'Modalidad', 'Horario', 'Dirección', 'Localidad', 'Producto', 'Preparación', 'Cantidad', 'Unidad', 'Kg', 'Aclaración del producto', 'Comentarios del pedido', 'Estado']];
+      ['Cliente', 'Teléfono', 'Modalidad', 'Horario', 'Dirección', 'Localidad', 'Categoría', 'Producto', 'Preparación', 'Cantidad', 'Unidad', 'Kg', 'Peso real (balanza)', 'Aclaración del producto', 'Comentarios del pedido', 'Estado']];
     list.forEach((p) => {
       const base = [p.cliente || '', p.telefono || '', esRetiro(p) ? 'Retiro en sucursal' : 'Envío a domicilio',
         p.ventana || 'A coordinar', esRetiro(p) ? '' : (p.direccion || ''), p.localidad || ''];
       const cola = [p.especificaciones || '', esRetiro(p) && p.estado === 'entregado' ? 'retirado' : (p.estado || '')];
-      if (!(p.items || []).length) { filas.push(base.concat(['(sin detalle)', '', '', '', '', ''], cola)); return; }
+      if (!(p.items || []).length) { filas.push(base.concat(['', '(sin detalle)', '', '', '', '', '', ''], cola)); return; }
       (p.items || []).forEach((it) => {
         filas.push(base.concat([
+          categoriaDe(it),
           nomDe(it),
           String(it.preparacion || '').trim(),
           (it.cantidad != null ? it.cantidad : it.cant) || 0,
           unidadTxt(uniDe(it), Number(it.cantidad != null ? it.cantidad : it.cant) || 0),
-          kgDe(it) || '', (it.nota || '').toString().trim(),
+          kgDe(it) || '', '', (it.nota || '').toString().trim(),
         ], cola));
       });
     });

@@ -641,7 +641,40 @@ textarea{resize:vertical;min-height:74px}
   tr{break-inside:avoid;page-break-inside:avoid}
   .pr-salto{break-before:page;page-break-before:always}
   .chip{border:1px solid #999}
+  /* Producción: se imprime la comanda, los pedidos para armar o todo (data-pr en <body>). */
+  body[data-pr="com"] .pr-bloque-ped,
+  body[data-pr="ped"] .pr-bloque-com{display:none !important}
+  body[data-pr="com"] .pr-salto,
+  body[data-pr="ped"] .pr-salto{break-before:auto;page-break-before:auto}
+  .pr-cat td{background:#e6e6e6 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;color:#000 !important}
+  .pr-ped{break-inside:avoid;page-break-inside:avoid;border:1.5px solid #000;box-shadow:none;margin:0 0 12px}
+  .pr-una .pr-ped{break-after:page;page-break-after:always;border:0}
+  .pr-una .pr-ped:last-child{break-after:auto;page-break-after:auto}
+  .pr-arm .pr-bal{width:34%}
 }
+
+/* ---------- Producción: categorías y hoja de armado por pedido ---------- */
+.pr-cat td{background:#fff1e3;color:#8a4a00;font-weight:800;font-size:12px;letter-spacing:.5px;text-transform:uppercase;padding:6px 10px}
+.pr-imprimir{align-items:center;gap:8px;flex-wrap:wrap}
+.pr-peds{display:flex;flex-direction:column;gap:14px;margin-top:12px}
+.pr-ped{background:#fff;border:1px solid var(--gris-bd);border-radius:var(--radio);box-shadow:var(--sombra);padding:12px 14px}
+.pr-ped-h{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:6px}
+.pr-ped-cli b{font-size:16px;font-family:var(--slab)}
+.pr-ped-tel{margin-left:10px;font-size:13px;color:#444;white-space:nowrap}
+.pr-ped-donde{font-size:13px;color:#333}
+.pr-arm{width:100%}
+.pr-arm td{vertical-align:top}
+.pr-arm .pr-cant{font-weight:800;font-size:15px;white-space:nowrap}
+.pr-kg{font-size:11.5px;color:#666;font-weight:600}
+.pr-prep{font-size:12.5px;color:#374151;margin-top:2px}
+.pr-nota{font-size:12.5px;color:#8a5a00;margin-top:2px}
+.pr-bal-h{text-align:left;width:30%}
+.pr-bal{white-space:nowrap;vertical-align:bottom !important;color:#555;font-weight:700}
+.pr-linea{display:inline-block;width:78%;max-width:170px;border-bottom:1.5px solid #333;height:18px;vertical-align:bottom}
+.pr-linea.corta{width:60px}
+.pr-firma{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:10px;font-size:12.5px;color:#444}
+.pr-firma .pr-linea{width:130px}
+.pr-firma .pr-linea.corta{width:60px}
 
 /* Con 7 pestañas (el administrador) el texto necesita achicarse para entrar en
    un celular angosto sin cortarse. El ícono es el que se lee de un vistazo. */
