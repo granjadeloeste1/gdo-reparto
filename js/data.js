@@ -589,6 +589,33 @@ window.GDO = window.GDO || {};
       persist(db); fsSet('pedidos', p);
       return p;
     },
+    /* CERRAR UN PEDIDO A MANO, DESDE EL PANEL (sin chofer ni ruta).
+       Normalmente el pedido lo cierra el chofer desde su celular, o el mostrador
+       si es un retiro. Pero pasa que la entrega se hizo y en el sistema quedó
+       abierta: el chofer no la marcó, o esa semana no hay nadie cargándolo. Con
+       esto el administrador la cierra igual, y queda registrado en el historial
+       que la cargó a mano (con la fecha real de la entrega). Si el pedido estaba
+       en una ruta, también se marca ahí para que la ruta no quede con la parada
+       sin resolver. */
+    cerrarPedidoManual(id, datos) {
+      const p = db.pedidos.find((x) => x.id === id);
+      if (!p) return null;
+      const d = datos || {};
+      const est = d.estado === 'no_entregado' ? 'no_entregado' : 'entregado';
+      p.estado = est;
+      if (d.fecha) p.fechaEntrega = d.fecha;
+      p.historia = p.historia || [];
+      p.historia.push({ ts: Date.now(), est: est,
+        detalle: (est === 'entregado' ? 'Entregado' : 'No entregado') + ' · cargado a mano desde el panel'
+          + (d.detalle ? ' — ' + d.detalle : ''),
+        por: db.session ? db.session.userId : null });
+      if (p.rutaId) {
+        const r = db.rutas.find((x) => x.id === p.rutaId);
+        if (r) { r.progreso = r.progreso || {}; r.progreso[id] = est; fsSet('rutas', r); }
+      }
+      persist(db); fsSet('pedidos', p);
+      return p;
+    },
     // Cambia envío ⇄ retiro. Al pasar a RETIRO se lo saca de cualquier ruta (ya
     // no hay nada que repartir); al pasar a ENVÍO queda pendiente y disponible
     // para el armado de rutas, con la dirección/fecha que se le carguen.

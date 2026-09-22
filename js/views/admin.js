@@ -256,6 +256,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div id="p-bulk" class="toolbar" style="display:none;align-items:center;background:var(--gris-cl);border:1px solid var(--gris-bd);border-radius:10px;padding:8px 12px;margin-bottom:10px">
         <b id="p-bulk-n">0 seleccionados</b>
         <div class="spacer"></div>
+        ${soyVend ? "" : `<button class="btn btn-verde btn-sm" id="p-bulk-ok" title="Ya se entregaron: cerrarlos a mano, sin chofer">✓ Marcar entregados</button>`}
         <button class="btn btn-ghost btn-sm" id="p-bulk-clear">Quitar selección</button>
         <button class="btn btn-rojo btn-sm" id="p-bulk-del">🗑 Eliminar seleccionados</button>
       </div>
@@ -325,6 +326,22 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     c.querySelector('#p-import').onclick = () => importModal(draw);
     c.querySelector('#p-wsp').onclick = () => wspDelDiaModal();
     c.querySelector('#p-bulk-clear').onclick = () => { sel.clear(); draw(); };
+    /* Cierre EN LOTE: la entrega se hizo y quedó abierta en el sistema (una semana
+       sin nadie cargándola, por ejemplo). Cada pedido se cierra con SU fecha de
+       entrega pactada; el que no tenga, con la de hoy. */
+    if (c.querySelector('#p-bulk-ok')) c.querySelector('#p-bulk-ok').onclick = () => {
+      const ids = [...sel].filter((id) => { const p = Store.pedido(id); return p && p.estado !== 'entregado'; });
+      if (!ids.length) { toast('No hay pedidos abiertos entre los seleccionados', 'err'); return; }
+      confirmDlg('Vas a marcar ' + ids.length + ' pedido(s) como ENTREGADOS, con la fecha de entrega que ya tenían (los que no tengan, con la de hoy). Queda registrado que se cargaron a mano. ¿Confirmás?', () => {
+        ids.forEach((id) => {
+          const p = Store.pedido(id);
+          Store.cerrarPedidoManual(id, { estado: 'entregado', fecha: efFechaEntrega(p) || isoHoy() });
+        });
+        sel.clear();
+        toast(ids.length + (ids.length === 1 ? ' pedido cerrado' : ' pedidos cerrados') + ' ✓', 'ok');
+        GDO.App.render();
+      }, 'Marcar entregados', 'btn-verde');
+    };
     c.querySelector('#p-bulk-del').onclick = () => {
       // El vendedor no borra lo que ya está en reparto (ver bloqueadoVend).
       const ids = [...sel].filter((id) => !bloqueadoVend(Store.pedido(id)));
@@ -669,6 +686,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             ${esRetiro(p) && p.estado === 'pendiente' ? `<button class="btn btn-ghost btn-sm" data-retirado="${p.id}" title="Marcar como retirado por el cliente">✓</button>` : ''}
             ${esRetiro(p) ? `<button class="btn btn-ghost btn-sm" data-modo="${p.id}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>` : ''}
             ${(p.estado === 'no_entregado' || p.estado === 'salteado') && Store.rolActivo() !== 'vendedor' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
+            ${!esRetiro(p) && p.estado !== 'entregado' && Store.rolActivo() !== 'vendedor' ? `<button class="btn btn-ghost btn-sm" data-cerrar="${p.id}" title="Ya se entregó: cerrarlo a mano, sin chofer">✓</button>` : ''}
+            ${p.estado === 'entregado' && Store.rolActivo() === 'admin' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Se cerró por error: volver a abrirlo">↩</button>` : ''}
             ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${p.id}" title="Ver comprobante de entrega">🧾</button>` : ''}
             ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
             ${bloqueadoVend(p) ? `<span class="small muted" title="Ya está en reparto: solo el administrador lo puede cambiar">🔒</span>` : `<button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
@@ -699,6 +718,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       }, 'Reabrir');
     });
     box.querySelectorAll('[data-retirado]').forEach((b) => b.onclick = () => retiradoModal(Store.pedido(b.dataset.retirado)));
+    box.querySelectorAll('[data-cerrar]').forEach((b) => b.onclick = () => cerrarManualModal(Store.pedido(b.dataset.cerrar)));
     box.querySelectorAll('[data-modo]').forEach((b) => b.onclick = () => modalidadModal(Store.pedido(b.dataset.modo)));
     box.querySelectorAll('[data-asig]').forEach((b) => b.onclick = () => asignacionModal(Store.pedido(b.dataset.asig)));
     box.querySelectorAll('[data-pod]').forEach((b) => b.onclick = () => podModal(Store.pedido(b.dataset.pod)));
@@ -747,6 +767,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           </td>
         </tr>`).join('')}</tbody></table>`;
     box.querySelectorAll('[data-retirado]').forEach((b) => b.onclick = () => retiradoModal(Store.pedido(b.dataset.retirado)));
+    box.querySelectorAll('[data-cerrar]').forEach((b) => b.onclick = () => cerrarManualModal(Store.pedido(b.dataset.cerrar)));
     box.querySelectorAll('[data-modo]').forEach((b) => b.onclick = () => modalidadModal(Store.pedido(b.dataset.modo)));
     box.querySelectorAll('[data-wpp]').forEach((b) => b.onclick = () => wppModal(Store.pedido(b.dataset.wpp)));
     box.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => pedidoModal(b.dataset.edit, () => GDO.App.render()));
@@ -823,6 +844,51 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   GDO.Views.retiradoModal = retiradoModal;
+
+  /* ---- CERRAR UN PEDIDO A MANO (sin chofer) ----
+     La entrega se hizo pero en el sistema quedó abierta: el chofer no la marcó,
+     o esa semana no hay nadie cargándola. El administrador la cierra desde acá,
+     con la fecha REAL de la entrega, y queda asentado en el historial que se
+     cargó a mano y quién lo hizo. Sirve igual para dar por no entregado. */
+  function cerrarManualModal(p) {
+    if (!p) return;
+    const hoy = isoHoy();
+    const f = efFechaEntrega(p) || hoy;
+    const retiro = esRetiro(p);
+    modal({
+      title: 'Cerrar el pedido a mano — ' + esc(p.cliente), width: 480,
+      bodyHTML: `
+        <div class="note">Para pedidos que <b>ya se resolvieron</b> pero quedaron abiertos en el sistema (el chofer no los marcó, o se entregaron sin cargarlos). No hace falta chofer ni ruta.</div>
+        <div class="form-grid">
+          <div class="field col-2"><label>¿Qué pasó?</label>
+            <div class="modsel" id="cm-est">
+              <button type="button" data-est="entregado" class="on">✓ ${retiro ? 'Lo retiró el cliente' : 'Se entregó'}</button>
+              <button type="button" data-est="no_entregado">✕ No se entregó</button>
+            </div></div>
+          <div class="field"><label>¿Qué día?</label><input type="date" id="cm-fec" value="${esc(f)}" max="${esc(hoy)}"/>
+            <span class="help">La fecha real. Es la que cuenta en Métricas y en la ficha del cliente.</span></div>
+          <div class="field"><label>${retiro ? '¿Quién lo retiró?' : '¿Quién recibió?'} / motivo</label>
+            <input id="cm-det" placeholder="Opcional"/>
+            <span class="help">Queda en el historial del pedido.</span></div>
+        </div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-verde" data-ok>Guardar</button>`,
+      onMount(node, close) {
+        let est = 'entregado';
+        node.querySelectorAll('#cm-est [data-est]').forEach((b) => b.onclick = () => {
+          est = b.dataset.est;
+          node.querySelectorAll('#cm-est [data-est]').forEach((x) => x.classList.toggle('on', x === b));
+          node.querySelector('[data-ok]').className = 'btn ' + (est === 'entregado' ? 'btn-verde' : 'btn-rojo');
+        });
+        node.querySelector('[data-cancel]').onclick = close;
+        node.querySelector('[data-ok]').onclick = () => {
+          Store.cerrarPedidoManual(p.id, { estado: est, fecha: node.querySelector('#cm-fec').value || f, detalle: node.querySelector('#cm-det').value.trim() });
+          toast(est === 'entregado' ? 'Pedido cerrado como entregado ✓' : 'Pedido marcado como no entregado', est === 'entregado' ? 'ok' : '');
+          close(); GDO.App.render();
+        };
+      },
+    });
+  }
+  GDO.Views.cerrarManualModal = cerrarManualModal;
 
   /* ---- Pasar un pedido de RETIRO a ENVÍO (y al revés) ----
      Pasa seguido: el cliente pidió para retirar y después no puede venir, o el
