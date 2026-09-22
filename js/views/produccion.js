@@ -113,6 +113,31 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      UNA fila por producto, pero las cantidades se suman POR UNIDAD: 20 cajones y
      5 kg de pollo no son "25" de nada. Si un producto viene en dos unidades, la
      fila muestra las dos ("2 cajones + 15 kg"), que es lo que hay que preparar. */
+  /* TOTAL · FRACCIÓN · CANTIDAD de un renglón. "Milanesa de pollo: 10 kg en
+     fracciones de 2 kg, 5 unidades" no es lo mismo que "10 kg en una bolsa": el
+     que prepara necesita las tres cosas.
+       - La fracción la dice el pedido si la guardó (`fraccionKg`, y `bultos`),
+         o se deduce del envase (una caja "X 10 KG", un paquete de 2,5 kg).
+       - Lo que se pide por kilo sin fracción (a granel) solo tiene total.
+       - Lo que no tiene peso (un cajón de pollo, una tarta) se cuenta en su
+         unidad: total = cantidad, y la fracción es el envase. */
+  function partesDe(it) {
+    const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
+    const uni = uniDe(it);
+    let fk = Number(it.fraccionKg) || 0;
+    if (uni === 'kg') {
+      if (fk) return { total: cant, totUni: 'kg', frac: nUm(fk) + ' kg', fk: fk, cant: Number(it.bultos) || Math.round(cant / fk * 100) / 100 };
+      return { total: cant, totUni: 'kg', frac: '', fk: 0, cant: null };
+    }
+    if (!fk) { const kg = kgDe(it); if (kg && cant) fk = Math.round(kg / cant * 1000) / 1000; }
+    const env = unidadTxt(uni, 1);
+    if (fk) return { total: Math.round(cant * fk * 100) / 100, totUni: 'kg', frac: env + ' de ' + nUm(fk) + ' kg', fk: fk, cant: cant };
+    return { total: cant, totUni: uni, frac: env, fk: 0, cant: cant };
+  }
+  const totalTxt = (x) => nUm(x.total) + ' ' + (x.totUni === 'kg' ? 'kg' : unidadTxt(x.totUni, x.total));
+  const fracTxt = (x) => x.frac || 'a granel';
+  const cantNum = (x) => (x.cant == null ? '—' : nUm(x.cant));
+
   function consolidar(list) {
     const g = {};
     list.forEach((p) => {
@@ -120,11 +145,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         const nom = nomDe(it);
         if (!nom) return;
         const uni = uniDe(it);
-        const clave = GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase();
+        const x = partesDe(it);
+        // Una fila por producto Y por fracción: 5 bolsas de 2 kg y 3 de 1 kg son
+        // dos cosas distintas para preparar, aunque sea el mismo producto.
+        const clave = (GDO.CRM ? GDO.CRM.prodKey(nom) : nom.toLowerCase()) + '|' + x.totUni + '|' + x.fk + '|' + x.frac;
         const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
-        const r = g[clave] || (g[clave] = { nombre: nom, cat: categoriaDe(it), unidades: {}, kg: 0, pedidos: 0, preps: {}, notas: [] });
+        const r = g[clave] || (g[clave] = { nombre: nom, cat: categoriaDe(it), total: 0, totUni: x.totUni, frac: x.frac, fk: x.fk, cant: 0, sinCant: false, kg: 0, pedidos: 0, preps: {}, notas: [] });
         r.nombre = nom;                 // nos quedamos con la escritura más nueva
-        r.unidades[uni] = (r.unidades[uni] || 0) + cant;
+        r.total += x.total;
+        if (x.cant == null) r.sinCant = true; else r.cant += x.cant;
         r.kg += kgDe(it);
         r.pedidos++;
         /* CÓMO PREPARARLO. Es lo que convierte la comanda en una orden de
@@ -144,8 +173,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       });
     });
     const orden = ordenCategorias();
-    return Object.keys(g).map((k) => g[k]).sort((a, b) =>
-      (posCat(orden, a.cat) - posCat(orden, b.cat)) || a.nombre.localeCompare(b.nombre, 'es'));
+    return Object.keys(g).map((k) => g[k]).map((r) => { if (r.sinCant) r.cant = null; return r; }).sort((a, b) =>
+      (posCat(orden, a.cat) - posCat(orden, b.cat)) || a.nombre.localeCompare(b.nombre, 'es') || (b.fk - a.fk));
   }
   // Filas ya ordenadas → grupos { cat, filas } en el mismo orden.
   function porCategoria(filas, catDe) {
@@ -162,24 +191,6 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   // tabla de unidades que usa la lista de precios.
   const unidadTxt = (uni, cant) => (GDO.Lista ? GDO.Lista.etiqueta(uni, cant)
     : (uni || (Number(cant) === 1 ? 'unidad' : 'unidades')));
-  const cantTxt = (r) => Object.keys(r.unidades)
-    .map((u) => nUm(r.unidades[u]) + ' ' + unidadTxt(u, r.unidades[u]))
-    .join(' + ');
-  /* Un renglón del detalle. La UNIDAD va SIEMPRE escrita: si el pedido se cargó
-     a mano sin unidad, "20" solo no dice si son 20 kilos, 20 cajones o 20 pollos
-     — en producción eso es la diferencia entre preparar bien y preparar mal. Sin
-     unidad cargada asumimos unidades y lo decimos con esa palabra. Si el
-     producto además informa el peso, va entre paréntesis. */
-  const itemTxt = (it) => {
-    const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
-    const uni = uniDe(it);
-    // El peso solo se agrega si la unidad NO es el kilo (si no, se repetiría).
-    const kg = uni.toLowerCase() === 'kg' ? 0 : kgDe(it);
-    const prep = String(it.preparacion || '').trim();
-    return nUm(cant) + ' ' + unidadTxt(uni, cant) + (kg ? ' (' + nUm(kg) + ' kg)' : '')
-      + ' · ' + nomDe(it)
-      + (prep ? ' — ✂️ ' + prep : '');
-  };
 
   /* Desglose de cortes de un producto, ordenado de mayor a menor: es la orden de
      trabajo real. Se muestra siempre que haya al menos una preparación elegida
@@ -200,20 +211,6 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     ).join(' · ') + '</div>';
   }
 
-  /* Cantidad de un renglón, SIEMPRE con su unidad y su presentación: "5 kg",
-     "2 cajones", "3 paquetes". No es lo mismo 5 paquetes de 1 kg que 1 de 5 kg:
-     la presentación viaja en el nombre del producto (va en la columna de al lado)
-     y la unidad acá. Si además se sabe el peso, va aparte. */
-  const cantItem = (it) => {
-    const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
-    const uni = uniDe(it);
-    return nUm(cant) + ' ' + unidadTxt(uni, cant);
-  };
-  const kgItem = (it) => {
-    const uni = uniDe(it);
-    const kg = uni.toLowerCase() === 'kg' ? 0 : kgDe(it);
-    return kg ? '≈ ' + nUm(kg) + ' kg' : '';
-  };
 
   /* Hoja de ARMADO de un pedido: lo que lleva, por categoría, con un espacio a la
      derecha de cada producto para anotar a mano el peso REAL de la balanza (lo
@@ -233,18 +230,20 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="pr-ped-donde">${donde}</div>
         </div>
         ${items.length ? `<table class="pr-arm"><thead><tr>
-            <th style="width:26px"></th><th style="width:118px">Cantidad</th><th>Producto</th><th class="pr-bal-h">Peso real (balanza)</th>
+            <th style="width:26px"></th><th>Producto</th><th>Total</th><th>Fracción</th><th>Cantidad</th><th class="pr-bal-h">Peso real (balanza)</th>
           </tr></thead><tbody>${grupos.map((g) => `
-            <tr class="pr-cat"><td colspan="4">${esc(g.cat)}</td></tr>
+            <tr class="pr-cat"><td colspan="6">${esc(g.cat)}</td></tr>
             ${g.filas.map((x) => {
               const it = x.it;
               const prep = String(it.preparacion || '').trim();
               const nota = String(it.nota || '').trim();
-              const kg = kgItem(it);
+              const pt = partesDe(it);
               return `<tr>
                 <td class="pr-tick"></td>
-                <td class="pr-cant">${esc(cantItem(it))}${kg ? '<div class="pr-kg">' + esc(kg) + '</div>' : ''}</td>
                 <td><b>${esc(nomDe(it))}</b>${prep ? '<div class="pr-prep">✂️ ' + esc(prep) + '</div>' : ''}${nota ? '<div class="pr-nota">📝 ' + esc(nota) + '</div>' : ''}</td>
+                <td class="pr-cant">${esc(totalTxt(pt))}</td>
+                <td class="pr-frac">${esc(fracTxt(pt))}</td>
+                <td class="pr-cant">${esc(cantNum(pt))}</td>
                 <td class="pr-bal"><span class="pr-linea"></span> kg</td>
               </tr>`;
             }).join('')}`).join('')}</tbody></table>`
@@ -323,9 +322,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           </div>
           <div class="panel-b flush">
             <table class="pr-com"><thead><tr>
-              <th style="width:34px"></th><th>Producto</th><th>Cantidad</th><th>Kg</th><th class="no-print">En pedidos</th>
+              <th style="width:34px"></th><th>Producto</th><th>Total</th><th>Fracción</th><th>Cantidad</th><th class="no-print">En pedidos</th>
             </tr></thead><tbody>${gruposCom.map((g) => `
-              <tr class="pr-cat"><td colspan="5">${esc(g.cat)}</td></tr>
+              <tr class="pr-cat"><td colspan="6">${esc(g.cat)}</td></tr>
               ${g.filas.map((r) => `
               <tr>
                 <td class="pr-tick"></td>
@@ -334,8 +333,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
                   ${prepsHTML(r)}
                   ${notasHTML(r)}
                 </td>
-                <td class="pr-cant">${esc(cantTxt(r))}</td>
-                <td>${r.kg ? nUm(r.kg) + ' kg' : '<span class="muted">—</span>'}</td>
+                <td class="pr-cant">${esc(totalTxt(r))}</td>
+                <td class="pr-frac">${esc(fracTxt(r))}</td>
+                <td class="pr-cant">${esc(cantNum(r))}</td>
                 <td class="small muted no-print">${r.pedidos}</td>
               </tr>`).join('')}`).join('')}</tbody></table>
             <div class="help no-print" style="padding:10px 18px;line-height:1.6">
@@ -406,23 +406,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   function bajarComanda(com, list) {
     if (!com.length) { toast('No hay nada para producir ese día', 'err'); return; }
     const filas = [['COMANDA DE PRODUCCIÓN — ' + largo(dia)], ['Sumado entre ' + list.length + ' pedidos'], [],
-      ['Categoría', 'Producto', 'Preparación', 'Cantidad', 'Unidad', 'Kg', 'En pedidos', 'Aclaraciones']];
-    /* Una fila por producto Y unidad; y si el producto se pide cortado de varias
-       formas, una fila POR PREPARACIÓN. Así en Excel cada cantidad es un número
-       suelto en su celda y se puede filtrar por corte. */
+      ['Categoría', 'Producto', 'Total', 'Unidad del total', 'Fracción', 'Cantidad', 'Preparación', 'Cant. de esa preparación', 'En pedidos', 'Aclaraciones']];
+    /* Una fila por producto y fracción; y si el producto se pide cortado de varias
+       formas, una fila más POR PREPARACIÓN. Cada número va suelto en su celda
+       para poder sumar y filtrar en Excel. */
     com.forEach((r) => {
       const notas = r.notas.map((n) => n.texto + ' (' + n.cant + ' ' + unidadTxt(n.unidad, n.cant) + ')').join(' · ');
-      const preps = Object.keys(r.preps).map((k) => r.preps[k]);
-      if (preps.length) {
-        preps.sort((a, b) => b.cant - a.cant).forEach((x, i) => {
-          filas.push([r.cat, r.nombre, x.prep, x.cant, unidadTxt(x.unidad, x.cant),
-            i === 0 ? (r.kg || '') : '', i === 0 ? r.pedidos : '', i === 0 ? notas : '']);
-        });
-        return;
-      }
-      Object.keys(r.unidades).forEach((u, i) => {
-        filas.push([r.cat, r.nombre, '', r.unidades[u], unidadTxt(u, r.unidades[u]),
-          i === 0 ? (r.kg || '') : '', i === 0 ? r.pedidos : '', i === 0 ? notas : '']);
+      const base = [r.cat, r.nombre, r.total, r.totUni === 'kg' ? 'kg' : unidadTxt(r.totUni, r.total), fracTxt(r), r.cant == null ? '' : r.cant];
+      const preps = Object.keys(r.preps).map((k) => r.preps[k]).sort((a, b) => b.cant - a.cant);
+      if (!preps.length) { filas.push(base.concat(['', '', r.pedidos, notas])); return; }
+      preps.forEach((x, i) => {
+        filas.push((i === 0 ? base : ['', '', '', '', '', '']).concat([x.prep, x.cant + ' ' + unidadTxt(x.unidad, x.cant), i === 0 ? r.pedidos : '', i === 0 ? notas : '']));
       });
     });
     csv('gdo-comanda-' + dia + '.csv', filas);
@@ -433,20 +427,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Una fila POR PRODUCTO (no por pedido): así en Excel se puede filtrar,
     // ordenar y hacer tabla dinámica sin desarmar nada a mano.
     const filas = [['DETALLE DE PEDIDOS — ' + largo(dia)], [],
-      ['Cliente', 'Teléfono', 'Modalidad', 'Horario', 'Dirección', 'Localidad', 'Categoría', 'Producto', 'Preparación', 'Cantidad', 'Unidad', 'Kg', 'Peso real (balanza)', 'Aclaración del producto', 'Comentarios del pedido', 'Estado']];
+      ['Cliente', 'Teléfono', 'Modalidad', 'Horario', 'Dirección', 'Localidad', 'Categoría', 'Producto', 'Preparación', 'Total', 'Unidad del total', 'Fracción', 'Cantidad', 'Peso real (balanza)', 'Aclaración del producto', 'Comentarios del pedido', 'Estado']];
     list.forEach((p) => {
       const base = [p.cliente || '', p.telefono || '', esRetiro(p) ? 'Retiro en sucursal' : 'Envío a domicilio',
         p.ventana || 'A coordinar', esRetiro(p) ? '' : (p.direccion || ''), p.localidad || ''];
       const cola = [p.especificaciones || '', esRetiro(p) && p.estado === 'entregado' ? 'retirado' : (p.estado || '')];
-      if (!(p.items || []).length) { filas.push(base.concat(['', '(sin detalle)', '', '', '', '', '', ''], cola)); return; }
+      if (!(p.items || []).length) { filas.push(base.concat(['', '(sin detalle)', '', '', '', '', '', '', ''], cola)); return; }
       (p.items || []).forEach((it) => {
         filas.push(base.concat([
           categoriaDe(it),
           nomDe(it),
           String(it.preparacion || '').trim(),
-          (it.cantidad != null ? it.cantidad : it.cant) || 0,
-          unidadTxt(uniDe(it), Number(it.cantidad != null ? it.cantidad : it.cant) || 0),
-          kgDe(it) || '', '', (it.nota || '').toString().trim(),
+          ...((x) => [x.total, x.totUni === 'kg' ? 'kg' : unidadTxt(x.totUni, x.total), fracTxt(x), x.cant == null ? '' : x.cant])(partesDe(it)),
+          '', (it.nota || '').toString().trim(),
         ], cola));
       });
     });

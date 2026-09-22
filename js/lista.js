@@ -290,6 +290,9 @@ window.GDO = window.GDO || {};
   const RE_ENVASE_UNO = /\(\s*1\s*(kgs?|kilos?|cajones?|caj[oó]n|cajas?|maples?|paquetes?|bandejas?|bolsas?|piezas?|unidad(?:es)?)(?:\s*x\s*\d+\s*unidad(?:es)?)?\s*\)\s*$/i;
   function unidadDeItem(it) {
     if (!it) return '';
+    // Una variedad que es un sabor ("BROCOLI") no dice la unidad: la tabla sí.
+    const eq = equivDe(it.producto || it.nombre);
+    if (eq && eq.u) return eq.u;
     const cruda = String(it.unidad || it.u || '').trim().toLowerCase();
     const canon = SINONIMOS[cruda] || cruda;
     // Si no aporta nada (vacía o "unidad" a secas), miramos el envase del nombre.
@@ -368,8 +371,101 @@ window.GDO = window.GDO || {};
      traen el nombre de la fila ("BONDIOLA … X CAJA DE 20 KG") aunque se hayan
      pedido por pieza: se busca en la lista la forma suelta con esa unidad y se
      muestra su nombre. Sin tocar los pedidos guardados. */
+  /* ═══════ UN SOLO PRODUCTO EN LAS DOS LISTAS ═══════
+     La lista MINORISTA escribe los productos distinto que la MAYORISTA
+     ("Albondiga de pollo rebozada" / "ALBONDIGAS DE POLLO"): para la comanda, las
+     métricas, el CRM y las comisiones eran dos productos y se duplicaban. Esta
+     tabla dice qué producto mayorista ES cada producto minorista. La unidad y la
+     presentación del pedido se respetan (kg, paquete, caja, pieza); solo cambia
+     el NOMBRE, que pasa a ser la fila exacta de la lista mayorista.
+     Clave: el nombre minorista tal como lo guarda la tienda ("Nombre", o
+     "Nombre (variedad)"; una clave sin variedad vale para todas sus variedades).
+     3er dato opcional: la unidad real, cuando la variedad no la dice (un sabor).
+     Cuando la lista minorista se unifique con la mayorista esto deja de hacer
+     falta para lo nuevo, pero sigue unificando los pedidos viejos. */
+  const EQUIV = [
+    ['Cuarto Trasero', 'CUARTO TRASERO'],
+    ['Suprema', 'SUPREMAS'],
+    ['Alitas', 'ALAS'],
+    ['Menudos', 'MENUDO'],
+    ['Carcasas', 'CARCASA'],
+    ['Milanesa de Pollo (Suprema)', 'MILANESAS DE POLLO (Suprema)'],
+    ['Milanesa de Pollo (Pata y Muslo)', 'MILANESAS DE POLLO (Pata y Muslo)'],
+    ['Milanesa de Pollo CRUNCH (Suprema)', 'MILANESAS DE POLLO CRUCH (Suprema) X KG'],
+    ['Milanesa de Pollo CRUNCH (SPata y muslo)', 'MILANESAS DE POLLO CRUCH (Pata y Muslo)) X KG'],
+    ['Milanesa de Nalga Rebozada', 'MILANESAS DE NALGA REBOZADA X KG'],
+    ['Milanesa de Nalga CRUNCH', 'MILANESAS DE NALGA REBOZADA CRUNCH X KG'],
+    ['Hamburguesa de pollo Clasica', 'HAMBURGUESAS DE POLLO CLASICA'],
+    ['Hamburguesa de pollo FIT', 'HAMBURGUESAS DE POLLO FIT (100% SUPREMA)'],
+    ['Albondiga de pollo rebozada', 'ALBONDIGAS DE POLLO'],
+    ['Albondiga de pollo rebozada CRUNCH', 'ALBONDIGAS DE POLLO CRUNCH'],
+    ['Matambre de Pollo Clasico Listo para hervir. (zanahoria, morron, huevo, condimentos, sal)', 'ARROLLADOS CLASICOS DE POLLO'],
+    ['COMBO Todo x $50.000', 'COMBO'],
+    ['Maple blanco Nro 1 (Grande)', 'MAPLE B1 X UNIDAD'],
+    ['Formitas de Merluza GRANGYS', 'FORMITAS DE MERLUZA MARINAS RETAIL X 6 KG (6X1KG)'],
+    ['Medallon de Pollo rebozado GRANGYS', 'MEDALLON DE POLLO RETAIL X 6 KG (6X1KG)'],
+    ['Medallon de Pollo con Jamon y Queso GRANGYS', 'MEDALLON DE POLLO CON JAMON Y QUESO X 5 KG'],
+    ['Medallon de Pollo con Jamon y Queso BAS FROST', 'MEDALLON DE POLLO CON JAMON Y QUESO  X 6 KG'],
+    ['Medallon de Pollo con Espinaca Bas Frost', 'MEDALLON DE POLLO CON ESPINACA X 6 KG'],
+    ['Nuggets Crocantes GRANGYS', 'NUGGET DE POLLO CROCANTE X 6 KG (6X1KG)'],
+    ['Dinos de pollo GRANGYS', 'DINOS DE POLLO RETAIL X 6 KG (6X1KG)'],
+    ['Cañoncitos de Mozzarella GRANGYS', 'CAÑONCITOS DE MUZARELLA RETAIL X 6 KG (6X1KG)'],
+    ['Bocaditos de espinaca GRANGYS', 'BOCADITOS DE ESPINACA X 5 KG'],
+    ['Bocaditos de calabaza y mozzarella GRANGYS', 'BOCADITOS DE CALABAZA CON MOZZARELLA X 5 KG'],
+    ['Bastones de muzzarella Artico', 'BASTONES DE MOZZARELLA ARTICO X 6 KG (3X2KG)'],
+    ['Filet de Merluza a la Romana Artico', 'MILANESA DE MERLUZA A LA ROMANA X 5KG (5X1KG)'],
+    ['Papas Baston tradicional Mc Cain x 2,5 kg', 'PAPA BASTON TRADICIONAL (MCCAIN) X 15 KG (6 X 2,5 KG)'],
+    ['Papas Noissette Mc Cain x 2,5 kg', 'PAPA NOISETTES (MCCAIN) 10 KG (4 X 2,5 KG)'],
+    ['Papas Smile Mc Cain x 1,5 kg', 'PAPA SMILES (MCCAIN) X 9 KG (6 X 1,5 KG)'],
+    ['Papas Baston tradicional IMPORTADAS (BEM-BRASIL) x 2 kg', 'PAPAS BASTON TRADICIONAL BEM-BRASIL X 14 KG (7X2KG)'],
+    ['Papas CARITAS GRANGYS x 1 kg', 'PAPAS CARITAS GRANGYS X 10.5 KG (10X1,05KG)'],
+    ['Tequeños x 8 unidades', 'TEQUEÑOS (TEQUEPOPS)  80 UNIDADES (10X8 UNI)'],
+    ['Bondiola Congelada', 'BONDIOLA IMPORTADA X CAJA DE 20 KG'],
+    ['Suprema de pollo sin hueso y sin piel congelada x 10 kg Marca BELLO', 'SUPREMA CONGELADA BELLO - IQF X 10 KG'],
+    ['Tarta individual de Caprese', 'TARTA INDIVIDUAL DE CAPRESE'],
+    ['Tarta individual de Cebolla y panceta', 'TARTA INDIVIDUAL DE CEBOLLA Y PANCETA'],
+    ['Tarta individual de Verduras asadas', 'TARTA INDIVIDUAL DE VERDURAS ASADAS'],
+    ['Tarta individual de Zapallito', 'TARTA INDIVIDUAL DE ZAPALLITO'],
+    ['Tarta individual de Mix', 'TARTA INDIVIDUAL DE MIX (ACELGA, SALSA BLANCA Y CHOCLO)'],
+    ['Tarta individual de Calabaza', 'TARTA INDIVIDUAL DE CALABAZA'],
+    ['Tarta individual de Acelga', 'TARTA INDIVIDUAL DE ACELGA'],
+    ['Tarta individual de Choclo', 'TARTA INDIVIDUAL DE CHOCLO'],
+    ['Tarta individual de Jamon y Queso', 'TARTA INDIVIDUAL DE JAMON Y QUESO'],
+    ['Tarta individual de Pollo y Puerro', 'TARTA INDIVIDUAL DE POLLO Y PUERRO'],
+    ['Canelones x 6 (Verdura y Ricota)', 'RICOTA Y VERDURA (BANDEJA X 6 UNIDADES)', 'bandeja'],
+    ['Canelones x 6 (Jamon y Ricota)', 'RICOTA Y JAMON (BANDEJA X 6 UNIDADES)', 'bandeja'],
+    ['Canelones x 6 (Jamon y Queso)', 'JAMON Y QUESO (BANDEJA X 6 UNIDADES)', 'bandeja'],
+    ['Canelones x 6 (Pollo y Salsa Blanca)', 'POLLO CON SALSA BLANCA (BANDEJA X 6 UNIDADES)', 'bandeja'],
+    ['Burguer Veganas x 5 unidades (Lentejas)', 'VEGANA LENTEJAS              X 5 UNIDADES', 'paquete'],
+    ['Burguer Veganas x 5 unidades (Quinoa y Yamani)', 'QUINOA Y YAMANI X 5 UNIDADES', 'paquete'],
+    ['Burguer Veganas x 5 unidades (Espinaca)', 'ESPINACA              X 5 UNIDADES', 'paquete'],
+    ['Burguer Veganas x 5 unidades (Remolacha)', 'REMOLACHA         X 5 UNIDADES', 'paquete'],
+    ['Burguer Veganas x 5 unidades (Zapallo al Curry)', 'ZAPALLO AL CURRY X 5 UNIDADES', 'paquete'],
+    ['Burguer Veganas x 5 unidades (Garbanzo y Zanahoria)', 'GARBANZO Y ZANAHORIA X 5 UNIDADES', 'paquete'],
+    ['Milanesa de Soja Simple con sal  ALKIMAK (SIMPLE ORIGINAL)', 'ORIGINAL SIMPLE CON SAL X 4 UNIDADES (27 PAQUETES)', 'paquete'],
+    ['Milanesa de Soja Rellena ALKIMAK (BROCOLI)', 'RELLENA BROCOLI X 4 UNIDADES', 'paquete'],
+    ['Milanesa de Soja Rellena ALKIMAK (CALABAZA Y CURCUMA)', 'RELLENA CALABAZA Y CURCUMA X 4 UNIDADES', 'paquete'],
+    ['Milanesa de Soja Rellena ALKIMAK (QUESO AZUL Y MUZZARELLA)', 'RELLENA QUESO AZUL Y MUZARELLA X 4 UNIDADES', 'paquete'],
+    ['Milanesa de Soja Rellena ALKIMAK (CAPRESSE)', 'RELLENA CAPRESSE X 4 UNIDADES', 'paquete'],
+    ['Milanesa de Soja Rellena ALKIMAK (ESPINACA Y MORRONES ASADOS)', 'RELLENA ESPINACA Y MORRONES ASADOS X 4 UNIDADES', 'paquete'],
+    ['Milanesa de Soja Rellena ALKIMAK (ACEITUNA Y MUZZARELLA)', 'RELLENA ACEITUNA Y MUZARELLA X 4 UNIDADES', 'paquete'],
+  ];
+  const kEq = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+  let _eq = null;
+  // Nombre del pedido → { n: fila mayorista, u: unidad (opcional) } o null.
+  function equivDe(nombre) {
+    const n = kEq(nombre);
+    if (!n) return null;
+    if (!_eq) _eq = EQUIV.map((e) => ({ k: kEq(e[0]), n: e[1], u: e[2] || '' })).sort((a, b) => b.k.length - a.k.length);
+    const e = _eq.find((x) => n === x.k || n.indexOf(x.k + ' (') === 0);
+    return e ? { n: e.n, u: e.u } : null;
+  }
+
   function nombreItem(it) {
-    const nom = String((it && (it.producto || it.nombre)) || '').trim();
+    let nom = String((it && (it.producto || it.nombre)) || '').trim();
+    // Producto minorista → el MISMO producto de la lista mayorista (ver EQUIV).
+    const eq = equivDe(nom);
+    if (eq) nom = eq.n;
     if (!nom || nom.indexOf(' · ') >= 0) return nom;
     const u = unidadDeItem(it);
     const op = opsDe('mayorista').find((o) => o.fila && o.fila !== o.nombre && o.fila === nom && o.unidad === u);
@@ -483,7 +579,7 @@ window.GDO = window.GDO || {};
   GDO.Lista = {
     prepDe, PREPS, unidadDeItem, prepConTrabajo, prepRecargo, RECARGO_KG, opcionPara,
     cargar, buscar, renglon, precioPorEscalon, etiqueta, plural, kgDeItem,
-    nombreOpcion, nombreItem, montoItem,
+    nombreOpcion, nombreItem, montoItem, equivDe,
     UNIDADES: TODAS,
     // (Antes leían una variable `_opciones` que ya no existe desde que hay dos
     // catálogos: tiraban error. Nadie las usaba hasta la sección Vendedores.)
