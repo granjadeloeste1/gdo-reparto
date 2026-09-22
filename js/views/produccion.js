@@ -42,6 +42,21 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      decirlo: con el nombre de la fila ("… X CAJA DE 20 KG") la comanda mandaba a
      preparar cajas en vez de piezas. Ver GDO.Lista.nombreItem. */
   const nomDe = (it) => (GDO.Lista ? GDO.Lista.nombreItem(it) : String((it && (it.producto || it.nombre)) || '').trim());
+  /* Lo que se MUESTRA como producto: el nombre tal cual está en la lista, SIN la
+     presentación que le agrega el sistema a las formas sueltas (" · PAQUETE DE
+     2,5 KG", " · POR KG", " · PIEZA SUELTA"). La presentación va en las columnas
+     Total · Fracción · Cantidad; en el nombre solo si es parte del nombre real. */
+  const nomProd = (it) => {
+    const orig = String((it && (it.producto || it.nombre)) || '').trim();
+    const eq = (GDO.Lista && GDO.Lista.equivDe) ? GDO.Lista.equivDe(orig) : null;   // minorista → mayorista
+    let n = eq ? eq.n : orig;
+    // Si el pedido guardó el nombre de una forma suelta, volvemos a la fila de la lista.
+    if (n.indexOf(' · ') >= 0) {
+      const op = GDO.Lista && GDO.Lista.opcionPara ? GDO.Lista.opcionPara(n, 'mayorista') : null;
+      n = (op && op.fila) ? op.fila : n.split(' · ')[0].trim();
+    }
+    return n;
+  };
   const largo = (isoStr) => {
     if (!isoStr) return '';
     const d = new Date(isoStr + 'T00:00:00');
@@ -135,14 +150,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return { total: cant, totUni: uni, frac: env, fk: 0, cant: cant };
   }
   const totalTxt = (x) => nUm(x.total) + ' ' + (x.totUni === 'kg' ? 'kg' : unidadTxt(x.totUni, x.total));
-  const fracTxt = (x) => x.frac || 'a granel';
+  const fracTxt = (x) => x.frac || '—';
   const cantNum = (x) => (x.cant == null ? '—' : nUm(x.cant));
 
   function consolidar(list) {
     const g = {};
     list.forEach((p) => {
       (p.items || []).forEach((it) => {
-        const nom = nomDe(it);
+        const nom = nomProd(it);
         if (!nom) return;
         const uni = uniDe(it);
         const x = partesDe(it);
@@ -240,7 +255,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               const pt = partesDe(it);
               return `<tr>
                 <td class="pr-tick"></td>
-                <td><b>${esc(nomDe(it))}</b>${prep ? '<div class="pr-prep">✂️ ' + esc(prep) + '</div>' : ''}${nota ? '<div class="pr-nota">📝 ' + esc(nota) + '</div>' : ''}</td>
+                <td><b>${esc(nomProd(it))}</b>${prep ? '<div class="pr-prep">✂️ ' + esc(prep) + '</div>' : ''}${nota ? '<div class="pr-nota">📝 ' + esc(nota) + '</div>' : ''}</td>
                 <td class="pr-cant">${esc(totalTxt(pt))}</td>
                 <td class="pr-frac">${esc(fracTxt(pt))}</td>
                 <td class="pr-cant">${esc(cantNum(pt))}</td>
@@ -436,7 +451,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       (p.items || []).forEach((it) => {
         filas.push(base.concat([
           categoriaDe(it),
-          nomDe(it),
+          nomProd(it),
           String(it.preparacion || '').trim(),
           ...((x) => [x.total, x.totUni === 'kg' ? 'kg' : unidadTxt(x.totUni, x.total), fracTxt(x), x.cant == null ? '' : x.cant])(partesDe(it)),
           '', (it.nota || '').toString().trim(),
