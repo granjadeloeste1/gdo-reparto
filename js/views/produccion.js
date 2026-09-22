@@ -349,8 +349,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-ghost btn-sm" id="pr-man">Mañana</button>
         <label class="pr-check"><input type="checkbox" id="pr-cerr" ${incluirCerrados ? 'checked' : ''}/> Incluir lo ya entregado / retirado</label>
         <div class="spacer"></div>
-        <button class="btn btn-ghost" id="pr-xls-com">⬇ Comanda (Excel)</button>
-        <button class="btn btn-ghost" id="pr-xls-det">⬇ Detalle (Excel)</button>
+        <button class="btn btn-ghost" id="pr-xls" title="Comanda y pedidos para armar, en dos hojas">📊 Excel</button>
+        <button class="btn btn-ghost" data-pdf="com">📄 PDF comanda</button>
+        <button class="btn btn-ghost" data-pdf="ped">📄 PDF pedidos para armar</button>
       </div>
       <div class="crm-tabs no-print pr-listas">
         <button class="crm-tab ${listaSel === 'mayorista' ? 'on' : ''}" data-lista="mayorista">🏪 Planilla MAYORISTA <span class="crm-badge sec">${nLista.mayorista}</span></button>
@@ -443,72 +444,163 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       window.addEventListener('afterprint', limpiar);
       window.print();
     });
-    c.querySelector('#pr-xls-com').onclick = () => bajarComanda(com, list);
-    c.querySelector('#pr-xls-det').onclick = () => bajarDetalle(list);
+    c.querySelector('#pr-xls').onclick = () => bajarExcel(com, list);
+    c.querySelectorAll('[data-pdf]').forEach((b) => b.onclick = () => bajarPDF(b.dataset.pdf, c));
   };
 
   /* ─────────────────────────── exportar ───────────────────────────
-     CSV con separador ";" y BOM al principio: así el Excel en español lo abre
-     en columnas sin tener que importar nada. */
-  function csv(nombre, filas) {
-    // Los decimales van con COMA: el Excel en español lee "2.5" como texto y
-    // después no se puede sumar la columna.
-    const q = (s) => {
-      const v = (typeof s === 'number') ? String(s).replace('.', ',') : String(s == null ? '' : s);
-      return '"' + v.replace(/"/g, '""') + '"';
-    };
-    const txt = filas.map((f) => f.map(q).join(';')).join('\r\n');
-    try {
-      const blob = new Blob(['﻿' + txt], { type: 'text/csv;charset=utf-8;' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = nombre;
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-      toast('Archivo descargado: ' + nombre, 'ok');
-    } catch (e) { toast('No se pudo generar el archivo en este dispositivo', 'err'); }
-  }
-
-  function bajarComanda(com, list) {
-    if (!com.length) { toast('No hay nada para producir ese día', 'err'); return; }
-    const filas = [['COMANDA DE PRODUCCIÓN — ' + largo(dia)], ['Sumado entre ' + list.length + ' pedidos'], [],
-      ['Categoría', 'Producto', 'Total', 'Unidad del total', 'Fracción', 'Cantidad', 'Preparación', 'Cant. de esa preparación', 'En pedidos', 'Aclaraciones']];
-    /* Una fila por producto y fracción; y si el producto se pide cortado de varias
-       formas, una fila más POR PREPARACIÓN. Cada número va suelto en su celda
-       para poder sumar y filtrar en Excel. */
-    com.forEach((r) => {
-      const notas = r.notas.map((n) => n.texto + ' (' + n.cant + ' ' + unidadTxt(n.unidad, n.cant) + ')').join(' · ');
-      const base = [r.cat, r.nombre, r.total, r.totUni === 'kg' ? 'kg' : unidadTxt(r.totUni, r.total), fracTxt(r), r.cant == null ? '' : r.cant];
-      const preps = Object.keys(r.preps).map((k) => r.preps[k]).sort((a, b) => b.cant - a.cant);
-      if (!preps.length) { filas.push(base.concat(['', '', r.pedidos, notas])); return; }
-      preps.forEach((x, i) => {
-        filas.push((i === 0 ? base : ['', '', '', '', '', '']).concat([x.prep, x.cant + ' ' + unidadTxt(x.unidad, x.cant), i === 0 ? r.pedidos : '', i === 0 ? notas : '']));
+     EXCEL de verdad (.xlsx con formato: categorías en naranja, encabezados,
+     anchos de columna) y PDF igual a la hoja impresa. Antes era un CSV: se abría
+     en Excel como texto pelado y se veía mal. Las librerías se bajan de la CDN
+     recién cuando se toca el botón, así el panel no carga peso de más. */
+  const LIB_XLSX = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+  const LIB_PDF = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+  const _libs = {};
+  function cargarLib(url, global) {
+    if (window[global]) return Promise.resolve(window[global]);
+    if (!_libs[url]) {
+      _libs[url] = new Promise((ok, mal) => {
+        const s = document.createElement('script');
+        s.src = url; s.async = true;
+        s.onload = () => (window[global] ? ok(window[global]) : mal(new Error('lib')));
+        s.onerror = () => { delete _libs[url]; mal(new Error('red')); };
+        document.head.appendChild(s);
       });
-    });
-    csv('gdo-comanda-' + listaSel + '-' + dia + '.csv', filas);
+    }
+    return _libs[url];
   }
+  const nombreArchivo = (qué, ext) => 'gdo-' + qué + '-' + listaSel + '-' + dia + '.' + ext;
+  const prepsTxt = (r) => Object.keys(r.preps).map((k) => r.preps[k]).sort((a, b) => b.cant - a.cant)
+    .map((x) => x.prep + ' ' + nUm(x.cant) + ' ' + unidadTxt(x.unidad, x.cant)).join(' · ');
+  const notasTxt = (r) => r.notas.map((n) => n.texto + ' (' + nUm(n.cant) + ' ' + unidadTxt(n.unidad, n.cant) + ')').join(' · ');
 
-  function bajarDetalle(list) {
+  function bajarExcel(com, list) {
     if (!list.length) { toast('No hay pedidos ese día', 'err'); return; }
-    // Una fila POR PRODUCTO (no por pedido): así en Excel se puede filtrar,
-    // ordenar y hacer tabla dinámica sin desarmar nada a mano.
-    const filas = [['DETALLE DE PEDIDOS — ' + largo(dia)], [],
-      ['Cliente', 'Teléfono', 'Modalidad', 'Horario', 'Dirección', 'Localidad', 'Categoría', 'Producto', 'Preparación', 'Total', 'Unidad del total', 'Fracción', 'Cantidad', 'Peso real (balanza)', 'Aclaración del producto', 'Comentarios del pedido', 'Estado']];
-    list.forEach((p) => {
-      const base = [p.cliente || '', p.telefono || '', esRetiro(p) ? 'Retiro en sucursal' : 'Envío a domicilio',
-        p.ventana || 'A coordinar', esRetiro(p) ? '' : (p.direccion || ''), p.localidad || ''];
-      const cola = [p.especificaciones || '', esRetiro(p) && p.estado === 'entregado' ? 'retirado' : (p.estado || '')];
-      if (!(p.items || []).length) { filas.push(base.concat(['', '(sin detalle)', '', '', '', '', '', '', ''], cola)); return; }
-      (p.items || []).forEach((it) => {
-        filas.push(base.concat([
-          categoriaDe(it),
-          nomProd(it),
-          String(it.preparacion || '').trim(),
-          ...((x) => [x.total, x.totUni === 'kg' ? 'kg' : unidadTxt(x.totUni, x.total), fracTxt(x), x.cant == null ? '' : x.cant])(partesDe(it)),
-          '', (it.nota || '').toString().trim(),
-        ], cola));
+    toast('Armando el Excel…', '');
+    cargarLib(LIB_XLSX, 'XLSX').then((X) => {
+      const NAR = 'F58220', NEG = '111111';
+      const borde = { style: 'thin', color: { rgb: 'D9D9D9' } };
+      const st = {
+        titulo: { font: { bold: true, sz: 15 } },
+        sub: { font: { italic: true, color: { rgb: '555555' } } },
+        head: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: NEG } }, alignment: { vertical: 'center', wrapText: true } },
+        cat: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: NAR } } },
+        cli: { font: { bold: true, sz: 12 }, fill: { fgColor: { rgb: 'FFF1E3' } } },
+        info: { font: { color: { rgb: '444444' } }, fill: { fgColor: { rgb: 'FFF8F0' } }, alignment: { wrapText: true } },
+        txt: { border: { bottom: borde }, alignment: { vertical: 'top', wrapText: true } },
+        num: { font: { bold: true }, border: { bottom: borde }, alignment: { horizontal: 'center', vertical: 'top' } },
+        peso: { border: { bottom: { style: 'medium', color: { rgb: '333333' } } } },
+      };
+      function hoja(filas, anchos) {
+        const ws = X.utils.aoa_to_sheet(filas.map((f) => f.v));
+        ws['!cols'] = anchos.map((w) => ({ wch: w }));
+        ws['!merges'] = [];
+        filas.forEach((f, r) => {
+          f.v.forEach((_, c) => {
+            const ref = X.utils.encode_cell({ r: r, c: c });
+            if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+            const s = (f.estilos && f.estilos[c]) || f.estilo;
+            if (s) ws[ref].s = s;
+          });
+          if (f.unir) ws['!merges'].push({ s: { r: r, c: 0 }, e: { r: r, c: anchos.length - 1 } });
+        });
+        return ws;
+      }
+      const titulo = (t) => ({ v: [t], estilo: st.titulo, unir: true });
+      const subt = (t) => ({ v: [t], estilo: st.sub, unir: true });
+      const vacia = { v: [''] };
+
+      // Hoja 1: COMANDA
+      const f1 = [titulo('COMANDA DE PRODUCCIÓN · ' + LISTA_T[listaSel]), subt(largo(dia) + ' · ' + list.length + ' pedidos'), vacia,
+        { v: ['Producto', 'Total', 'Fracción', 'Cantidad', 'Preparación / aclaraciones', 'En pedidos'], estilo: st.head }];
+      porCategoria(com, (r) => r.cat).forEach((g) => {
+        f1.push({ v: [g.cat, '', '', '', '', ''], estilo: st.cat, unir: true });
+        g.filas.forEach((r) => {
+          const extra = [prepsTxt(r), notasTxt(r)].filter(Boolean).join(' — ');
+          f1.push({ v: [r.nombre, totalTxt(r), fracTxt(r), r.cant == null ? '—' : r.cant, extra, r.pedidos],
+            estilos: [st.txt, st.num, st.num, st.num, st.txt, st.num] });
+        });
       });
-    });
-    csv('gdo-pedidos-' + listaSel + '-' + dia + '.csv', filas);
+
+      // Hoja 2: PEDIDOS PARA ARMAR (uno debajo del otro, con la columna para el peso)
+      const orden = ordenCategorias();
+      const f2 = [titulo('PEDIDOS PARA ARMAR · ' + LISTA_T[listaSel]), subt(largo(dia) + ' · anotá el peso real de la balanza en cada producto'), vacia];
+      list.forEach((p) => {
+        const donde = esRetiro(p)
+          ? 'Retira en el local' + (p.ventana ? ' · ' + p.ventana : ' · horario a coordinar')
+          : 'Envío · ' + (p.direccion || '') + (p.localidad ? ', ' + p.localidad : '') + (p.ventana ? ' · ' + p.ventana : '');
+        const v = GDO.UI.vendedorDe ? GDO.UI.vendedorDe(p) : null;
+        f2.push({ v: [p.cliente + (p.telefono ? '   ·   ' + p.telefono : '') + (v ? '   ·   Vendedor: ' + v.nombre : ''), '', '', '', '', ''], estilo: st.cli, unir: true });
+        f2.push({ v: [donde + (p.especificaciones ? '   ·   ' + p.especificaciones : ''), '', '', '', '', ''], estilo: st.info, unir: true });
+        f2.push({ v: ['Producto', 'Total', 'Fracción', 'Cantidad', 'Peso real (kg)', 'Aclaración'], estilo: st.head });
+        const items = (p.items || []).map((it, i) => ({ it: it, i: i, cat: categoriaDe(it) }))
+          .sort((a, b) => (posCat(orden, a.cat) - posCat(orden, b.cat)) || (a.i - b.i));
+        porCategoria(items, (x) => x.cat).forEach((g) => {
+          f2.push({ v: [g.cat, '', '', '', '', ''], estilo: st.cat, unir: true });
+          g.filas.forEach((x) => {
+            const it = x.it, pt = partesDe(it);
+            const acl = [String(it.preparacion || '').trim(), String(it.nota || '').trim()].filter(Boolean).join(' — ');
+            f2.push({ v: [nomProd(it), totalTxt(pt), fracTxt(pt), pt.cant == null ? '—' : pt.cant, '', acl],
+              estilos: [st.txt, st.num, st.num, st.num, st.peso, st.txt] });
+          });
+        });
+        f2.push(vacia);
+      });
+
+      const wb = X.utils.book_new();
+      X.utils.book_append_sheet(wb, hoja(f1, [52, 14, 20, 11, 42, 11]), 'Comanda');
+      X.utils.book_append_sheet(wb, hoja(f2, [52, 14, 20, 11, 18, 36]), 'Pedidos para armar');
+      X.writeFile(wb, nombreArchivo('produccion', 'xlsx'));
+      toast('Excel descargado ✓', 'ok');
+    }).catch(() => toast('No se pudo armar el Excel (¿sin internet?)', 'err'));
+  }
+
+  /* PDF: la MISMA hoja que se imprime (logo, categorías, líneas para el peso),
+     armada aparte con los estilos de impresión y pasada a PDF. */
+  function bajarPDF(qué, c) {
+    const bloques = qué === 'com' ? ['.pr-bloque-com'] : qué === 'ped' ? ['.pr-bloque-ped'] : ['.pr-bloque-com', '.pr-bloque-ped'];
+    const nodos = bloques.map((s) => c.querySelector(s)).filter(Boolean);
+    if (!nodos.length) { toast('No hay pedidos ese día', 'err'); return; }
+    toast('Armando el PDF…', '');
+    cargarLib(LIB_PDF, 'html2pdf').then((h2p) => {
+      const cont = document.createElement('div');
+      cont.className = 'pr-pdf' + (unoPorHoja ? ' pr-una' : '');
+      nodos.forEach((n, i) => {
+        const cl = n.cloneNode(true);
+        cl.classList.remove('pr-salto');
+        if (i > 0) cl.classList.add('pr-pdf-salto');
+        // El logo es un SVG sin medidas propias: sin ancho y alto fijos no se dibuja.
+        // Lo pasamos a PNG dibujándolo en un lienzo (html2canvas no dibuja ese SVG).
+        cl.querySelectorAll('img').forEach((im) => {
+          const orig = c.querySelector('img[src="' + im.getAttribute('src') + '"]');
+          const r = (orig && orig.naturalWidth && orig.naturalHeight) ? orig.naturalWidth / orig.naturalHeight : 3.2;
+          const h = 40, w = Math.round(40 * r);
+          im.height = h; im.width = w;
+          try {
+            if (orig && orig.complete) {
+              const cv = document.createElement('canvas');
+              cv.width = w * 3; cv.height = h * 3;
+              cv.getContext('2d').drawImage(orig, 0, 0, cv.width, cv.height);
+              im.src = cv.toDataURL('image/png');
+            }
+          } catch (e) { /* si no se puede, va sin logo */ }
+        });
+        cont.appendChild(cl);
+      });
+      // Fuera de pantalla, pero en el flujo normal: si el contenedor mismo fuera
+      // "fixed", la copia que arma la librería queda con alto 0 y el PDF sale en blanco.
+      const holder = document.createElement('div');
+      holder.className = 'pr-pdf-holder';
+      holder.appendChild(cont);
+      document.body.appendChild(holder);
+      return h2p().set({
+        margin: [10, 10, 12, 10],
+        filename: nombreArchivo(qué === 'com' ? 'comanda' : qué === 'ped' ? 'pedidos' : 'produccion', 'pdf'),
+        image: { type: 'jpeg', quality: 0.96 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'], before: '.pr-pdf-salto' + (unoPorHoja ? ', .pr-una .pr-ped + .pr-ped' : ''), avoid: ['tr', '.pr-ped', '.pr-ped-h'] },
+      }).from(cont).save().then(() => { holder.remove(); toast('PDF descargado ✓', 'ok'); }, () => { holder.remove(); toast('No se pudo armar el PDF', 'err'); });
+    }).catch(() => toast('No se pudo armar el PDF (¿sin internet?)', 'err'));
   }
 })();
