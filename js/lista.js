@@ -393,6 +393,10 @@ window.GDO = window.GDO || {};
     ['Milanesa de Pollo (Pata y Muslo)', 'MILANESAS DE POLLO (Pata y Muslo)'],
     ['Milanesa de Pollo CRUNCH (Suprema)', 'MILANESAS DE POLLO CRUCH (Suprema) X KG'],
     ['Milanesa de Pollo CRUNCH (SPata y muslo)', 'MILANESAS DE POLLO CRUCH (Pata y Muslo)) X KG'],
+    ['Milanesa de Pollo CRUNCH (Pata y muslo)', 'MILANESAS DE POLLO CRUCH (Pata y Muslo)) X KG'],
+    // "Milanesa de Pollo" a secas era un error de la planilla (2026-09): era de SUPREMA.
+    // Queda para los pedidos viejos que se hicieron con ese nombre.
+    ['Milanesa de Pollo', 'MILANESAS DE POLLO (Suprema)'],
     ['Milanesa de Nalga Rebozada', 'MILANESAS DE NALGA REBOZADA X KG'],
     ['Milanesa de Nalga CRUNCH', 'MILANESAS DE NALGA REBOZADA CRUNCH X KG'],
     ['Hamburguesa de pollo Clasica', 'HAMBURGUESAS DE POLLO CLASICA'],
