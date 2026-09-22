@@ -76,7 +76,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* MAYORISTA y MINORISTA van en PLANILLAS SEPARADAS (pedido del usuario): se
      preparan distinto (cajas y cajones contra bolsas de 1, 2 y 5 kg), así que cada
      una tiene su comanda, sus pedidos para armar y su impresión. 'todas' las junta. */
-  let listaSel = 'mayorista';
+  let listaSel = 'minorista';     // arranca en la MINORISTA (pedido del usuario: es la que más trabajo lleva)
   const listaDe = (p) => (p && p.lista === 'minorista' ? 'minorista' : 'mayorista');
   const LISTA_T = { mayorista: 'MAYORISTA', minorista: 'MINORISTA', todas: 'MAYORISTA + MINORISTA' };
   let _listasPedidas = false;    // las listas de precios se piden una vez por sesión
