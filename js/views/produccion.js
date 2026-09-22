@@ -46,7 +46,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      presentación que le agrega el sistema a las formas sueltas (" · PAQUETE DE
      2,5 KG", " · POR KG", " · PIEZA SUELTA"). La presentación va en las columnas
      Total · Fracción · Cantidad; en el nombre solo si es parte del nombre real. */
-  const nomProd = (it) => {
+  /* Nombre del PRODUCTO a mostrar: la fila de la lista, pero sin el envase que no
+     va entre paréntesis ("BONDIOLA IMPORTADA X CAJA DE 20 KG" → "BONDIOLA
+     IMPORTADA"): la caja o la pieza son la FRACCIÓN y van en su columna. Lo que
+     está entre paréntesis sí queda: "(6X1KG)" dice cuánto trae cada paquete. */
+  const nomProd = (it) => filaDe(it).replace(/\s+X\s+CAJ(AS?|[OÓ]N(ES)?)\s+(DE\s+)?\d+(?:[.,]\d+)?\s*KGS?\.?\s*$/i, '').trim();
+  const filaDe = (it) => {
     const orig = String((it && (it.producto || it.nombre)) || '').trim();
     const eq = (GDO.Lista && GDO.Lista.equivDe) ? GDO.Lista.equivDe(orig) : null;   // minorista → mayorista
     let n = eq ? eq.n : orig;
@@ -136,17 +141,48 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
        - Lo que se pide por kilo sin fracción (a granel) solo tiene total.
        - Lo que no tiene peso (un cajón de pollo, una tarta) se cuenta en su
          unidad: total = cantidad, y la fracción es el envase. */
+  /* REGLA DE LOS PARÉNTESIS DEL NOMBRE (pedido del usuario):
+     "(6X1KG)" o "(6 X 2,5 KG)" en el nombre = la caja trae 6 PAQUETES de 1 kg
+     (o de 2,5 kg). La fracción es el PAQUETE, y como su peso ya lo dice el nombre,
+     en la columna Fracción va solo "paquete". 3 kg de un producto "(6X1KG)" son
+     3 paquetes. Lo mismo con unidades: "(10X8 UNI)" = paquetes de 8 unidades. */
+  const RE_PACK = /\(\s*(\d+)\s*X\s*(\d+(?:[.,]\d+)?)\s*(KGS?|KILOS?|UNI\w*|U)\s*\)/i;
+  const r2 = (n) => Math.round(n * 100) / 100;
   function partesDe(it) {
     const cant = Number(it.cantidad != null ? it.cantidad : it.cant) || 0;
     const uni = uniDe(it);
-    let fk = Number(it.fraccionKg) || 0;
-    if (uni === 'kg') {
-      if (fk) return { total: cant, totUni: 'kg', frac: nUm(fk) + ' kg', fk: fk, cant: Number(it.bultos) || Math.round(cant / fk * 100) / 100 };
-      return { total: cant, totUni: 'kg', frac: '', fk: 0, cant: null };
+    const fila = filaDe(it);
+    const fk = Number(it.fraccionKg) || 0;
+    // 1) El pedido guardó la fracción (lo que se elige en la tienda): manda.
+    if (fk) {
+      const total = uni === 'kg' ? cant : cant * fk;
+      return { total: total, totUni: 'kg', frac: nUm(fk) + ' kg', fk: fk, cant: Number(it.bultos) || (uni === 'kg' ? r2(cant / fk) : cant) };
     }
-    if (!fk) { const kg = kgDe(it); if (kg && cant) fk = Math.round(kg / cant * 1000) / 1000; }
+    // 2) El nombre trae "(N X F KG)" / "(N X F UNI)": la fracción es el paquete.
+    const m = RE_PACK.exec(fila);
+    if (m) {
+      const n = parseInt(m[1], 10) || 1;
+      const f = parseFloat(m[2].replace(',', '.')) || 0;
+      const enKg = /^K/i.test(m[3]);
+      const tu = enKg ? 'kg' : 'unidad';
+      if (f) {
+        if (uni === 'kg' && enKg) return { total: cant, totUni: 'kg', frac: 'paquete', fk: f, cant: r2(cant / f) };
+        if (uni === 'caja' || uni === 'cajón') return { total: r2(cant * n * f), totUni: tu, frac: unidadTxt(uni, 1), fk: n * f, cant: cant };
+        if (uni !== 'kg') return { total: r2(cant * f), totUni: tu, frac: 'paquete', fk: f, cant: cant };
+      }
+    }
+    // 3) Por kilo, sin fracción conocida: solo el total.
+    if (uni === 'kg') return { total: cant, totUni: 'kg', frac: '', fk: 0, cant: null };
+    // 4) Bulto con peso. Si el peso YA está en el nombre que se muestra ("SUPREMA
+    //    CONGELADA … X 10 KG"), la fracción es solo el envase; si no (la pieza de
+    //    bondiola, o la caja que se sacó del nombre), se aclara el peso.
     const env = unidadTxt(uni, 1);
-    if (fk) return { total: Math.round(cant * fk * 100) / 100, totUni: 'kg', frac: env + ' de ' + nUm(fk) + ' kg', fk: fk, cant: cant };
+    const kg = kgDe(it);
+    if (kg && cant) {
+      const fkg = Math.round(kg / cant * 1000) / 1000;
+      const enNombre = !it.kg && /\d\s*KGS?\b/i.test(nomProd(it));
+      return { total: r2(kg), totUni: 'kg', frac: enNombre ? env : env + ' de ' + nUm(fkg) + ' kg', fk: fkg, cant: cant };
+    }
     return { total: cant, totUni: uni, frac: env, fk: 0, cant: cant };
   }
   const totalTxt = (x) => nUm(x.total) + ' ' + (x.totUni === 'kg' ? 'kg' : unidadTxt(x.totUni, x.total));
