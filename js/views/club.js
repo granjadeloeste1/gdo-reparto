@@ -1008,6 +1008,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      índice compuesto en Firestore). */
   function nombreStaff(uid) {
     if (!uid) return '—';
+    if (uid === 'bot') return '🤖 Bot WhatsApp';
     try { const u = GDO.Store && GDO.Store.user && GDO.Store.user(uid); if (u && u.nombre) return u.nombre; } catch (e) {}
     return String(uid).slice(0, 6) + '…';
   }
