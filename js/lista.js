@@ -88,6 +88,7 @@ window.GDO = window.GDO || {};
   function aplanar(secciones) {
     const out = [];
     (secciones || []).forEach((sec) => {
+      if (/^\s*COMBOS?\b/i.test(sec.title || '')) return; // los combos son solo minoristas
       const secPc = leerEncabezado(sec.title || '');
       (sec.tables || []).forEach((tbl) => {
         let secUnit = secPc ? secPc.unit : null;
