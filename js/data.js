@@ -11,8 +11,9 @@ window.GDO = window.GDO || {};
   const SKEY = 'gdo_reparto_session';
   const INBOX = 'gdo_reparto_inbox'; // cola de pedidos entrantes desde la tienda online
   // ID imposible de adivinar: 128 bits de azar CRIPTOGRÁFICO. Es importante
-  // porque /pedidos y /rutas tienen lectura por-id pública (link de seguimiento
-  // del cliente), así que el id ES la "contraseña" del documento. Math.random
+  // porque /pedidos tiene lectura por-id pública (link de seguimiento del
+  // cliente), así que el id ES la "contraseña" del documento. (/rutas ya NO es
+  // pública: el cliente lee /seguimiento, ver publicarSeguimiento.) Math.random
   // (lo que había antes) era corto y predecible: se podía adivinar/enumerar y
   // robar datos del cliente. Caemos a Math.random combinado solo en navegadores
   // muy viejos sin crypto. Mismo criterio que ya usa la tienda.
@@ -45,10 +46,61 @@ window.GDO = window.GDO || {};
   function fsSet(coll, obj) {
     if (!fsOn() || !obj || !obj.id) return;
     try { GDO.FB.db.collection(coll).doc(obj.id).set(fsClean(obj)); } catch (e) {}
+    if (coll === 'rutas') publicarSeguimiento(obj);
   }
   function fsDel(coll, id) {
     if (!fsOn() || !id) return;
     try { GDO.FB.db.collection(coll).doc(id).delete(); } catch (e) {}
+    if (coll === 'rutas') { try { GDO.FB.db.collection('seguimiento').doc(id).delete().catch(() => {}); } catch (e) {} }
+  }
+
+  /* ----- COPIA PÚBLICA DE LA RUTA PARA EL SEGUIMIENTO DEL CLIENTE -----
+     El link "seguí tu pedido" lo abre cualquiera que lo tenga. Antes leía la
+     ruta entera (/rutas): con eso se veían los ids de los pedidos de TODAS las
+     paradas, y con cada id, nombre, teléfono y dirección de otros clientes.
+     Ahora /rutas es solo del personal y el cliente lee /seguimiento/{rutaId},
+     que tiene SOLO lo necesario para el mapa y el horario estimado:
+       · posición del chofer, depósito y demoras;
+       · las paradas EN ORDEN, cada una con una "ficha" = primeros 16 caracteres
+         del SHA-256 del id del pedido (no se puede volver al id), su estado y
+         coordenadas redondeadas a ~100 m.
+     Sin nombres, teléfonos, direcciones ni ids. Se reescribe sola cada vez que
+     se guarda la ruta o el chofer manda su GPS. */
+  const _fichas = new Map();
+  function fichaDe(id) {
+    if (_fichas.has(id)) return Promise.resolve(_fichas.get(id));
+    const sub = (self.crypto || window.crypto || {}).subtle;
+    if (!sub || !window.TextEncoder) return Promise.resolve(null);
+    return sub.digest('SHA-256', new TextEncoder().encode(String(id))).then((buf) => {
+      const a = new Uint8Array(buf);
+      let h = '';
+      for (let i = 0; i < 8; i++) h += a[i].toString(16).padStart(2, '0');
+      _fichas.set(id, h);
+      return h;
+    }).catch(() => null);
+  }
+  const redondo = (n) => (n == null || !isFinite(n) ? null : Math.round(Number(n) * 1000) / 1000);
+  function publicarSeguimiento(r) {
+    if (!fsOn() || !r || !r.id) return;
+    const ids = ((r.orden && r.orden.length ? r.orden : r.pedidoIds) || []).slice(0, 200);
+    const prog = r.progreso || {}, dem = r.demoraPorId || {}, coords = r.coords || {};
+    Promise.all(ids.map(fichaDe)).then((fichas) => {
+      if (fichas.some((t) => !t)) return;              // navegador sin crypto: no publicamos nada
+      const paradas = ids.map((pid, i) => {
+        const p = (db && db.pedidos || []).find((x) => x.id === pid);
+        const c = coords[pid] || (p && p.lat != null ? { lat: p.lat, lng: p.lng } : null);
+        return { t: fichas[i], est: String(prog[pid] || ''), dem: typeof dem[pid] === 'number' ? dem[pid] : null,
+          lat: c ? redondo(c.lat) : null, lng: c ? redondo(c.lng) : null };
+      });
+      const o = r.origen && r.origen.lat != null ? { lat: Number(r.origen.lat), lng: Number(r.origen.lng) } : null;
+      const cp = r.choferPos && r.choferPos.lat != null
+        ? { lat: Number(r.choferPos.lat), lng: Number(r.choferPos.lng), ts: Number(r.choferPos.ts) || Date.now() } : null;
+      const doc = { estado: String(r.estado || ''), origen: o, choferPos: cp,
+        demoraDefaultMin: typeof r.demoraDefaultMin === 'number' ? r.demoraDefaultMin : 0,
+        paradas, actualizado: Date.now() };
+      // Con las reglas viejas (antes de publicar las nuevas) esto se rechaza: no pasa nada.
+      return GDO.FB.db.collection('seguimiento').doc(r.id).set(doc);
+    }).catch(() => {});
   }
 
   // Emails que entran como ADMINISTRADORES al auto-crear su perfil la primera
@@ -701,6 +753,9 @@ window.GDO = window.GDO || {};
       const r = db.rutas.find((x) => x.id === rutaId);
       if (r) { r.choferPos = pos; persist(db); }
       if (fsOn()) { try { GDO.FB.db.collection('rutas').doc(rutaId).update({ choferPos: pos }); } catch (e) {} }
+      // La copia pública (seguimiento del cliente) se reescribe entera: de paso,
+      // una ruta armada antes de que existiera queda publicada sola.
+      if (r) publicarSeguimiento(r);
     },
     deleteRuta(id) {
       const r = db.rutas.find((x) => x.id === id);
