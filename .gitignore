@@ -10,3 +10,7 @@ Desktop.ini
 # Logs y temporales
 *.log
 *.tmp
+
+# Pruebas de reglas (test/)
+node_modules/
+firestore-debug.log
