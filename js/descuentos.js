@@ -3,7 +3,7 @@
    · CAMPAÑA  — uno para todos (ej. VOLVE10), con fecha de vencimiento. Cada
                 cliente lo puede usar UNA sola vez (se lo reconoce por el
                 teléfono). Sirve para cualquier acción publicitaria.
-   · PERSONAL — uno por cliente (ej. VOLVE-JUAN-7K3), de un solo uso y atado a
+   · PERSONAL — uno por cliente (ej. VOLVE-7K3QM9XA), de un solo uso y atado a
                 su teléfono. Es el que se le manda al cliente que se está yendo.
 
    DÓNDE VIVEN: Firestore, colección `descuentos`, con el CÓDIGO como id del
@@ -126,8 +126,12 @@ window.GDO = window.GDO || {};
     return { codigo: d.id, pct: a.pct, tipo: d.tipo, nombre: d.nombre || '', subtotal: a.subtotal, monto: a.monto };
   }
 
-  /* CÓDIGO PERSONAL: prefijo + nombre de pila + 3 caracteres al azar, sin los
-     que se confunden al dictarlo (0/O, 1/I/L). Ej: VOLVE-JUAN-7K3. */
+  /* CÓDIGO PERSONAL: prefijo + 8 caracteres al azar, sin los que se confunden
+     al dictarlo (0/O, 1/I/L). Ej: VOLVE-7K3QM9XA.
+     Antes era VOLVE-<NOMBRE>-<3 al azar>: con el nombre de pila a la vista
+     quedaban ~30.000 combinaciones por nombre, y la tienda deja LEER un código
+     sabiendo su nombre (con el nombre del cliente y su teléfono adentro). Con
+     8 al azar son ~850 mil millones: no se puede adivinar ni recorrer. */
   const LETRAS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   function azar(n) {
     let s = '';
@@ -140,11 +144,11 @@ window.GDO = window.GDO || {};
     }
     return s;
   }
+  // `nombre` ya no se usa en el código (se deja el parámetro para no tocar a quien lo llama).
   function codigoPersonal(nombre, prefijo) {
-    const pila = normCodigo(String(nombre || '').replace(/\([^)]*\)/g, ' ').trim().split(/\s+/)[0]).replace(/-/g, '').slice(0, 8) || 'CLIENTE';
     const pre = normCodigo(prefijo || 'VOLVE') || 'VOLVE';
     let c, vueltas = 0;
-    do { c = pre + '-' + pila + '-' + azar(3); } while (buscar(c) && ++vueltas < 20);
+    do { c = pre + '-' + azar(8); } while (buscar(c) && ++vueltas < 20);
     return c;
   }
   // Sugerencia para una campaña a partir de su nombre y el %: "Volvé a GDO", 10 → "VOLVE10".
