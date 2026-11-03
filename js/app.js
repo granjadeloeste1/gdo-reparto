@@ -111,7 +111,11 @@ window.GDO = window.GDO || {};
   const App = {
     // Cerrar sesión: limpia la sesión local + cierra Firebase Auth y recarga
     // para dejar todo en estado limpio (sin listeners de Firestore colgados).
-    logout() { Store.logout(); location.reload(); },
+    // Espera a que se borre la copia local (máx. 4 s) y recién ahí recarga.
+    logout() {
+      const recargar = () => location.reload();
+      Promise.race([Promise.resolve(Store.logout()), new Promise((r) => setTimeout(r, 4000))]).then(recargar, recargar);
+    },
     render,
     go,
     cambiarModo,

@@ -246,7 +246,9 @@ window.GDO = window.GDO || {};
     persist(d);
     return d;
   }
+  let _saliendo = false;   // cerrando sesión: no volver a guardar datos en el celular
   function persist(d) {
+    if (_saliendo) { try { sessionStorage.removeItem(SKEY); } catch (e) {} return; }
     // Los DATOS van a localStorage SIN la sesión; la SESIÓN va aparte, a sessionStorage.
     try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, d, { session: null }))); } catch (e) {}
     try { sessionStorage.setItem(SKEY, JSON.stringify((d && d.session) || null)); } catch (e) {}
@@ -477,9 +479,19 @@ window.GDO = window.GDO || {};
       if (u) { db.session = { userId: u.id, rolActivo: u.roles[0] }; persist(db); }
       return u || null;
     },
+    // Devuelve una promesa: resuelve cuando se cerró la sesión Y se borró la copia
+    // local de los datos (localStorage + cache de Firestore). En un celular que
+    // comparten varios choferes no tiene que quedar nada del anterior.
     logout() {
       db.session = null; persist(db);
-      if (GDO.FB && GDO.FB.enabled && GDO.FB.logout) { try { GDO.FB.logout(); } catch (e) {} }
+      _saliendo = true;
+      try { localStorage.removeItem(KEY); } catch (e) {}
+      const fin = () => { try { localStorage.removeItem(KEY); } catch (e) {} };
+      if (GDO.FB && GDO.FB.enabled && GDO.FB.salir) {
+        try { return GDO.FB.salir().then(fin, fin); } catch (e) {}
+      }
+      fin();
+      return Promise.resolve();
     },
     current() {
       if (db.session && db.session.rolActivo === 'socio') return { id: db.session.userId, nombre: db.session.socio.nombre, roles: ['socio'], socio: db.session.socio };
