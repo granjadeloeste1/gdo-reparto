@@ -263,7 +263,7 @@ window.GDO = window.GDO || {};
         <div class="notif-item ${n.leida ? '' : 'unread'}">
           ${n.leida ? '' : '<div class="dot"></div>'}
           <div class="notif-tx"><div class="tx">${esc(n.mensaje)}</div><div class="ts">${hace(n.ts)}</div></div>
-          <button class="notif-del" data-id="${n.id}" title="Borrar" aria-label="Borrar">✕</button>
+          <button class="notif-del" data-id="${esc(n.id)}" title="Borrar" aria-label="Borrar">✕</button>
         </div>`).join('') : '<div class="empty">Sin notificaciones.</div>'}</div>
     </div>`);
     document.body.appendChild(pop);

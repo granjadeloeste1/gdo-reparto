@@ -7,6 +7,8 @@ window.GDO = window.GDO || {};
 (function () {
   const VEL_KMH = 24;          // velocidad urbana promedio estimada
   const SALIDA_DEFAULT = 8 * 60; // 08:00 hs por defecto
+  // Escapado para los popups del mapa (nombre y dirección vienen de los pedidos).
+  const esc = (s) => (GDO.UI && GDO.UI.esc ? GDO.UI.esc(s) : String(s == null ? '' : s).replace(/[&<>"']/g, ''));
 
   function haversine(a, b) {
     const R = 6371, toR = (d) => d * Math.PI / 180;
@@ -199,16 +201,16 @@ window.GDO = window.GDO || {};
     clearLayers();
     const NEG = '#0f0f0f', NAR = '#F58220';
     const all = [];
-    const mo = L.marker([origen.lat, origen.lng], { icon: pinIcon('A', NAR) }).addTo(_map).bindPopup('Salida: ' + (origen.nombre || 'Depósito'));
+    const mo = L.marker([origen.lat, origen.lng], { icon: pinIcon('A', NAR) }).addTo(_map).bindPopup('Salida: ' + esc(origen.nombre || 'Depósito'));
     _layers.push(mo); all.push([origen.lat, origen.lng]);
     ordenParadas.forEach((p, i) => {
       if (p.lat == null || p.lng == null) return; // sin ubicar: no se puede dibujar
       const m = L.marker([p.lat, p.lng], { icon: pinIcon(String(i + 1), NEG) }).addTo(_map)
-        .bindPopup(`<b>${i + 1}. ${p.cliente}</b><br>${p.direccion}`);
+        .bindPopup(`<b>${i + 1}. ${esc(p.cliente)}</b><br>${esc(p.direccion)}`);
       _layers.push(m); all.push([p.lat, p.lng]);
     });
     if (!opts.sameAsOrigin) {
-      const md = L.marker([destino.lat, destino.lng], { icon: pinIcon('B', NAR) }).addTo(_map).bindPopup('Regreso: ' + (destino.nombre || 'Depósito'));
+      const md = L.marker([destino.lat, destino.lng], { icon: pinIcon('B', NAR) }).addTo(_map).bindPopup('Regreso: ' + esc(destino.nombre || 'Depósito'));
       _layers.push(md);
     }
     all.push([destino.lat, destino.lng]);
@@ -230,7 +232,9 @@ window.GDO = window.GDO || {};
   // queda de respaldo solo si el pedido todavía no tiene coordenadas.
   function locParam(p) {
     if (!p) return '';
-    if (p.lat != null) return `${p.lat},${p.lng}`;
+    // Number(): las coordenadas pueden venir de un pedido de la tienda (dato de
+    // afuera); así nunca se cuela texto en el link.
+    if (p.lat != null) return `${Number(p.lat)},${Number(p.lng)}`;
     const dir = String(p.direccion || '').trim();
     if (dir) return encodeURIComponent(/argentina/i.test(dir) ? dir : dir + ', Buenos Aires, Argentina');
     const nom = String(p.nombre || '').trim();

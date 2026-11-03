@@ -309,9 +309,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             : '<span class="muted" title="Se gana cuando se entrega">~' + fmtM(f.estimada) + '</span>';
           const conEsp = f.c.detalle.some((d) => d.especial);
           return `<tr${puedeSel && st.sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
-            ${esAdmin && u ? `<td>${puedeSel ? `<input type="checkbox" data-sel="${p.id}" ${st.sel.has(p.id) ? 'checked' : ''}/>` : ''}</td>` : ''}
+            ${esAdmin && u ? `<td>${puedeSel ? `<input type="checkbox" data-sel="${esc(p.id)}" ${st.sel.has(p.id) ? 'checked' : ''}/>` : ''}</td>` : ''}
             <td class="small">${f.fecha ? fmtFecha(f.fecha) : '<span class="muted">—</span>'}</td>
-            <td><b data-det="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver el detalle de la comisión">${esc(p.cliente)}</b>
+            <td><b data-det="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver el detalle de la comisión">${esc(p.cliente)}</b>
               ${p.razonSocial || p.cuit ? `<div class="small muted">${esc(p.razonSocial || '')}${p.cuit ? ' · CUIT ' + esc(p.cuit) : ''}</div>` : ''}</td>
             <td>${estadoVenta(p)}</td>
             <td class="small">${fmtM(f.c.base)}</td>

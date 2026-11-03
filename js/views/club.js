@@ -285,7 +285,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       modal({
         title: `🎮 Habilitar partida · ${socio.nombre || 'Socio'}`, width: 440,
         bodyHTML:
-          `<p class="small muted" style="margin:0 0 10px">Objetivo de hoy: <b style="color:#F58220">${((cfg.objetivoMs) / 1000).toFixed(2)} s</b> · Premio: ${esc(cfg.premioIco || '🎁')} <b>${esc(cfg.premioNombre)}</b> · Quedan <b>${cfg.unidades}</b></p>` +
+          `<p class="small muted" style="margin:0 0 10px">Objetivo de hoy: <b style="color:#F58220">${((cfg.objetivoMs) / 1000).toFixed(2)} s</b> · Premio: ${esc(cfg.premioIco || '🎁')} <b>${esc(cfg.premioNombre)}</b> · Quedan <b>${esc(cfg.unidades)}</b></p>` +
           `<div class="small muted" style="margin-bottom:8px">💵 El mínimo de <b>$${fmt(MONTO_MIN_JUEGO)}</b> se controla en el mostrador mirando el ticket.</div>` +
           `<label style="font-size:13px;color:#5b6470;font-weight:600;margin-top:10px;display:block">N° de ticket <b style="color:#c0392b">(obligatorio · no se puede repetir)</b></label>` +
           `<input id="hp-nro" type="text" inputmode="numeric" placeholder="ej: 10080" style="width:100%;padding:11px;border:1px solid #cfd4da;border-radius:9px;font-size:15px"/>` +
@@ -344,7 +344,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       box.querySelectorAll('[data-rfoto]').forEach((b) => b.onclick = () => {
         const r = de(b.dataset.rfoto);
         modal({ title: 'Ticket para revisar', width: 520,
-          bodyHTML: r && r.foto ? `<img src="${r.foto}" alt="Ticket" style="width:100%;border-radius:10px"/>` : '<div class="empty">Este aviso no trae foto.</div>',
+          bodyHTML: r && r.foto ? `<img src="${esc(GDO.UI.imgSegura(r.foto))}" alt="Ticket" style="width:100%;border-radius:10px"/>` : '<div class="empty">Este aviso no trae foto.</div>',
           footHTML: '<button class="btn btn-ghost" data-no>Cerrar</button>',
           onMount(mm, close) { mm.querySelector('[data-no]').onclick = close; } });
       });
@@ -659,7 +659,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             fila('N° de ticket', esc(leido.nro || '—')) +
             fila('Total de la compra', '$' + fmt(leido.monto)) +
             `<div style="display:flex;justify-content:space-between;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid #e6e9ed"><span class="muted">Puntos a sumar</span><b style="color:#F58220;font-size:18px">${fmt(pts)}</b></div>` +
-            (leido.foto ? `<img src="${leido.foto}" alt="Foto del ticket" style="width:100%;max-height:180px;object-fit:contain;background:#f4f5f7;border-radius:8px;margin-top:10px"/>` : '') +
+            (leido.foto ? `<img src="${esc(GDO.UI.imgSegura(leido.foto))}" alt="Foto del ticket" style="width:100%;max-height:180px;object-fit:contain;background:#f4f5f7;border-radius:8px;margin-top:10px"/>` : '') +
             (confirmado
               ? `<div style="margin-top:10px;color:#2e9e5b;font-weight:700;font-size:14px">✓ Confirmado. Ya podés sumar los puntos.</div>`
               : `<div style="margin-top:10px;font-size:14px;font-weight:600">¿Coincide con el ticket que tenés en la mano?</div>` +
@@ -1174,7 +1174,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           ? `<table><thead><tr><th style="width:34px"><input type="checkbox" id="pr-all" title="Seleccionar todos"/></th><th></th><th>Premio</th><th>Costo</th><th>Estado</th><th></th></tr></thead><tbody>` +
             arr.map((p) => `<tr>
               <td><input type="checkbox" data-selp="${esc(p._id)}"/></td>
-              <td style="font-size:22px">${p.ico || '🎁'}</td>
+              <td style="font-size:22px">${esc(p.ico || '🎁')}</td>
               <td>${esc(p.nombre || '')}</td>
               <td><b style="color:#F58220">${fmt(p.costo)}</b> pts</td>
               <td>${p.activo ? '<span class="chip chip-entreg">Activo</span>' : '<span class="chip chip-no">Inactivo</span>'}</td>

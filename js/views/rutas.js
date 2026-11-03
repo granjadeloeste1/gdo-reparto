@@ -50,16 +50,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <td class="small">${rep ? esc(rep.nombre) : '<span class="muted">—</span>'}</td>
             <td class="small">${veh ? esc(veh.nombre) : '<span class="muted">—</span>'}</td>
             <td>${r.pedidoIds.length}</td>
-            <td>${ESTADO_RUTA[r.estado] || r.estado}${(() => {
+            <td>${ESTADO_RUTA[r.estado] || esc(r.estado)}${(() => {
               const pr = r.progreso || {};
               const e = r.pedidoIds.filter((id) => pr[id] === 'entregado').length;
               const n = r.pedidoIds.filter((id) => pr[id] === 'no_entregado').length;
               return (e || n) ? `<div class="small muted" style="margin-top:4px">✓ ${e} entregados${n ? ` · ✕ ${n} no` : ''} de ${r.pedidoIds.length}</div>` : '';
             })()}</td>
             <td class="t-actions">
-              <button class="btn btn-ghost btn-sm" data-open="${r.id}">Abrir</button>
-              ${['asignada', 'aceptada', 'en_curso'].includes(r.estado) ? `<button class="btn btn-ghost btn-sm" data-fin="${r.id}" title="Cerrar/finalizar la ruta si el chofer no lo hizo">✓ Cerrar</button>` : ''}
-              <button class="btn btn-ghost btn-sm" data-del="${r.id}">🗑</button>
+              <button class="btn btn-ghost btn-sm" data-open="${esc(r.id)}">Abrir</button>
+              ${['asignada', 'aceptada', 'en_curso'].includes(r.estado) ? `<button class="btn btn-ghost btn-sm" data-fin="${esc(r.id)}" title="Cerrar/finalizar la ruta si el chofer no lo hizo">✓ Cerrar</button>` : ''}
+              <button class="btn btn-ghost btn-sm" data-del="${esc(r.id)}">🗑</button>
             </td></tr>`;
         }).join('')}</tbody></table>` : `<div class="empty">No hay rutas para mostrar con este filtro.</div>`;
       box.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => go('#/rutas/' + b.dataset.open));
@@ -142,9 +142,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>Nombre de la ruta</label><input id="r-nom" value="${esc(ruta.nombre)}"/></div>
           <div class="field"><label>Fecha</label><input id="r-fec" type="date" value="${esc(ruta.fecha)}"/></div>
           <div class="field"><label>Repartidor (chofer)</label>
-            <select id="r-rep"><option value="">— Seleccionar —</option>${repartidores.map((u) => `<option value="${u.id}"${u.id===ruta.repartidorId?' selected':''}>${esc(u.nombre)}</option>`).join('')}</select></div>
+            <select id="r-rep"><option value="">— Seleccionar —</option>${repartidores.map((u) => `<option value="${esc(u.id)}"${u.id===ruta.repartidorId?' selected':''}>${esc(u.nombre)}</option>`).join('')}</select></div>
           <div class="field"><label>Vehículo</label>
-            <select id="r-veh"><option value="">— Seleccionar —</option>${Store.vehiculos().map((v) => `<option value="${v.id}"${v.id===ruta.vehiculoId?' selected':''}>${esc(v.nombre)} (${esc(v.patente)})</option>`).join('')}</select></div>
+            <select id="r-veh"><option value="">— Seleccionar —</option>${Store.vehiculos().map((v) => `<option value="${esc(v.id)}"${v.id===ruta.vehiculoId?' selected':''}>${esc(v.nombre)} (${esc(v.patente)})</option>`).join('')}</select></div>
           <div class="field"><label>Salida</label>
             <span class="help">⏱ <b>Automática.</b> Los horarios de llegada se calculan SIEMPRE desde la <b>hora en vivo</b> y la <b>ubicación real</b> del chofer mientras reparte — nunca desde una hora fija ni la de confirmación. Si el chofer se demora, el ETA se ajusta solo.</span></div>
           <div class="field"><label>Demora por parada (min)</label><input id="r-dem" type="number" min="0" value="${ruta.demoraDefaultMin}"/>
@@ -216,8 +216,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const vis = elegibles.filter(pasaVend).filter((p) => !filtroDia || (efFecha(p) || 'sin') === filtroDia);
       pedsBox.innerHTML = vendChips + chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
         ${vis.map((p) => { const f = efFecha(p); return `<tr>
-          <td><input type="checkbox" data-pid="${p.id}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
-          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
+          <td><input type="checkbox" data-pid="${esc(p.id)}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
+          <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
           <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}</td>
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
         </tr>`; }).join('')}</tbody></table>`;
@@ -325,7 +325,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               ${noEnt ? `<div class="small" style="color:#c62828;margin-top:4px">Motivo: ${esc(noEnt.detalle)}</div>` : ''}
               <div style="margin-top:6px;display:flex;align-items:center;gap:6px">
                 <span class="small muted">Demora:</span>
-                <input type="number" min="0" data-dem="${p.id}" value="${ruta.demoraPorId[p.id]!=null?ruta.demoraPorId[p.id]:ruta.demoraDefaultMin}" style="width:70px;padding:5px 8px"/>
+                <input type="number" min="0" data-dem="${esc(p.id)}" value="${ruta.demoraPorId[p.id]!=null?ruta.demoraPorId[p.id]:ruta.demoraDefaultMin}" style="width:70px;padding:5px 8px"/>
                 <span class="small muted">min</span>
               </div></div>
             <div class="eta">${fmtHora(calc.llegada[i])}</div></div>`;
