@@ -512,7 +512,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (!GDO.Desc || !f.telefono) return '';
     const t8 = CRM().telKey(f.telefono);
     const suyos = GDO.Desc.todos().filter((d) => d.tipo === 'personal' && d.tel8 === t8 && GDO.Desc.estado(d) === 'activo');
-    return suyos.map((d) => `<div class="note" style="margin-top:14px">🎟️ Tiene el código <b>${esc(d.id)}</b> (${d.pct}% de descuento) sin usar · ${esc(GDO.Desc.textoVence(d))}.</div>`).join('');
+    return suyos.map((d) => `<div class="note" style="margin-top:14px">🎟️ Tiene el código <b>${esc(d.id)}</b> (${esc(d.pct)}% de descuento) sin usar · ${esc(GDO.Desc.textoVence(d))}.</div>`).join('');
   }
 
   function fichaModal(id, after) {
@@ -762,7 +762,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <span class="crm-ct-f">${fmtD(ct.ts)}</span>
         <span class="chip ${r.chip}">${esc(r.t)}</span>
         ${ct.resultado === 'problema' && ct.tema ? '<span class="crm-ct-c">sobre: ' + esc(CRM().TEMAS[ct.tema] || ct.tema) + '</span>' : ''}
-        <span class="crm-ct-c">${C[ct.canal] || ct.canal}</span>
+        <span class="crm-ct-c">${C[ct.canal] || esc(ct.canal)}</span>
         ${ct.porNombre ? '<span class="crm-ct-p">por ' + esc(String(ct.porNombre).split(' ')[0]) + '</span>' : ''}
       </div>
       ${ct.nota ? '<div class="crm-ct-n">' + esc(ct.nota) + '</div>' : ''}

@@ -13,6 +13,13 @@ service cloud.firestore {
     // ║   3) Recién entonces publicar estas reglas.                             ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
+    // ORDEN PARA PUBLICAR ESTA VERSIÓN (rama 'seguridad', nov. 2026): primero
+    // tienen que estar EN VIVO las páginas nuevas de gdo-tienda (seguir.html,
+    // juego.html) y de gdo-reparto (js/data.js publica /seguimiento). Recién
+    // después se pegan estas reglas en la consola. Las páginas nuevas funcionan
+    // con las reglas viejas y con estas; las viejas NO con estas (el juego y el
+    // ETA del seguimiento). Pruebas: test/rules.test.js (emulador).
+
     // ───────── Identidad ─────────
     // PERSONAL (staff): su UID de Firebase Auth figura en la lista blanca /staff.
     // Antes "staff" = cualquiera no-anónimo; YA NO alcanza, porque los SOCIOS del
@@ -38,6 +45,12 @@ service cloud.firestore {
     function isAdmin() {
       return isStaff()
         && get(/databases/$(database)/documents/Staff/$(request.auth.uid)).data.get('rol', 'admin') == 'admin';
+    }
+
+    // Rol del personal tal como figura en /Staff (sin campo = 'admin', ver arriba).
+    // Solo tiene sentido después de isStaff().
+    function rolStaff() {
+      return get(/databases/$(database)/documents/Staff/$(request.auth.uid)).data.get('rol', 'admin');
     }
 
     // CRM (ficha de clientes): el admin siempre; el resto del personal solo si su
@@ -81,12 +94,68 @@ service cloud.firestore {
         && request.resource.data.puntos == resource.data.puntos + ticketDelCommit().puntos;
     }
 
+    // Texto opcional: si viene, tiene que ser string (o null) y no más largo que max.
+    function txt(d, k, max) {
+      return !(k in d) || d[k] == null || (d[k] is string && d[k].size() <= max);
+    }
+    // Número opcional (o null).
+    function num(d, k) {
+      return !(k in d) || d[k] == null || d[k] is number;
+    }
+
+    /* Código de descuento VIGENTE para un pedido de la tienda: existe, el % es
+       el del código real, no está pausado ni vencido (fecha del SERVIDOR; vale
+       todo el día del vencimiento, hora Argentina = UTC-3 → +27 h desde las 0 UTC)
+       y, si es PERSONAL con teléfono, el teléfono del pedido termina en esos 8
+       dígitos. Antes esto último y lo de pausado/vencido lo miraba solo el
+       navegador. Lo que queda para el panel: "ya usado" (sale de los pedidos). */
+    function descuentoValido(d) {
+      let x = d.descuento;
+      let ref = /databases/$(database)/documents/descuentos/$(x.codigo);
+      let c = get(ref).data;
+      let v = c.get('vence', '');
+      return x is map
+        && x.keys().hasOnly(['codigo', 'pct', 'tipo', 'nombre', 'subtotal', 'monto'])
+        && x.codigo is string && x.codigo.size() > 0 && x.codigo.size() <= 30
+        && exists(ref)
+        && x.pct == c.pct
+        && txt(x, 'tipo', 20) && txt(x, 'nombre', 80) && num(x, 'subtotal') && num(x, 'monto')
+        && c.get('activo', true) != false
+        && (v == '' || v == null
+            || request.time < timestamp.date(int(v.split('-')[0]), int(v.split('-')[1]), int(v.split('-')[2])) + duration.value(27, 'h'))
+        && (c.get('tipo', '') != 'personal' || c.get('tel8', '') == ''
+            || d.telefono.replace('[^0-9]', '').matches('^[0-9]*' + c.tel8 + '$'));
+    }
+
     // Validación de un pedido creado por la tienda (sesión anónima o socio
     // logueado). Limita lo que un no-staff puede escribir. Si trae clienteUid,
     // debe ser el del propio usuario (para acreditar puntos a quien corresponde).
-    function pedidoTiendaValido() {
+    //
+    // LISTA CERRADA DE CAMPOS (keys().hasOnly): son exactamente los que mandan
+    // los formularios de gdo-tienda (index.html — lista y link de vendedor —,
+    // vista-minorista.html, combo.html, suprema.html). Si se agrega un campo
+    // nuevo en la tienda, HAY QUE SUMARLO ACÁ o los pedidos se rechazan.
+    // Quedan afuera a propósito: pagado / pagoOnline (los marca el servidor del
+    // bot al confirmar Nave), pod (comprobante del chofer), puntos /
+    // puntosAcreditados (los decide el personal).
+    // El id del documento tiene que ser el que genera la tienda: p_ + 32
+    // caracteres base36 (o el respaldo sin crypto, más corto). Así no se cuela
+    // HTML en el id, que el panel mete en atributos.
+    // Los renglones (items) NO se pueden revisar uno por uno (las reglas no
+    // tienen bucles): se limita la cantidad y el panel escapa todo al mostrarlo.
+    // precio / totalEstimado / descuento.monto los calcula el NAVEGADOR del
+    // cliente: son una referencia, NUNCA un monto confiable (el panel lo avisa).
+    function pedidoTiendaValido(id) {
       let d = request.resource.data;
-      return d.origen == 'tienda'
+      return id.matches('^p_[A-Za-z0-9_-]{12,48}$')
+        && d.id == id
+        && d.keys().hasOnly(['id', 'origen', 'canal', 'lista', 'fuente', 'vendedorId', 'vendedorNombre',
+             'cliente', 'contacto', 'telefono', 'fantasia', 'razonSocial', 'cuit', 'email',
+             'modalidad', 'direccion', 'localidad', 'entrecalles', 'lat', 'lng', 'zona', 'envio',
+             'items', 'fechaEntrega', 'diaEntrega', 'ventana', 'especificaciones', 'formaPago',
+             'prioridad', 'estado', 'creadoPor', 'rutaId', 'clienteUid', 'cuentaUid',
+             'totalEstimado', 'descuento', 'historia', 'creado', 'ts'])
+        && d.origen == 'tienda'
         && d.estado == 'pendiente'
         && d.rutaId == null
         && d.creadoPor == null
@@ -96,18 +165,23 @@ service cloud.firestore {
         && d.especificaciones is string && d.especificaciones.size() <= 2000
         && d.items is list && d.items.size() > 0 && d.items.size() <= 100
         && (!('historia' in d) || (d.historia is list && d.historia.size() == 0))
+        && (!('prioridad' in d) || d.prioridad == 'normal')
+        && (!('modalidad' in d) || d.modalidad in ['envio', 'retiro'])
+        && (!('lista' in d) || d.lista in ['mayorista', 'minorista'])
+        && (!('canal' in d) || d.canal == 'vendedor')
+        && (!('vendedorId' in d) || (d.vendedorId is string && d.vendedorId.matches('^[A-Za-z0-9_-]{1,60}$')))
+        && num(d, 'lat') && num(d, 'lng') && num(d, 'envio') && num(d, 'totalEstimado')
+        && num(d, 'creado') && num(d, 'ts')
+        && txt(d, 'fuente', 60) && txt(d, 'vendedorNombre', 80) && txt(d, 'contacto', 120)
+        && txt(d, 'fantasia', 120) && txt(d, 'razonSocial', 160) && txt(d, 'cuit', 20) && txt(d, 'email', 120)
+        && txt(d, 'localidad', 120) && txt(d, 'entrecalles', 200) && txt(d, 'zona', 80)
+        && txt(d, 'fechaEntrega', 10) && txt(d, 'diaEntrega', 60) && txt(d, 'ventana', 60) && txt(d, 'formaPago', 80)
         && (!('clienteUid' in d) || d.clienteUid == null || d.clienteUid == request.auth.uid)
-        // Anti-estafa: el cliente NUNCA fija el monto de puntos a acreditar (lo
-        // confirma el personal). totalEstimado es solo informativo.
-        && (!('puntos' in d) || d.puntos == 0)
-        && (!('puntosAcreditados' in d) || d.puntosAcreditados == false)
+        && (!('cuentaUid' in d) || d.cuentaUid == null || d.cuentaUid == request.auth.uid)
         // Anti-estafa: si el pedido trae un CÓDIGO DE DESCUENTO, el código tiene
-        // que existir y el % tiene que ser el del código real (el cliente no
-        // puede inventarse un 50%). El resto (vencido, ya usado) lo revisa el panel.
-        && (!('descuento' in d) || d.descuento == null || (
-              d.descuento.codigo is string && d.descuento.codigo.size() <= 30
-              && exists(/databases/$(database)/documents/descuentos/$(d.descuento.codigo))
-              && d.descuento.pct == get(/databases/$(database)/documents/descuentos/$(d.descuento.codigo)).data.pct));
+        // que existir, el % tiene que ser el del código real (el cliente no puede
+        // inventarse un 50%) y tiene que estar vigente (ver descuentoValido).
+        && (!('descuento' in d) || d.descuento == null || descuentoValido(d));
     }
 
     // ───────── Lista blanca de personal ─────────
@@ -124,7 +198,30 @@ service cloud.firestore {
     }
 
     // ───────── Datos internos: SOLO personal ─────────
-    match /users/{id}          { allow read, write: if isStaff(); }
+    // Perfiles de la app (nombre, roles de PANTALLA, comisiones). Antes cualquier
+    // staff los escribía: un repartidor podía ponerse roles: ['admin'] y la app
+    // le mostraba todo (las reglas igual miran /Staff, pero muchas colecciones
+    // solo piden isStaff). Ahora escribe el ADMIN, salvo dos cosas que hace la
+    // propia app al primer ingreso (Store.login en js/data.js):
+    //  · crear SU perfil (id = su UID) como repartidor;
+    //  · anotar SU UID en el perfil que tiene SU email.
+    // (y la limpieza vieja de un campo 'pass', que solo puede BORRARLO).
+    match /users/{id} {
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
+      allow create: if isStaff() && id == request.auth.uid
+                       && request.resource.data.keys().hasOnly(['id', 'uid', 'nombre', 'email', 'roles', 'activo'])
+                       && request.resource.data.uid == request.auth.uid
+                       && request.resource.data.roles == ['repartidor'];
+      allow update: if isStaff()
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
+                       && request.resource.data.uid == request.auth.uid
+                       && request.auth.token.email is string
+                       && resource.data.get('email', '').lower() == request.auth.token.email.lower();
+      allow update: if isStaff()
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pass'])
+                       && !('pass' in request.resource.data);
+    }
     match /vehiculos/{id}       { allow read, write: if isStaff(); }
     match /notificaciones/{id}  { allow read, write: if isStaff(); }
     match /meta/{id}            { allow read, write: if isStaff(); }
@@ -158,11 +255,15 @@ service cloud.firestore {
     }
 
     // ───────── Códigos de descuento ─────────
-    // El id del documento ES el código (VOLVE10, VOLVE-JUAN-7K3). La tienda
+    // El id del documento ES el código (VOLVE10, VOLVE-7K3QM9XA). La tienda
     // busca UNO por su nombre para validarlo antes de mandar el pedido: get
     // público, como el seguimiento (hay que saber el código para leerlo), pero
     // NO puede listar los demás. El personal los ve todos: hacen falta al cargar
     // un pedido desde el panel.
+    // OJO: el doc de un código PERSONAL lleva clienteNombre y tel8; lo puede leer
+    // quien tenga el código (el propio cliente). Por eso los personales nuevos
+    // son VOLVE-<8 al azar> (no se pueden adivinar). Los viejos VOLVE-NOMBRE-XXX
+    // sí: conviene pausarlos y mandar uno nuevo si todavía importan.
     // Crear/editar: quien maneja Promos. Los códigos PERSONALES también los crea
     // quien tiene el CRM: se generan desde la ficha del cliente que se está yendo.
     match /descuentos/{id} {
@@ -176,17 +277,38 @@ service cloud.firestore {
     // ───────── Pedidos ─────────
     // get: el cliente final ve SU pedido por el link de seguimiento (id de 128
     //      bits, no adivinable). create: personal (cualquier origen) o tienda
-    //      (anónimo/socio) si pasa la validación. resto: solo personal.
+    //      (anónimo/socio) si pasa la validación. list/update: personal.
+    // delete: el ADMIN; el vendedor y el cajero solo un pedido que todavía está
+    //      pendiente y sin ruta (corregir una carga). El repartidor no borra.
     match /pedidos/{id} {
       allow get: if true;
-      allow create: if isStaff() || (request.auth != null && pedidoTiendaValido());
-      allow list, update, delete: if isStaff();
+      allow create: if isStaff() || (request.auth != null && pedidoTiendaValido(id));
+      allow list, update: if isStaff();
+      allow delete: if isAdmin()
+                    || (isStaff() && rolStaff() in ['vendedor', 'cajero']
+                        && resource.data.get('estado', '') == 'pendiente'
+                        && resource.data.get('rutaId', null) == null);
     }
 
     // ───────── Rutas ─────────
+    // SOLO personal. Antes tenía get público (para el seguimiento) y la ruta
+    // trae los ids de los pedidos de todas las paradas: con un link de
+    // seguimiento se sacaban nombre, teléfono y dirección de toda la ruta.
     match /rutas/{id} {
-      allow get: if true;
-      allow list, create, update, delete: if isStaff();
+      allow read, write: if isStaff();
+    }
+
+    // Copia PÚBLICA de la ruta para el link de seguimiento (la escribe la app de
+    // reparto: publicarSeguimiento en js/data.js). Sin datos personales: chofer,
+    // depósito, demoras y paradas como fichas SHA-256 + estado + coords ~100 m.
+    match /seguimiento/{id} {
+      allow get:  if true;
+      allow list: if isStaff();
+      allow create, update: if isStaff()
+                       && request.resource.data.keys().hasOnly(['estado', 'origen', 'choferPos', 'demoraDefaultMin', 'paradas', 'actualizado'])
+                       && request.resource.data.paradas is list
+                       && request.resource.data.paradas.size() <= 200;
+      allow delete: if isStaff();
     }
 
     // ═══════════════════════ CLUB GDO ═══════════════════════
@@ -195,11 +317,28 @@ service cloud.firestore {
     // entrega o carga manual), y queda registrado en /puntos_log.
 
     // Perfil + saldo del socio (doc ID = UID de Firebase Auth del socio).
+    // Contador del número de socio (ver /club_config).
+    function contador() { return /databases/$(database)/documents/club_config/contador; }
+
     match /clientes/{uid} {
       allow get:    if isOwner(uid) || isStaff();
-      allow list:   if isStaff();
-      // Alta: el propio socio, arrancando SIEMPRE en 0 puntos. O el personal.
-      allow create: if isStaff() || (isOwner(uid) && request.resource.data.puntos == 0);
+      // Listar socios (DNI, teléfono de todos): admin y cajero (búsqueda por N° de
+      // socio en el mostrador, pestaña Club). El repartidor y el vendedor no:
+      // el chofer lee UN socio por su id al acreditar, eso es 'get'.
+      allow list:   if isAdmin() || (isStaff() && rolStaff() == 'cajero');
+      // Alta: el propio socio, arrancando SIEMPRE en 0 puntos, sin 'juegoIlimitado'
+      // (cuenta de demo, la marca el personal) y con el N° de socio que le tocó:
+      // el que deja el contador en ESTE MISMO commit (club.html crearSocio lo
+      // incrementa en la misma transacción; la regla del contador obliga a +1).
+      // Así nadie se elige un número. Las cuentas MAYORISTAS (link de vendedor)
+      // no son socios: van con nroSocio 0 y tipo 'mayorista'. O el personal.
+      allow create: if isStaff() || (isOwner(uid)
+                       && request.resource.data.puntos == 0
+                       && !('juegoIlimitado' in request.resource.data)
+                       && ((request.resource.data.nroSocio == 0 && request.resource.data.get('tipo', '') == 'mayorista')
+                           || (request.resource.data.nroSocio is int
+                               && request.resource.data.nroSocio == getAfter(contador()).data.n
+                               && (!exists(contador()) || get(contador()).data.n != getAfter(contador()).data.n))));
       // Update por el socio: puede tocar sus datos y BAJAR puntos (para canjear),
       // NUNCA subirlos (sumar = solo personal) ni cambiar 'nroSocio'. La baja real
       // queda atada a un voucher válido por la regla de /canjes (getAfter).
@@ -207,10 +346,14 @@ service cloud.firestore {
       // puede SUMAR puntos, y SOLO contra un ticket escaneado: ver creditoConTicket().
       // Antes le alcanzaba con tocar 'puntos' y podía ponerle el número que quisiera
       // desde la consola del navegador, salteándose la pantalla de escaneo.
+      // El socio tampoco cambia su DNI (es la llave del límite diario del juego)
+      // ni se marca 'juegoIlimitado'. Si hay que corregir el DNI, lo hace un admin.
       allow update: if isAdmin()
                     || (isStaff() && creditoConTicket(uid))
                     || (isOwner(uid)
-                        && request.resource.data.nroSocio == resource.data.nroSocio
+                        && request.resource.data.get('nroSocio', null) == resource.data.get('nroSocio', null)
+                        && request.resource.data.get('dni', null) == resource.data.get('dni', null)
+                        && request.resource.data.get('juegoIlimitado', null) == resource.data.get('juegoIlimitado', null)
                         && request.resource.data.puntos is int
                         && request.resource.data.puntos >= 0
                         && request.resource.data.puntos <= resource.data.puntos);
@@ -240,8 +383,15 @@ service cloud.firestore {
       allow read:   if request.auth != null;
       // El branch de admin cubre el toggle de flags (ej. canjeActivo); el otro
       // branch es el contador del nº de socio que incrementa en el alta (+1).
-      allow create: if isAdmin() || (request.auth != null && request.resource.data.n == 1);
-      allow update: if isAdmin() || (request.auth != null && request.resource.data.n == resource.data.n + 1);
+      // Fuera del admin, SOLO el doc 'contador' y SOLO con el campo n. Antes
+      // cualquiera logueado podía crear/pisar cualquier doc (p. ej. 'flags')
+      // mientras pusiera n == 1.
+      allow create: if isAdmin() || (request.auth != null && id == 'contador'
+                       && request.resource.data.keys().hasOnly(['n'])
+                       && request.resource.data.n == 1);
+      allow update: if isAdmin() || (request.auth != null && id == 'contador'
+                       && request.resource.data.keys().hasOnly(['n'])
+                       && request.resource.data.n == resource.data.n + 1);
       allow delete: if isAdmin();
     }
 
@@ -328,6 +478,12 @@ service cloud.firestore {
       // de más de 30 días ya no se acepta en el mostrador.
       allow update: if isStaff() && resource.data.usado == false && request.resource.data.usado == true
                        && resource.data.venceMs > request.time.toMillis();
+      // BAJA DE CUENTA (club.html eliminarMiCuenta): el socio anonimiza SUS vouchers
+      // (borra nombre y N° de socio) sin tocar nada más. Antes se rechazaba.
+      allow update: if request.auth != null && resource.data.clienteUid == request.auth.uid
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['socioNombre', 'socioNro'])
+                       && request.resource.data.socioNombre == ''
+                       && request.resource.data.socioNro == 0;
       // Borrar un canje (registro de voucher) = solo admin. El cajero solo lo marca usado.
       allow delete: if isAdmin();
     }
@@ -455,8 +611,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Solo personal: el id lleva el DNI del jugador (antes lo leía cualquiera
+    // logueado, incluso anónimo). El socio no lo necesita.
     match /juego_dias/{id} {
-      allow read:   if isStaff() || request.auth != null;
+      allow read:   if isStaff();
       allow create: if isStaff();
       allow update, delete: if isAdmin();
     }
@@ -489,28 +647,33 @@ service cloud.firestore {
                        && request.resource.data.objetivoMs == resource.data.objetivoMs
                        && request.resource.data.clienteUid == resource.data.clienteUid;
 
-      // (2) FRENAR — el socio pasa 'jugando' → 'jugada' informando su tiempo.
-      //     ACÁ ESTÁ EL ANTI-TRAMPA: el tiempo declarado se contrasta contra lo que
-      //     midió el SERVIDOR (request.time - inicioTs). No puede declarar menos de
-      //     lo que realmente tardó, y se le permite hasta 2 s de más por la latencia
-      //     de red. Cambiar la hora del celular no sirve: ninguna de las dos puntas
-      //     de la medición la pone el celular.
-      //     Y 'gano' no lo decide el navegador: la regla exige que sea exactamente
-      //     la comparación contra el objetivo del día, truncando a la centésima.
+      // (2) FRENAR — el socio pasa 'jugando' → 'jugada' y el servidor sella el
+      //     fin con request.time. NADA MÁS: el navegador ya no declara su tiempo.
+      //     (Antes declaraba tiempoMs y se aceptaba hasta 2 s de diferencia con
+      //     lo medido: frenando en cualquier momento entre el objetivo y 2 s
+      //     después y declarando el objetivo, se ganaba siempre.)
       allow update: if request.auth != null
                        && resource.data.clienteUid == request.auth.uid
                        && resource.data.estado == 'jugando'
                        && request.resource.data.estado == 'jugada'
-                       && request.resource.data.tiempoMs is int
-                       && request.resource.data.tiempoMs >= 0
-                       && request.resource.data.tiempoMs <= request.time.toMillis() - resource.data.inicioTs.toMillis()
-                       && request.resource.data.tiempoMs >= request.time.toMillis() - resource.data.inicioTs.toMillis() - 2000
                        && request.resource.data.finTs == request.time
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'finTs']);
+
+      // (3) CERRAR — escribir el resultado. Lo único aceptado es la cuenta del
+      //     SERVIDOR: tiempoMs = finTs − inicioTs (las dos puntas las puso
+      //     request.time) y gano = acierto exacto truncando a la centésima. Como
+      //     no hay nada que elegir, lo puede hacer el socio o el personal, una
+      //     sola vez (si ya tiene tiempoMs no se toca).
+      allow update: if request.auth != null
+                       && (resource.data.clienteUid == request.auth.uid || isStaff())
+                       && resource.data.estado == 'jugada'
+                       && !('tiempoMs' in resource.data)
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tiempoMs', 'gano'])
+                       && request.resource.data.tiempoMs is int
+                       && request.resource.data.tiempoMs == resource.data.finTs.toMillis() - resource.data.inicioTs.toMillis()
                        && request.resource.data.gano == (
                             (request.resource.data.tiempoMs / 10) == (resource.data.objetivoMs / 10)
-                          )
-                       && request.resource.data.objetivoMs == resource.data.objetivoMs
-                       && request.resource.data.clienteUid == resource.data.clienteUid;
+                          );
 
       // Marcar el premio como entregado en el mostrador: solo personal, una vez.
       allow update: if isStaff()

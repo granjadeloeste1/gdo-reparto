@@ -399,10 +399,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const box = $('#of-opts');
           if (st.modo === 'campana') {
             box.innerHTML = `<div class="field"><label>¿Qué campaña?</label>
-              <select id="of-camp">${camps.map((d) => `<option value="${esc(d.id)}"${d.id === st.camp ? ' selected' : ''}>${esc(d.id)} · ${d.pct}% · ${esc(d.nombre || '')}</option>`).join('')}</select></div>`;
+              <select id="of-camp">${camps.map((d) => `<option value="${esc(d.id)}"${d.id === st.camp ? ' selected' : ''}>${esc(d.id)} · ${esc(d.pct)}% · ${esc(d.nombre || '')}</option>`).join('')}</select></div>`;
             $('#of-camp').onchange = (e) => { st.camp = e.target.value; pintar(); };
           } else if (propio) {
-            box.innerHTML = `<div class="note">Ya tiene el código <b>${esc(propio.id)}</b> (${propio.pct}%) sin usar: se lo volvemos a mandar. No se crea otro.</div>`;
+            box.innerHTML = `<div class="note">Ya tiene el código <b>${esc(propio.id)}</b> (${esc(propio.pct)}%) sin usar: se lo volvemos a mandar. No se crea otro.</div>`;
           } else {
             box.innerHTML = `<div class="form-grid">
               <div class="field"><label>Descuento</label>

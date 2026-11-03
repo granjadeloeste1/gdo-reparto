@@ -432,7 +432,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
                 <td class="pr-cant">${esc(totalTxt(r))}</td>
                 <td class="pr-frac">${esc(fracTxt(r))}</td>
                 <td class="pr-cant">${esc(cantNum(r))}</td>
-                <td class="small muted no-print">${r.pedidos}</td>
+                <td class="small muted no-print">${esc(r.pedidos)}</td>
               </tr>`).join('')}`).join('')}</tbody></table>
             <div class="help no-print" style="padding:10px 18px;line-height:1.6">
               Las cantidades se suman <b>por unidad y por presentación</b>: cajones, kilos y paquetes no se mezclan

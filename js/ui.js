@@ -5,6 +5,12 @@ window.GDO = window.GDO || {};
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+  // Imagen embebida segura para <img src>: SOLO dataURL de imagen (como las que
+  // saca la app: foto del ticket, comprobante, promos). Cualquier otra cosa (una
+  // URL, "javascript:", texto con comillas) se descarta: estos campos los puede
+  // haber escrito alguien de afuera y terminan dentro del HTML del panel.
+  const imgSegura = (s) => (typeof s === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(s) ? s : '');
+
   // crea elementos desde HTML string
   function h(html) {
     const t = document.createElement('template');
@@ -125,7 +131,7 @@ window.GDO = window.GDO || {};
   function estadoChip(p) {
     if (!p) return '';
     if (esRetiro(p) && p.estado === 'entregado') return '<span class="chip chip-entreg">✓ Retirado</span>';
-    return ESTADO_CHIP[p.estado] || p.estado || '';
+    return ESTADO_CHIP[p.estado] || esc(p.estado || '');
   }
   const ROL_CHIP = {
     admin: '<span class="chip chip-rol">Administrador</span>',
@@ -189,7 +195,7 @@ window.GDO = window.GDO || {};
   // Link de pedidos mayoristas de un vendedor (lo comparte con sus clientes).
   const linkVendedor = (u) => 'https://lista.granjadeloeste.com/?v=' + encodeURIComponent(u.id) + '&vn=' + encodeURIComponent(u.nombre || '');
 
-  GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
+  GDO.UI = { esc, imgSegura, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
     ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, fechaEfectiva,
     vendedorDe, vendedorIdDe, vendedorChip, linkVendedor, deVendedor, vendedorForzado, vendedoresLista, selectVendedor };
 })();

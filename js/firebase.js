@@ -82,6 +82,19 @@ window.GDO = window.GDO || {};
     return FB.auth.signInWithEmailAndPassword(String(email || '').trim(), String(pass || ''));
   };
   FB.logout = function () { return FB.auth.signOut(); };
+  /* CERRAR SESIÓN DE VERDAD (celulares compartidos entre choferes): además de
+     salir de Firebase Auth, borra la copia local de Firestore (IndexedDB), que
+     guarda pedidos con nombre, teléfono y dirección de los clientes. Firestore
+     exige terminate() antes de clearPersistence(); después de esto la instancia
+     ya no sirve, así que quien llama tiene que recargar la página.
+     Si hay otra pestaña abierta de la app, clearPersistence falla: queda avisado
+     en consola y la cache se borra la próxima vez que se cierre sesión sola. */
+  FB.salir = function () {
+    return FB.auth.signOut().catch(function () {})
+      .then(function () { return FB.db.terminate(); })
+      .then(function () { return FB.db.clearPersistence(); })
+      .catch(function (e) { console.warn('[GDO] no se pudo borrar la cache local', e && e.code); });
+  };
 
   /* ----- ALTA DE PERSONAL DESDE EL PANEL (sin consola de Firebase) -----
      crearCuenta: crea el usuario de Firebase Auth (mail + contraseña) con una

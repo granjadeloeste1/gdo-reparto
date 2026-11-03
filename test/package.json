@@ -1,0 +1,12 @@
+{
+  "name": "gdo-reparto-pruebas-reglas",
+  "private": true,
+  "description": "Pruebas de firestore.rules con el emulador (ver rules.test.js)",
+  "scripts": {
+    "test": "npx -y firebase-tools@13 emulators:exec --only firestore --project demo-gdo \"node rules.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "3.0.4",
+    "firebase": "10.14.1"
+  }
+}
