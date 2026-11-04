@@ -110,11 +110,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Con un CÓDIGO DE DESCUENTO el cliente pagó menos que la suma de los
     // renglones (el total del pedido ya viene neto): el descuento se reparte en
     // proporción, así la columna de cada producto cierra con lo cobrado.
+    /* Todos los renglones traen su precio. Igual el total del PEDIDO manda: es
+       el número del KPI "Facturado" y el que ve el cliente. Si la suma de los
+       renglones no le da (un descuento, un recargo de preparación, un ajuste a
+       mano después), se reparte en proporción para que la columna Facturado de
+       Productos CIERRE con el total. Antes solo se ajustaba con descuento, y por
+       eso Productos daba menos que el KPI. */
     if (items.every((it) => Number(it.precio) > 0)) {
       const sumaP = propios.reduce((a, v) => a + v, 0);
       const tot = Number(p.totalEstimado) || 0;
-      const f = (p.descuento && tot && sumaP) ? tot / sumaP : 1;
-      return propios.map((v) => ({ monto: v * f, aprox: false }));
+      const f = (tot && sumaP) ? tot / sumaP : 1;
+      return propios.map((v) => ({ monto: v * f, aprox: Math.abs(f - 1) > 0.005 }));
     }
     const total = Number(p.totalEstimado) || 0;
     if (!total || !GDO.Lista) return propios.map((v) => ({ monto: v, aprox: false }));
@@ -311,9 +317,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         if (!mios.length) return;
         filas.push(fila(f.nombre, f.telefono, mios, f.id));
       });
-    } else {
+    }
+    /* Los que no entraron en ninguna ficha. Un pedido sin teléfono, sin nombre y
+       sin dirección (cargado a las apuradas) no forma ficha en el CRM, y antes
+       desaparecía de esta tabla: la suma por cliente daba MENOS que el KPI de
+       arriba. Ahora se agrupan igual, con el criterio simple de nombre/teléfono. */
+    const usados = {};
+    if (fichas) fichas.forEach((f) => (f.pedidos || []).forEach((p) => { if (porPedido[p.id]) usados[p.id] = 1; }));
+    const sueltos = vs.filter((v) => !usados[v.p.id]);
+    if (sueltos.length) {
       const g = {};
-      vs.forEach((v) => { const k = (v.p.cliente || '—').toLowerCase(); (g[k] = g[k] || []).push(v); });
+      sueltos.forEach((v) => { (g[clienteKey(v.p)] = g[clienteKey(v.p)] || []).push(v); });
       Object.keys(g).forEach((k) => filas.push(fila(g[k][0].p.cliente, g[k][0].p.telefono, g[k], null)));
     }
     return filas.sort((a, b) => b.total - a.total || b.n - a.n);
