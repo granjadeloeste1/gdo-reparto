@@ -59,6 +59,36 @@ window.GDO = window.GDO || {};
     'moreno', 'paso del rey', 'francisco alvarez',
   ].sort((a, b) => b.length - a.length); // más larga primero (matchea antes)
 
+  // Localidad -> partido. Sirve para chequear que lo que devuelve el geocodificador
+  // sea de la localidad del pedido: "Luzuriaga 532" existe en Hurlingham y en Barracas,
+  // "Tigre 1080" en Villa Tesei y en otros partidos. Sin este chequeo Google elegía
+  // la homónima de otro lado y el chofer iba a cualquier parte.
+  const PARTIDO_DE = {
+    'hurlingham': 'hurlingham', 'william morris': 'hurlingham', 'villa tesei': 'hurlingham', 'villa club': 'hurlingham',
+    'moron': 'moron', 'castelar': 'moron', 'el palomar': 'moron', 'palomar': 'moron', 'haedo': 'moron', 'villa sarmiento': 'moron',
+    'ituzaingo': 'ituzaingo', 'villa udaondo': 'ituzaingo', 'udaondo': 'ituzaingo', 'parque leloir': 'ituzaingo', 'villa gobernador udaondo': 'ituzaingo',
+    'caseros': 'tres de febrero', 'santos lugares': 'tres de febrero', 'saenz pena': 'tres de febrero', 'jose ingenieros': 'tres de febrero',
+    'ciudadela': 'tres de febrero', 'el libertador': 'tres de febrero', 'churruca': 'tres de febrero', 'martin coronado': 'tres de febrero',
+    'pablo podesta': 'tres de febrero', 'loma hermosa': 'tres de febrero', 'ciudad jardin': 'tres de febrero', 'tres de febrero': 'tres de febrero',
+    'barrio altos de podesta': 'tres de febrero', 'ciudad jardin lomas del palomar': 'tres de febrero',
+    'ramos mejia': 'la matanza', 'san justo': 'la matanza', 'lomas del mirador': 'la matanza', 'villa luzuriaga': 'la matanza',
+    'isidro casanova': 'la matanza', 'la tablada': 'la matanza', 'tapiales': 'la matanza', 'la matanza': 'la matanza',
+    'san martin': 'general san martin', 'general san martin': 'general san martin', 'villa ballester': 'general san martin',
+    'jose leon suarez': 'general san martin', 'billinghurst': 'general san martin', 'san andres': 'general san martin',
+    'san miguel': 'san miguel', 'bella vista': 'san miguel', 'muniz': 'san miguel',
+    'merlo': 'merlo', 'san antonio de padua': 'merlo', 'padua': 'merlo', 'libertad': 'merlo', 'parque san martin': 'merlo',
+    'moreno': 'moreno', 'paso del rey': 'moreno', 'francisco alvarez': 'moreno',
+  };
+  const _locNorm = (s) => _sinAcento(s).replace(/[.,]/g, ' ').replace(/^(partido de|ciudad de)\s+/, '').replace(/\s+/g, ' ').trim();
+  // ¿Los nombres (localidad, partido, barrio) que trae el resultado son de la localidad pedida?
+  // Sin localidad en el pedido no hay con qué comparar: se acepta.
+  function coincideLocalidad(localidad, nombres) {
+    const l = _locNorm(localidad);
+    if (!l) return true;
+    const part = PARTIDO_DE[l] || l;
+    return (nombres || []).some((n) => { const x = _locNorm(n); return x && (x === l || x === part || PARTIDO_DE[x] === part); });
+  }
+
   // "Calle [altura] [, ] Localidad" -> { calle, localidad }. Trabaja sobre el
   // texto sin acentos y normalizado (Georef es insensible a acentos).
   function partirDireccion(base) {
@@ -96,7 +126,7 @@ window.GDO = window.GDO || {};
         .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
       if (!inter.length && localidad) {
         inter = (await _georefQuery(q, ZONA.provincia, null, 5))
-          .filter((it) => it.lat != null && inZona(it.partido))
+          .filter((it) => it.lat != null && coincideLocalidad(localidad, [it.localidad, it.partido]))
           .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
       }
       if (inter.length) pts.push(inter[0]);
@@ -280,7 +310,7 @@ window.GDO = window.GDO || {};
   // a nivel de puerta. Igual validamos que el punto caiga dentro de la zona de
   // reparto; si no, devolvemos null para que sigan Georef/OSM. No requiere
   // separar localidad ni calle: Google entiende la dirección completa.
-  async function _googleGeocode(direccion) {
+  async function _googleGeocode(direccion, localidad) {
     try {
       if (!GDO.Google) return null;
       if (!GDO.Google.disponible) { const ok = await GDO.Google.ready; if (!ok) return null; }
@@ -289,7 +319,8 @@ window.GDO = window.GDO || {};
       const bounds = new google.maps.LatLngBounds(
         new google.maps.LatLng(b.minLat, b.minLng),
         new google.maps.LatLng(b.maxLat, b.maxLng));
-      const q = /argentina/i.test(direccion) ? direccion : direccion + ', Buenos Aires, Argentina';
+      const conLoc = localidad && !_sinAcento(direccion).includes(_sinAcento(localidad)) ? direccion + ', ' + localidad : direccion;
+      const q = /argentina/i.test(conLoc) ? conLoc : conLoc + ', Buenos Aires, Argentina';
       const geocoder = new google.maps.Geocoder();
       const dentro = (lat, lng) => lat >= b.minLat && lat <= b.maxLat && lng >= b.minLng && lng <= b.maxLng;
       return await new Promise((resolve) => {
@@ -307,7 +338,12 @@ window.GDO = window.GDO || {};
           // dirección cae AFUERA igual la aceptamos: Google ya está restringido a
           // Argentina y es preciso en todo el AMBA. (Antes la rechazábamos y la
           // dirección quedaba sin ubicar / sin mapa; ahora SIEMPRE ubica.)
-          let r = results.find((x) => { const l = x.geometry.location; return dentro(l.lat(), l.lng()); }) || results[0];
+          // Con localidad en el pedido, el resultado TIENE que ser de esa localidad (o de su
+          // partido). Si ninguno lo es, null: siguen Georef/OSM filtrando por localidad.
+          const nombres = (x) => (x.address_components || []).filter((c) => c.types.some((t) => /locality|sublocality|administrative_area_level_2|neighborhood/.test(t))).map((c) => c.long_name);
+          let r;
+          if (localidad) { r = results.find((x) => coincideLocalidad(localidad, nombres(x))); if (!r) { fin(null); return; } }
+          else r = results.find((x) => { const l = x.geometry.location; return dentro(l.lat(), l.lng()); }) || results[0];
           const lat = r.geometry.location.lat(), lng = r.geometry.location.lng();
           const lt = r.geometry.location_type; // ROOFTOP > RANGE_INTERPOLATED > GEOMETRIC_CENTER > APPROXIMATE
           const aprox = !(lt === 'ROOFTOP' || lt === 'RANGE_INTERPOLATED');
@@ -326,22 +362,28 @@ window.GDO = window.GDO || {};
   // → OSM/Nominatim. OSM en esta zona muchas veces no tiene la altura exacta; si
   // la dirección completa falla, reintenta sin el número para caer al menos a
   // nivel de calle (marca aprox:true) en vez de no ubicar nada.
-  async function geocode(direccion, entrecalles) {
-    const base = String(direccion || '').trim();
+  async function geocode(direccion, entrecalles, localidadPedido) {
+    // "Vigo 3641 entre Cuzco y Amberes": las entrecalles pegadas a la dirección rompen la búsqueda.
+    // "Calle Vigo 3641": con el "Calle" adelante Georef no encuentra la calle.
+    const base = String(direccion || '').replace(/\s+entre\s+.*$/i, '').replace(/^calle\s+/i, '').trim();
     if (!base) return null;
     const ec = String(entrecalles || '').trim();
+    const locP = String(localidadPedido || '').trim();
     // Clave de caché versionada ('z6'): incluye las entrecalles (cambian el
     // resultado) e invalida lo guardado por versiones anteriores. z6 fuerza
     // re-geocodificar con Google y limpia los "no encontrada" cacheados cuando
     // la zona estaba restringida (p. ej. Ramos Mejía, que antes daba null).
-    const key = 'z6|' + norm(base) + '|' + norm(ec);
+    // z7: suma la localidad del pedido (antes se ubicaba sin ella y caía en calles homónimas).
+    const key = 'z7|' + norm(base) + '|' + norm(ec) + '|' + norm(locP);
     const cache = loadCache();
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
     let res = null;
     // 0) Google primero (si hay clave): es el más preciso en Argentina.
-    res = await _googleGeocode(base);
+    res = await _googleGeocode(base, locP);
     // Separamos la localidad (si viene pegada) para no romper el parser de Georef.
-    const { calle, localidad } = partirDireccion(base);
+    const pd = partirDireccion(base);
+    const calle = pd.calle, localidad = pd.localidad || _locNorm(locP);
+    const okLoc = (it) => coincideLocalidad(locP, [it.localidad, it.partido]);
     const qCalle = calle || base;
     if (!res) try {
       // 0) Si hay entre-calles, intentamos la ESQUINA primero: es lo más preciso
@@ -359,11 +401,14 @@ window.GDO = window.GDO || {};
             .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
         }
         // 2) Georef en Hurlingham (base de GDO) con la calle sola.
-        if (!list.length) list = (await _georefQuery(qCalle, ZONA.provincia, 'Hurlingham', 3)).filter((it) => it.lat != null);
+        if (!list.length && localidad && PARTIDO_DE[localidad]) {
+          list = (await _georefQuery(qCalle, ZONA.provincia, PARTIDO_DE[localidad], 5)).filter((it) => it.lat != null);
+        }
+        if (!list.length) list = (await _georefQuery(qCalle, ZONA.provincia, 'Hurlingham', 3)).filter((it) => it.lat != null && okLoc(it));
         // 3) Si no está en Hurlingham, buscar en el resto de la zona de reparto.
         if (!list.length) {
           const prov = await _georefQuery(qCalle, ZONA.provincia, null, 30);
-          list = prov.filter((it) => inZona(it.partido) && it.lat != null)
+          list = prov.filter((it) => inZona(it.partido) && it.lat != null && okLoc(it))
             .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
         }
         if (list.length) {
@@ -373,10 +418,11 @@ window.GDO = window.GDO || {};
       }
     } catch (e) {}
     // 3) Fallback a OSM/Nominatim, SIEMPRE acotado a la zona; reintento sin altura.
-    if (!res) res = await _queryBounded(base, false);
+    const baseOsm = locP && !_sinAcento(base).includes(_sinAcento(locP)) ? base + ', ' + locP : base;
+    if (!res) res = await _queryBounded(baseOsm, false);
     if (!res) {
-      const b2 = sinAltura(base);
-      if (norm(b2) !== norm(base)) res = await _queryBounded(b2, true);
+      const b2 = sinAltura(baseOsm);
+      if (norm(b2) !== norm(baseOsm)) res = await _queryBounded(b2, true);
     }
     // Solo cacheamos resultados POSITIVOS: si no se encontró (null), NO lo
     // guardamos, así la próxima vez se reintenta (evita que un "no encontrada"
@@ -398,7 +444,7 @@ window.GDO = window.GDO || {};
       const activos = ['pendiente', 'asignado', 'en_ruta', 'salteado'];
       const pend = GDO.Store.pedidos().filter((p) => p.lat == null && p.direccion && activos.includes(p.estado));
       for (const p of pend) {
-        const g = await geocode(p.direccion, p.entrecalles);
+        const g = await geocode(p.direccion, p.entrecalles, p.localidad);
         if (g) { p.lat = g.lat; p.lng = g.lng; if (g.localidad && !p.localidad) p.localidad = g.localidad; GDO.Store.save(); if (onUpdate) try { onUpdate(p); } catch (e) {} }
         await new Promise((res) => setTimeout(res, 1100));
       }
