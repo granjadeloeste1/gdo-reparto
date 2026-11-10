@@ -213,12 +213,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         + chipBtn('', 'Todos')
         + dias.map((f) => chipBtn(f || 'sin', f ? (esc(diaSemanaDe(f)) + ' ' + fmtFecha(f)) : 'Sin fecha')).join('')
         + `</div>`;
-      const vis = elegibles.filter(pasaVend).filter((p) => !filtroDia || (efFecha(p) || 'sin') === filtroDia);
+      // Con un día elegido, los TILDADOS de otro día se siguen mostrando (marcados):
+      // antes quedaban ocultos dentro de la ruta y al guardar se les pisaba la fecha.
+      const vis = elegibles.filter(pasaVend).filter((p) => !filtroDia || (efFecha(p) || 'sin') === filtroDia || ruta.pedidoIds.includes(p.id));
+      const otroDia = (p) => { const f = efFecha(p); return filtroDia && filtroDia !== 'sin' && f && f !== filtroDia; };
       pedsBox.innerHTML = vendChips + chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
         ${vis.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${p.id}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
           <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
-          <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}</td>
+          <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}${otroDia(p) ? ' <span class="chip chip-no" style="font-size:10px">⚠️ otro día</span>' : ''}</td>
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
         </tr>`; }).join('')}</tbody></table>`;
       // Chips de día: filtran la lista. El botón tilda todos los del día elegido de una.
@@ -228,6 +231,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         if (filtroDia && filtroDia !== 'sin') {
           const fec = $('#r-fec'); if (fec) fec.value = filtroDia;
           ruta.fecha = filtroDia;
+          // Se destildan los de OTRO día que se habían tildado en esta edición (los
+          // que ya estaban guardados en la ruta no se tocan: eso se hace a mano).
+          ruta.pedidoIds = ruta.pedidoIds.filter((id) => {
+            if (idsOriginales.has(id)) return true;
+            const f = efFecha(Store.pedido(id));
+            if (!f || f === filtroDia) return true;
+            delete ruta.demoraPorId[id]; return false;
+          });
           elegibles.forEach((p) => { if (efFecha(p) === filtroDia && pasaVend(p) && !ruta.pedidoIds.includes(p.id)) ruta.pedidoIds.push(p.id); });
           recompute();
         }
@@ -374,11 +385,24 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       return saved;
     };
 
-    $('#r-save').onclick = () => { persist('borrador'); toast('Borrador guardado', 'ok'); go('#/rutas'); };
+    // Al guardar, la fecha de la ruta se copia a cada pedido. Si alguno es de OTRO
+    // día, se pregunta antes: así ningún pedido cambia de fecha sin que se vea.
+    const chequearFechas = (seguir) => {
+      readForm();
+      const otros = ruta.pedidoIds.map((id) => Store.pedido(id))
+        .filter((p) => p && efFecha(p) && ruta.fecha && efFecha(p) !== ruta.fecha);
+      if (!otros.length) { seguir(); return; }
+      const nombres = otros.slice(0, 6).map((p) => p.cliente + ' (' + diaSemanaDe(efFecha(p)) + ' ' + fmtFecha(efFecha(p)) + ')').join(', ') + (otros.length > 6 ? ' y ' + (otros.length - 6) + ' más' : '');
+      confirmDlg(otros.length + ' pedido(s) son de otro día: ' + nombres + '. Si seguís, pasan al ' + diaSemanaDe(ruta.fecha) + ' ' + fmtFecha(ruta.fecha) + '.', seguir, 'Sí, pasarlos a esta fecha', 'btn-primary');
+    };
+    $('#r-save').onclick = () => chequearFechas(() => { persist('borrador'); toast('Borrador guardado', 'ok'); go('#/rutas'); });
     $('#r-asignar').onclick = () => {
       readForm();
       if (!ruta.repartidorId) { toast('Asigná un repartidor', 'err'); return; }
       if (!ruta.pedidoIds.length) { toast('Seleccioná al menos un pedido', 'err'); return; }
+      chequearFechas(asignar);
+    };
+    const asignar = () => {
       // No degradamos una ruta que el chofer ya aceptó / está haciendo: queda
       // en su estado actual; si todavía no estaba asignada, pasa a "asignada".
       const yaEnCurso = ['aceptada', 'en_curso', 'finalizada'].includes(ruta.estado);
