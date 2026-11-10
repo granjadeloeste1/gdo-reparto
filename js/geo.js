@@ -431,6 +431,10 @@ window.GDO = window.GDO || {};
     return res;
   }
 
+  // Zona oeste donde reparte GDO (Hurlingham, Morón, Ituzaingó, Tres de Febrero, Ramos Mejía,
+  // San Martín, San Miguel, Merlo, Moreno). Barracas, Floresta o Berazategui quedan afuera.
+  const enZonaOeste = (lat, lng) => lat <= -34.48 && lat >= -34.80 && lng <= -58.48 && lng >= -58.90;
+
   // Geolocaliza en segundo plano los pedidos pendientes que no tienen coords.
   // Llama onUpdate() cada vez que ubica uno. Va de a uno con pausa (Nominatim).
   let _running = false;
@@ -446,6 +450,24 @@ window.GDO = window.GDO || {};
       for (const p of pend) {
         const g = await geocode(p.direccion, p.entrecalles, p.localidad);
         if (g) { p.lat = g.lat; p.lng = g.lng; if (g.localidad && !p.localidad) p.localidad = g.localidad; GDO.Store.save(); if (onUpdate) try { onUpdate(p); } catch (e) {} }
+        await new Promise((res) => setTimeout(res, 1100));
+      }
+      // Pedidos que llegaron con coordenadas FUERA de la zona oeste (p. ej. de la tienda, si
+      // el cliente eligió la sugerencia de una calle homónima de otro partido): se vuelven a
+      // ubicar con su localidad. Una sola vez por dirección (geoRevisado), y solo si lo nuevo
+      // es de esa localidad y queda a más de 1 km de lo anterior.
+      const fuera = GDO.Store.pedidos().filter((p) => p.lat != null && p.direccion && p.localidad && activos.includes(p.estado)
+        && !enZonaOeste(p.lat, p.lng) && p.geoRevisado !== norm(p.direccion + '|' + p.localidad));
+      for (const p of fuera) {
+        const g = await geocode(p.direccion, p.entrecalles, p.localidad);
+        const cambio = {};
+        cambio.geoRevisado = norm(p.direccion + '|' + p.localidad);
+        if (g && GDO.Route && GDO.Route.haversine({ lat: p.lat, lng: p.lng }, g) > 1) {
+          cambio.lat = g.lat; cambio.lng = g.lng;
+          cambio.historia = (p.historia || []).concat([{ ts: Date.now(), por: 'sistema', detalle: 'Ubicación corregida: estaba fuera de zona (' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4) + ')', est: 'editado' }]);
+        }
+        GDO.Store.upsertPedido(Object.assign({ id: p.id }, cambio)); GDO.Store.save();
+        if (cambio.lat != null && onUpdate) try { onUpdate(p); } catch (e) {}
         await new Promise((res) => setTimeout(res, 1100));
       }
     } finally { _running = false; }
