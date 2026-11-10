@@ -134,7 +134,16 @@ window.GDO = window.GDO || {};
     if (!pts.length) return null;
     const lat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
     const lng = pts.reduce((s, p) => s + p.lng, 0) / pts.length;
-    return { lat, lng, display: pts[0].label, localidad: pts[0].localidad || '', partido: pts[0].partido || '', aprox: pts.length < 2 };
+    // `largo`: metros entre las dos esquinas (0 si se encontró una sola).
+    const largo = pts.length === 2 ? _metros(pts[0], pts[1]) : 0;
+    return { lat, lng, display: pts[0].label, localidad: pts[0].localidad || '', partido: pts[0].partido || '', aprox: pts.length < 2, largo };
+  }
+  // Distancia en metros entre dos puntos {lat,lng}.
+  function _metros(a, b) {
+    const R = 6371000, toR = (d) => d * Math.PI / 180;
+    const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+    const x = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(x));
   }
   function loadCache() { try { return JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (e) { return {}; } }
   function saveCache(c) { try { localStorage.setItem(CACHE, JSON.stringify(c)); } catch (e) {} }
@@ -341,9 +350,16 @@ window.GDO = window.GDO || {};
           // Con localidad en el pedido, el resultado TIENE que ser de esa localidad (o de su
           // partido). Si ninguno lo es, null: siguen Georef/OSM filtrando por localidad.
           const nombres = (x) => (x.address_components || []).filter((c) => c.types.some((t) => /locality|sublocality|administrative_area_level_2|neighborhood/.test(t))).map((c) => c.long_name);
+          // SOLO resultados a nivel de CASA (calle + altura). Cuando Google no encuentra la
+          // altura devuelve la localidad entera ("Hurlingham") y su punto es el centro de la
+          // localidad: así un pedido de Luzuriaga terminaba en la plaza de Hurlingham. Eso
+          // no sirve para repartir: se descarta y siguen Georef/OSM.
+          const esCasa = (x) => (x.types || []).some((t) => t === 'street_address' || t === 'premise' || t === 'subpremise');
+          const casas = results.filter(esCasa);
           let r;
-          if (localidad) { r = results.find((x) => coincideLocalidad(localidad, nombres(x))); if (!r) { fin(null); return; } }
-          else r = results.find((x) => { const l = x.geometry.location; return dentro(l.lat(), l.lng()); }) || results[0];
+          if (localidad) r = casas.find((x) => coincideLocalidad(localidad, nombres(x)));
+          else r = casas.find((x) => { const l = x.geometry.location; return dentro(l.lat(), l.lng()); }) || casas[0];
+          if (!r) { fin(null); return; }
           const lat = r.geometry.location.lat(), lng = r.geometry.location.lng();
           const lt = r.geometry.location_type; // ROOFTOP > RANGE_INTERPOLATED > GEOMETRIC_CENTER > APPROXIMATE
           const aprox = !(lt === 'ROOFTOP' || lt === 'RANGE_INTERPOLATED');
@@ -351,7 +367,7 @@ window.GDO = window.GDO || {};
           (r.address_components || []).forEach((c) => {
             if (!loc && (c.types.indexOf('locality') >= 0 || c.types.indexOf('sublocality') >= 0)) loc = c.long_name;
           });
-          fin({ lat, lng, display: r.formatted_address, localidad: loc, partido: '', aprox });
+          fin({ lat, lng, display: r.formatted_address, localidad: loc, partido: '', aprox, puerta: lt === 'ROOFTOP' });
         });
       });
     } catch (e) { return null; }
@@ -374,49 +390,61 @@ window.GDO = window.GDO || {};
     // re-geocodificar con Google y limpia los "no encontrada" cacheados cuando
     // la zona estaba restringida (p. ej. Ramos Mejía, que antes daba null).
     // z7: suma la localidad del pedido (antes se ubicaba sin ella y caía en calles homónimas).
-    const key = 'z7|' + norm(base) + '|' + norm(ec) + '|' + norm(locP);
+    // z8: Google solo vale a nivel de casa y las entrecalles mandan (ver abajo).
+    const key = 'z8|' + norm(base) + '|' + norm(ec) + '|' + norm(locP);
     const cache = loadCache();
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
     let res = null;
-    // 0) Google primero (si hay clave): es el más preciso en Argentina.
-    res = await _googleGeocode(base, locP);
+    // Google (si hay clave): solo devuelve algo cuando encontró la casa (calle + altura).
+    const goo = await _googleGeocode(base, locP);
     // Separamos la localidad (si viene pegada) para no romper el parser de Georef.
     const pd = partirDireccion(base);
     const calle = pd.calle, localidad = pd.localidad || _locNorm(locP);
     const okLoc = (it) => coincideLocalidad(locP, [it.localidad, it.partido]);
     const qCalle = calle || base;
-    if (!res) try {
-      // 0) Si hay entre-calles, intentamos la ESQUINA primero: es lo más preciso
-      //    y distingue calles homónimas (la Valentín Alsina de Hurlingham de la
-      //    de William Morris) sin depender de la localidad escrita.
-      const cruces = crucesDe(ec);
-      if (cruces.length) res = await geocodeInterseccion(_soloCalle(qCalle), cruces, localidad);
-      // Si la esquina no resolvió, ubicamos por calle (a nivel de cuadra/altura).
-      if (!res) {
-        let list = [];
-        // 1) Si detectamos localidad, la usamos como filtro (lo más preciso).
-        if (localidad) {
-          list = (await _georefQuery(qCalle, ZONA.provincia, null, 5, localidad))
-            .filter((it) => it.lat != null && inZona(it.partido))
-            .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
-        }
-        // 2) Georef en Hurlingham (base de GDO) con la calle sola.
-        if (!list.length && localidad && PARTIDO_DE[localidad]) {
-          list = (await _georefQuery(qCalle, ZONA.provincia, PARTIDO_DE[localidad], 5)).filter((it) => it.lat != null);
-        }
-        if (!list.length) list = (await _georefQuery(qCalle, ZONA.provincia, 'Hurlingham', 3)).filter((it) => it.lat != null && okLoc(it));
-        // 3) Si no está en Hurlingham, buscar en el resto de la zona de reparto.
-        if (!list.length) {
-          const prov = await _georefQuery(qCalle, ZONA.provincia, null, 30);
-          list = prov.filter((it) => inZona(it.partido) && it.lat != null && okLoc(it))
-            .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
-        }
-        if (list.length) {
-          const s = list[0];
-          res = { lat: s.lat, lng: s.lng, display: s.label, localidad: s.localidad || '', partido: s.partido || '', aprox: false };
-        }
+    // Georef por calle y altura, filtrando por la localidad / el partido del pedido.
+    const georefCalle = async () => {
+      let list = [];
+      if (localidad) {
+        list = (await _georefQuery(qCalle, ZONA.provincia, null, 5, localidad))
+          .filter((it) => it.lat != null && inZona(it.partido))
+          .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
       }
-    } catch (e) {}
+      if (!list.length && localidad && PARTIDO_DE[localidad]) {
+        list = (await _georefQuery(qCalle, ZONA.provincia, PARTIDO_DE[localidad], 5)).filter((it) => it.lat != null);
+      }
+      if (!list.length) list = (await _georefQuery(qCalle, ZONA.provincia, 'Hurlingham', 3)).filter((it) => it.lat != null && okLoc(it));
+      if (!list.length) {
+        const prov = await _georefQuery(qCalle, ZONA.provincia, null, 30);
+        list = prov.filter((it) => inZona(it.partido) && it.lat != null && okLoc(it))
+          .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
+      }
+      return list.map((s) => ({ lat: s.lat, lng: s.lng, display: s.label, localidad: s.localidad || '', partido: s.partido || '', aprox: false }));
+    };
+    try {
+      /* Las ENTRECALLES mandan: las escribe el cliente y dicen en qué cuadra está la casa.
+         - Con las dos esquinas ubicadas, la casa está entre ellas. Se toma el punto de Google
+           solo si es a nivel de puerta y cae en esa cuadra; si no, la mitad de la cuadra
+           (a lo sumo media cuadra de error, pero siempre en la cuadra correcta).
+         - Con una sola esquina, se elige el candidato (Google o Georef) más cercano a ella;
+           si ninguno queda a menos de 4 cuadras, la esquina.
+         Dos "esquinas" a más de 6 cuadras entre sí no son una cuadra: no se usan como tal. */
+      const cruces = crucesDe(ec);
+      let esq = cruces.length ? await geocodeInterseccion(_soloCalle(qCalle), cruces, localidad) : null;
+      if (esq && esq.largo > 600) esq = null;
+      if (esq && esq.largo > 0 && esq.largo <= 600) {
+        const enCuadra = goo && goo.puerta && _metros(goo, esq) <= esq.largo / 2 + 60;
+        res = enCuadra ? goo : esq;
+      } else if (esq) {
+        const cands = (goo && !goo.aprox ? [goo] : []).concat(await georefCalle())
+          .map((c) => ({ c, d: _metros(c, esq) })).sort((a, b) => a.d - b.d);
+        res = cands.length && cands[0].d <= 400 ? cands[0].c : Object.assign({}, esq, { aprox: true });
+      }
+      // Sin entrecalles: Google a nivel de casa y, si no, Georef por calle y altura.
+      if (!res && goo && !goo.aprox) res = goo;
+      if (!res) { const l = await georefCalle(); if (l.length) res = l[0]; }
+      if (!res && goo) res = goo;
+    } catch (e) { if (!res && goo) res = goo; }
     // 3) Fallback a OSM/Nominatim, SIEMPRE acotado a la zona; reintento sin altura.
     const baseOsm = locP && !_sinAcento(base).includes(_sinAcento(locP)) ? base + ', ' + locP : base;
     if (!res) res = await _queryBounded(baseOsm, false);
@@ -452,19 +480,20 @@ window.GDO = window.GDO || {};
         if (g) { p.lat = g.lat; p.lng = g.lng; if (g.localidad && !p.localidad) p.localidad = g.localidad; GDO.Store.save(); if (onUpdate) try { onUpdate(p); } catch (e) {} }
         await new Promise((res) => setTimeout(res, 1100));
       }
-      // Pedidos que llegaron con coordenadas FUERA de la zona oeste (p. ej. de la tienda, si
-      // el cliente eligió la sugerencia de una calle homónima de otro partido): se vuelven a
-      // ubicar con su localidad. Una sola vez por dirección (geoRevisado), y solo si lo nuevo
-      // es de esa localidad y queda a más de 1 km de lo anterior.
-      const fuera = GDO.Store.pedidos().filter((p) => p.lat != null && p.direccion && p.localidad && activos.includes(p.estado)
-        && !enZonaOeste(p.lat, p.lng) && p.geoRevisado !== norm(p.direccion + '|' + p.localidad));
-      for (const p of fuera) {
+      /* Re-chequeo de los pedidos activos que YA tienen coordenadas, una sola vez por dirección
+         (geoRevisado). Hasta la v120 Google podía devolver el centro de la localidad (la plaza
+         de Hurlingham) o una calle homónima de otro partido, y eso quedó guardado en el pedido.
+         Se corrige solo si lo nuevo es confiable (o lo viejo estaba fuera de la zona oeste) y
+         queda a más de 250 m; lo anterior queda anotado en la historia del pedido. */
+      const marca = (p) => 'v8|' + norm(p.direccion + '|' + (p.entrecalles || '') + '|' + (p.localidad || ''));
+      const revisar = GDO.Store.pedidos().filter((p) => p.lat != null && p.lng != null && p.direccion && activos.includes(p.estado)
+        && p.modalidad !== 'retiro' && p.geoRevisado !== marca(p));
+      for (const p of revisar) {
         const g = await geocode(p.direccion, p.entrecalles, p.localidad);
-        const cambio = {};
-        cambio.geoRevisado = norm(p.direccion + '|' + p.localidad);
-        if (g && GDO.Route && GDO.Route.haversine({ lat: p.lat, lng: p.lng }, g) > 1) {
+        const cambio = { geoRevisado: marca(p) };
+        if (g && (!g.aprox || !enZonaOeste(p.lat, p.lng)) && _metros({ lat: p.lat, lng: p.lng }, g) > 250) {
           cambio.lat = g.lat; cambio.lng = g.lng;
-          cambio.historia = (p.historia || []).concat([{ ts: Date.now(), por: 'sistema', detalle: 'Ubicación corregida: estaba fuera de zona (' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4) + ')', est: 'editado' }]);
+          cambio.historia = (p.historia || []).concat([{ ts: Date.now(), por: 'sistema', detalle: 'Ubicación corregida (antes ' + Number(p.lat).toFixed(5) + ',' + Number(p.lng).toFixed(5) + ')', est: 'editado' }]);
         }
         GDO.Store.upsertPedido(Object.assign({ id: p.id }, cambio)); GDO.Store.save();
         if (cambio.lat != null && onUpdate) try { onUpdate(p); } catch (e) {}
