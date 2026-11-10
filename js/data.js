@@ -297,11 +297,14 @@ window.GDO = window.GDO || {};
     // no le tocan (clave para el chofer). El primer snapshot los repuebla al instante.
     db.pedidos = []; db.rutas = []; db.notificaciones = [];
     persist(db); scheduleRender();
+    const numONull = (v) => (v == null || v === '' || !isFinite(Number(v))) ? null : Number(v);
     seedFirestore().then(() => {
       let pedidosVistos = null; // null = primer snapshot (no avisar de lo ya existente)
       FS_COLLS.forEach((c) => {
         GDO.FB.db.collection(c).onSnapshot((snap) => {
           const arr = snap.docs.map((d) => Object.assign({}, d.data(), { id: d.id }));
+          // Las coordenadas de un pedido web las escribe el cliente: acá entran como número o no entran.
+          if (c === 'pedidos') arr.forEach((p) => { p.lat = numONull(p.lat); p.lng = numONull(p.lng); });
           /* El GPS del chofer escribe su posición en la ruta cada 15 s. Si ESO es
              lo único que cambió, no se redibuja la pantalla (la hacía saltar en
              los celulares): se actualiza la posición sobre los mismos objetos, que

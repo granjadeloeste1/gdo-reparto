@@ -676,22 +676,22 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <th>Cliente</th><th>Dirección</th><th>Localidad</th><th>Entrega</th><th>Estado</th><th></th>
       </tr></thead><tbody>${list.map((p) => `
         <tr${checkable && sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
-          ${checkable ? `<td><input type="checkbox" data-sel="${p.id}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
-          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}${vendedorChip(p)}${p.razonSocial || p.cuit ? `<div class="small muted">${esc(p.razonSocial || '')}${p.cuit ? ' · CUIT ' + esc(p.cuit) : ''}</div>` : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
+          ${checkable ? `<td><input type="checkbox" data-sel="${esc(p.id)}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
+          <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${GDO.UI.precioChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}${vendedorChip(p)}${p.razonSocial || p.cuit ? `<div class="small muted">${esc(p.razonSocial || '')}${p.cuit ? ' · CUIT ' + esc(p.cuit) : ''}</div>` : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
           <td class="small">${esRetiro(p) ? '<span class="muted">🏪 Retira en el local</span>' : esc(p.direccion) + (p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : '')}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${celdaEntrega(p)}</td>
           <td>${estadoChip(p)}${asignacionInfo(p)}</td>
           <td class="t-actions">
-            ${esRetiro(p) && p.estado === 'pendiente' ? `<button class="btn btn-ghost btn-sm" data-retirado="${p.id}" title="Marcar como retirado por el cliente">✓</button>` : ''}
-            ${esRetiro(p) ? `<button class="btn btn-ghost btn-sm" data-modo="${p.id}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>` : ''}
-            ${(p.estado === 'no_entregado' || p.estado === 'salteado') && Store.rolActivo() !== 'vendedor' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
-            ${!esRetiro(p) && p.estado !== 'entregado' && Store.rolActivo() !== 'vendedor' ? `<button class="btn btn-ghost btn-sm" data-cerrar="${p.id}" title="Ya se entregó: cerrarlo a mano, sin chofer">✓</button>` : ''}
-            ${p.estado === 'entregado' && Store.rolActivo() === 'admin' ? `<button class="btn btn-ghost btn-sm" data-reasig="${p.id}" title="Se cerró por error: volver a abrirlo">↩</button>` : ''}
-            ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${p.id}" title="Ver comprobante de entrega">🧾</button>` : ''}
-            ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
-            ${bloqueadoVend(p) ? `<span class="small muted" title="Ya está en reparto: solo el administrador lo puede cambiar">🔒</span>` : `<button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
-            <button class="btn btn-ghost btn-sm" data-del="${p.id}">🗑</button>`}
+            ${esRetiro(p) && p.estado === 'pendiente' ? `<button class="btn btn-ghost btn-sm" data-retirado="${esc(p.id)}" title="Marcar como retirado por el cliente">✓</button>` : ''}
+            ${esRetiro(p) ? `<button class="btn btn-ghost btn-sm" data-modo="${esc(p.id)}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>` : ''}
+            ${(p.estado === 'no_entregado' || p.estado === 'salteado') && Store.rolActivo() !== 'vendedor' ? `<button class="btn btn-ghost btn-sm" data-reasig="${esc(p.id)}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
+            ${!esRetiro(p) && p.estado !== 'entregado' && Store.rolActivo() !== 'vendedor' ? `<button class="btn btn-ghost btn-sm" data-cerrar="${esc(p.id)}" title="Ya se entregó: cerrarlo a mano, sin chofer">✓</button>` : ''}
+            ${p.estado === 'entregado' && Store.rolActivo() === 'admin' ? `<button class="btn btn-ghost btn-sm" data-reasig="${esc(p.id)}" title="Se cerró por error: volver a abrirlo">↩</button>` : ''}
+            ${p.pod ? `<button class="btn btn-ghost btn-sm" data-pod="${esc(p.id)}" title="Ver comprobante de entrega">🧾</button>` : ''}
+            ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${esc(p.id)}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
+            ${bloqueadoVend(p) ? `<span class="small muted" title="Ya está en reparto: solo el administrador lo puede cambiar">🔒</span>` : `<button class="btn btn-ghost btn-sm" data-edit="${esc(p.id)}">✎</button>
+            <button class="btn btn-ghost btn-sm" data-del="${esc(p.id)}">🗑</button>`}
           </td>
         </tr>`).join('')}</tbody></table>`;
     if (checkable) {
@@ -753,17 +753,17 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <th>Cliente</th><th>Pedido</th><th>Pasa a retirar</th><th>Total</th><th></th>
       </tr></thead><tbody>${list.map((p) => `
         <tr>
-          <td><b data-ver="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>
+          <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${GDO.UI.precioChip(p)}
             ${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}
             <div class="small muted">${esc(p.telefono || '')}</div></td>
           <td class="small">${esc(resumenItems(p.items)) || '<span class="muted">Sin detalle</span>'}</td>
           <td class="small">${cuando(p)}</td>
           <td class="small">${p.totalEstimado ? fmtM(p.totalEstimado) : '<span class="muted">—</span>'}</td>
           <td class="t-actions">
-            <button class="btn btn-verde btn-sm" data-retirado="${p.id}" title="El cliente ya lo retiró">✓ Retirado</button>
-            <button class="btn btn-ghost btn-sm" data-modo="${p.id}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>
-            ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${p.id}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
-            <button class="btn btn-ghost btn-sm" data-edit="${p.id}">✎</button>
+            <button class="btn btn-verde btn-sm" data-retirado="${esc(p.id)}" title="El cliente ya lo retiró">✓ Retirado</button>
+            <button class="btn btn-ghost btn-sm" data-modo="${esc(p.id)}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>
+            ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${esc(p.id)}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-edit="${esc(p.id)}">✎</button>
           </td>
         </tr>`).join('')}</tbody></table>`;
     box.querySelectorAll('[data-retirado]').forEach((b) => b.onclick = () => retiradoModal(Store.pedido(b.dataset.retirado)));
@@ -784,7 +784,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (!p.rutaId) return '';
     const r = Store.ruta(p.rutaId);
     if (!r) return '';
-    return ` <button class="btn btn-ghost btn-sm" data-asig="${p.id}" title="Ver ruta y chofer asignados" style="margin-left:2px">🗂️</button>`;
+    return ` <button class="btn btn-ghost btn-sm" data-asig="${esc(p.id)}" title="Ver ruta y chofer asignados" style="margin-left:2px">🗂️</button>`;
   };
 
   // Ventana con el detalle de la asignación del pedido (ruta, chofer, vehículo,
@@ -912,7 +912,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field"><label>Fecha de entrega</label><input id="md-fec" type="date" value="${esc(f)}"/></div>
           <div class="field"><label>Ventana horaria</label><input id="md-vent" value="${esc(p.ventana || '')}" placeholder="Ej: 8 a 11 hs"/></div>
           <div class="field col-2"><label>Ubicación (coordenadas o link de Google Maps)</label>
-            <input id="md-coord" value="${p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
+            <input id="md-coord" value="${p.lat != null ? esc(p.lat + ', ' + p.lng) : ''}" placeholder="Se completa sola con la dirección"/>
             <span class="help">Si no la encuentra, pegá acá el link o las coordenadas de Google Maps.</span></div>
         </div>` : `
         <div class="note">El pedido de <b>${esc(p.cliente)}</b> pasa a <b>🏪 retiro en sucursal</b>: sale del armado de rutas
@@ -980,7 +980,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* ---- Ver comprobante de entrega (foto + firma) ---- */
   function podModal(p) {
     if (!p || !p.pod) { toast('Este pedido no tiene comprobante', 'err'); return; }
-    const pod = p.pod;
+    // Solo imágenes guardadas por la app (data:image/...): nunca una dirección externa.
+    const img = (s) => (typeof s === 'string' && /^data:image\/(?!svg)[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/i.test(s)) ? s : '';
+    const pod = Object.assign({}, p.pod, { foto: img(p.pod.foto), firma: img(p.pod.firma) });
     const fecha = pod.ts ? new Date(pod.ts).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '';
     modal({
       title: 'Comprobante — ' + esc(p.cliente), width: 480,
@@ -1215,7 +1217,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <input id="f-pts" type="number" min="0" inputmode="numeric" value="${esc(p && p.puntos ? p.puntos : (pf.puntos || ''))}" placeholder="Ej: 12000"/>
             ${(p && p.clienteUid) ? '<span class="help" style="color:#1e8449">🛒 Pedido de un <b>socio del GDO CLUB</b> logueado' + (p.totalEstimado ? ' · el cliente declaró un total de $' + Number(p.totalEstimado).toLocaleString('es-AR') + ' (⚠️ dato del navegador del cliente: verificá el monto REAL antes de cargar los puntos)' : '') + '. Al entregar se le acreditan estos puntos automáticamente (sin escanear).</span>' : '<span class="help">Puntos que suma el socio del Club al confirmar la entrega (el cliente escanea el QR en la puerta). Vacío = no suma.</span>'}</div>
           <div class="field" id="f-w-coord"><label>Ubicación (coordenadas o link de Google Maps)</label>
-            <input id="f-coord" value="${p && p.lat != null ? p.lat + ', ' + p.lng : ''}" placeholder="Se completa sola con la dirección"/>
+            <input id="f-coord" value="${p && p.lat != null ? esc(p.lat + ', ' + p.lng) : ''}" placeholder="Se completa sola con la dirección"/>
             <button class="btn btn-dark btn-sm" id="f-geo" type="button" style="margin-top:6px;white-space:nowrap">📍 Usar mi ubicación actual</button>
             <span class="help">Se ubica sola desde la dirección al guardar. Si no la encuentra (o querés el punto exacto): abrí <b>Google Maps</b>, mantené apretado / clic derecho en el lugar, copiá el <b>link</b> o las <b>coordenadas</b> y pegalas acá. También podés tocar “Usar mi ubicación actual” si estás en la puerta.</span></div>
           <div class="field col-2"><label>¿Con qué lista de precios?</label>
@@ -1235,7 +1237,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field col-2"><label>🎟️ Código de descuento</label>
             <div id="f-desc"></div></div>
           <div class="field col-2"><label>Comentarios / especificaciones de entrega</label>
-            <textarea id="f-esp" placeholder="Aclaraciones para el repartidor: a quién entregar, accesos, formas de pago, demoras habituales…">${esc(p ? p.especificaciones : (pf.especificaciones || ''))}</textarea></div>
+            <textarea id="f-esp" placeholder="Aclaraciones para el repartidor: a quién entregar, accesos, formas de pago, demoras habituales…">${esc(p ? GDO.UI.specSegura(p) : (pf.especificaciones || ''))}</textarea></div>
         </div>`,
       footHTML: bloqueadoVend(p)
         ? `<span class="small muted" style="margin-right:auto">🔒 Ya está en reparto: solo el administrador lo puede cambiar.</span><button class="btn btn-primary" data-cancel>Cerrar</button>`
@@ -1510,7 +1512,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (c) partes.push('<b>' + c + ' ' + esc(uni) + '</b>');
           if (it.preparacion) partes.push('✂️ ' + esc(it.preparacion));
           // Los kilos solo aportan si la unidad NO es el kilo (ahí ya se dijeron).
-          if (it.kg && String(it.unidad).toLowerCase() !== 'kg') partes.push(it.kg + ' kg');
+          if (it.kg && String(it.unidad).toLowerCase() !== 'kg') partes.push(esc(it.kg) + ' kg');
           if (it.precio) {
             const st = GDO.Lista ? GDO.Lista.montoItem(it) : c * it.precio;
             partes.push(fmtP(c ? st / c : it.precio) + ' c/' + esc(it.unidad || 'un') + ' = <b>' + fmtP(st) + '</b>');
@@ -1697,8 +1699,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <td>${u.activo ? '<span class="chip chip-entreg">Activo</span>' : '<span class="chip chip-no">Inactivo</span>'}</td>
           <td class="t-actions">
             ${u.roles.includes('vendedor') ? `<button class="btn btn-ghost btn-sm" data-vlink-copy="${esc(linkVendedor(u))}" title="Copiar el link de pedidos mayoristas de este vendedor">🔗 Link</button>` : ''}
-            <button class="btn btn-ghost btn-sm" data-edit="${u.id}">✎ Roles</button>
-            ${u.id === Store.current().id ? '' : `<button class="btn btn-ghost btn-sm" data-del="${u.id}">🗑</button>`}
+            <button class="btn btn-ghost btn-sm" data-edit="${esc(u.id)}">✎ Roles</button>
+            ${u.id === Store.current().id ? '' : `<button class="btn btn-ghost btn-sm" data-del="${esc(u.id)}">🗑</button>`}
           </td></tr>`).join('')}</tbody></table>`;
       c.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => userModal(b.dataset.edit, draw));
       montarLinkVendedor(c);
@@ -1841,7 +1843,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const list = Store.vehiculos();
       c.querySelector('#v-tabla').innerHTML = list.length ? `<table><thead><tr><th>Vehículo</th><th>Patente</th><th>Tipo</th><th></th></tr></thead><tbody>
         ${list.map((v) => `<tr><td><b>${esc(v.nombre)}</b></td><td>${esc(v.patente)}</td><td class="small">${esc(v.tipo || '')}</td>
-          <td class="t-actions"><button class="btn btn-ghost btn-sm" data-edit="${v.id}">✎</button><button class="btn btn-ghost btn-sm" data-del="${v.id}">🗑</button></td></tr>`).join('')}
+          <td class="t-actions"><button class="btn btn-ghost btn-sm" data-edit="${esc(v.id)}">✎</button><button class="btn btn-ghost btn-sm" data-del="${esc(v.id)}">🗑</button></td></tr>`).join('')}
         </tbody></table>` : `<div class="empty">Sin vehículos cargados.</div>`;
       c.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => vehModal(b.dataset.edit, draw));
       c.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { Store.deleteVehiculo(b.dataset.del); toast('Vehículo eliminado', 'ok'); draw(); });

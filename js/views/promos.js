@@ -125,9 +125,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="promo-ac">
             <button class="btn btn-ghost btn-sm" data-mv="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''} title="Subir">↑</button>
             <button class="btn btn-ghost btn-sm" data-mv="${i}" data-dir="1" ${i === cache.length - 1 ? 'disabled' : ''} title="Bajar">↓</button>
-            <button class="btn ${p.activo ? 'btn-verde' : 'btn-ghost'} btn-sm" data-on="${p.id}">${p.activo ? 'Activa' : 'Pausada'}</button>
-            <button class="btn btn-ghost btn-sm" data-ed="${p.id}">✎</button>
-            <button class="btn btn-ghost btn-sm" data-del="${p.id}">🗑</button>
+            <button class="btn ${p.activo ? 'btn-verde' : 'btn-ghost'} btn-sm" data-on="${esc(p.id)}">${p.activo ? 'Activa' : 'Pausada'}</button>
+            <button class="btn btn-ghost btn-sm" data-ed="${esc(p.id)}">✎</button>
+            <button class="btn btn-ghost btn-sm" data-del="${esc(p.id)}">🗑</button>
           </div>
         </div>`).join('')}</div>`;
 

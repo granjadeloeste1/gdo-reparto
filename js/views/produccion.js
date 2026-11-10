@@ -336,7 +336,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               </tr>`).join('');
             }).join('')}`).join('')}</tbody></table>`
           : '<div class="muted small" style="padding:8px 0">Sin detalle de productos</div>'}
-        ${p.especificaciones ? '<div class="pr-esp">📝 ' + esc(p.especificaciones) + '</div>' : ''}
+        ${p.especificaciones ? '<div class="pr-esp">📝 ' + esc(GDO.UI.specSegura(p)) + '</div>' : ''}
         <div class="pr-firma"><span>Armó: <span class="pr-linea"></span></span><span>Bultos: <span class="pr-linea corta"></span></span><span>Controló: <span class="pr-linea"></span></span></div>
       </div>`;
   }

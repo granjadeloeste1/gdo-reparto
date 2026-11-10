@@ -189,7 +189,48 @@ window.GDO = window.GDO || {};
   // Link de pedidos mayoristas de un vendedor (lo comparte con sus clientes).
   const linkVendedor = (u) => 'https://lista.granjadeloeste.com/?v=' + encodeURIComponent(u.id) + '&vn=' + encodeURIComponent(u.nombre || '');
 
-  GDO.UI = { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
+  /* "PAGADO ONLINE" solo vale si lo marcó el bot al cobrar (campo `pagado`, que la
+     tienda no escribe). Si lo trae escrito un pedido web sin ese campo, se muestra
+     como pago sin verificar: cualquiera puede escribir las notas de un pedido. */
+  function specSegura(p) {
+    const s = String((p && p.especificaciones) || '');
+    if (!p || p.pagado === true || p.origen !== 'tienda') return s;
+    return s.replace(/(✅\s*)?PAGAD[OA]\s+ONLINE/gi, '⚠️ PAGO SIN VERIFICAR');
+  }
+
+  /* Los precios de un pedido web los manda el navegador del cliente. Esto avisa
+     (no bloquea) cuando un pedido PENDIENTE de la tienda trae un precio muy por
+     debajo de la lista, o un total que no alcanza ni al 60 % de lo que vale por
+     lista. Sin lista cargada o con un producto que no está, no opina. */
+  const _dudoso = new WeakMap();
+  function precioDudoso(p) {
+    if (!p || p.origen !== 'tienda' || p.estado !== 'pendiente' || !GDO.Lista) return false;
+    if (_dudoso.has(p)) return _dudoso.get(p);
+    let mal = false;
+    try {
+      const L = GDO.Lista;
+      let porLista = 0;
+      (Array.isArray(p.items) ? p.items : []).forEach((it) => {
+        const cant = Number(it && it.cantidad) || 0;
+        const op = it && cant > 0 ? L.opcionPara(it.producto, p.lista) : null;
+        if (!op) return;
+        const r = L.renglon(op, cant);
+        if (!r.precio || L.unidadDeItem(it) !== L.unidadDeItem(r)) return;
+        porLista += L.montoItem(r);
+        const pr = Number(it.precio) || 0;
+        if (pr > 0 && !it.enCombo && pr < r.precio * 0.7) mal = true;
+      });
+      const total = Number(p.totalEstimado) || 0;
+      if (total > 0 && porLista > 0 && total < porLista * 0.6) mal = true;
+    } catch (e) { mal = false; }
+    _dudoso.set(p, mal);
+    return mal;
+  }
+  const precioChip = (p) => precioDudoso(p)
+    ? ' <span class="chip chip-no" style="font-size:10px" title="Los precios o el total de este pedido web no coinciden con la lista. Revisalo antes de prepararlo.">⚠️ revisar precios</span>'
+    : '';
+
+  GDO.UI = { esc, h, toast, specSegura, precioDudoso, precioChip, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
     ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, fechaEfectiva,
     vendedorDe, vendedorIdDe, vendedorChip, linkVendedor, deVendedor, vendedorForzado, vendedoresLista, selectVendedor };
 })();

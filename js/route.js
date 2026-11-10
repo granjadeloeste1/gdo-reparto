@@ -204,7 +204,7 @@ window.GDO = window.GDO || {};
     ordenParadas.forEach((p, i) => {
       if (p.lat == null || p.lng == null) return; // sin ubicar: no se puede dibujar
       const m = L.marker([p.lat, p.lng], { icon: pinIcon(String(i + 1), NEG) }).addTo(_map)
-        .bindPopup(`<b>${i + 1}. ${p.cliente}</b><br>${p.direccion}`);
+        .bindPopup(`<b>${i + 1}. ${GDO.UI.esc(p.cliente)}</b><br>${GDO.UI.esc(p.direccion)}`);
       _layers.push(m); all.push([p.lat, p.lng]);
     });
     if (!opts.sameAsOrigin) {
@@ -230,7 +230,7 @@ window.GDO = window.GDO || {};
   // queda de respaldo solo si el pedido todavía no tiene coordenadas.
   function locParam(p) {
     if (!p) return '';
-    if (p.lat != null) return `${p.lat},${p.lng}`;
+    if (p.lat != null) return `${Number(p.lat) || 0},${Number(p.lng) || 0}`;
     const dir = String(p.direccion || '').trim();
     if (dir) return encodeURIComponent(/argentina/i.test(dir) ? dir : dir + ', Buenos Aires, Argentina');
     const nom = String(p.nombre || '').trim();

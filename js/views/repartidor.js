@@ -82,7 +82,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <h2 style="margin:6px 0 14px">Mis rutas</h2>
           ${rutas.length ? rutas.map((r) => {
             const veh = Store.vehiculos().find((v) => v.id === r.vehiculoId);
-            return `<div class="dstop" data-open="${r.id}" style="cursor:pointer">
+            return `<div class="dstop" data-open="${esc(r.id)}" style="cursor:pointer">
               <div class="hd"><div><div class="cli">${esc(r.nombre)}</div>
                 <div class="dir">${fmtFecha(r.fecha)} · ${r.pedidoIds.length} paradas${veh ? ' · ' + esc(veh.nombre) : ''}</div></div>
                 ${GDO.Views.ESTADO_RUTA[r.estado] || ''}</div>
@@ -338,19 +338,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="hd"><div style="display:flex;gap:10px"><div class="seq">${i + 1}</div>
             <div><div class="cli">${esc(p.cliente)}</div><div class="dir">${esc(p.direccion)}${p.entrecalles ? ' · ' + esc(p.entrecalles) : ''}</div></div></div>
             ${badge}</div>
-          <div class="eta">${done ? '' : '⏱ Llegada estimada ' + fmtHora(etaMostrar(p)) + ' · '}${(p.items||[]).map((x)=>x.cantidad+'× '+x.producto).join(', ')}</div>
-          ${p.especificaciones ? `<div class="spec">📌 ${esc(p.especificaciones)}</div>` : ''}
+          <div class="eta">${done ? '' : '⏱ Llegada estimada ' + fmtHora(etaMostrar(p)) + ' · '}${esc((p.items||[]).map((x)=>x.cantidad+'× '+x.producto).join(', '))}</div>
+          ${p.especificaciones ? `<div class="spec">📌 ${esc(GDO.UI.specSegura(p))}</div>` : ''}
           ${p.puntos > 0 ? `<div class="spec">⭐ ${p.puntosAcreditados ? 'Puntos GDO acreditados (' + fmtN(p.puntos) + ')' : fmtN(p.puntos) + ' Puntos GDO al entregar'}</div>` : ''}
           ${aceptada && ruta.estado !== 'finalizada' && !done ? `<div class="acts">
-              <a class="btn btn-dark full" data-nav="${p.id}" href="${(p.direccion || p.lat != null) ? Route.navStop(p) : '#'}" target="_blank"${!(p.direccion || p.lat != null) ? ' style="opacity:.5;pointer-events:none"' : ''}>🧭 Navegar a esta parada</a>
-              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" data-cerca="${p.id}" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(etaMostrar(p)), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
-              <button class="btn btn-verde" data-ok="${p.id}">✓ Entregado</button>
-              <button class="btn btn-rojo" data-no="${p.id}">✕ No entregado</button>
-              <button class="btn btn-amarillo full" data-skip="${p.id}">↷ Saltear parada</button>
+              <a class="btn btn-dark full" data-nav="${esc(p.id)}" href="${(p.direccion || p.lat != null) ? Route.navStop(p) : '#'}" target="_blank"${!(p.direccion || p.lat != null) ? ' style="opacity:.5;pointer-events:none"' : ''}>🧭 Navegar a esta parada</a>
+              ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<a class="btn btn-verde full" data-cerca="${esc(p.id)}" href="${GDO.Wpp.link(p.telefono, GDO.Wpp.msg('cerca', p, { eta: fmtHora(etaMostrar(p)), link: GDO.Wpp.seguimientoUrl(p.id) }))}" target="_blank">💬 Avisar al cliente (está por llegar)</a>` : ''}
+              <button class="btn btn-verde" data-ok="${esc(p.id)}">✓ Entregado</button>
+              <button class="btn btn-rojo" data-no="${esc(p.id)}">✕ No entregado</button>
+              <button class="btn btn-amarillo full" data-skip="${esc(p.id)}">↷ Saltear parada</button>
             </div>` : ''}
           ${aceptada && ruta.estado !== 'finalizada' && done ? `<div class="acts">
-              ${(st === 'entregado' && p.puntos > 0 && !p.puntosAcreditados && clubDB()) ? `<button class="btn btn-verde full" data-pts="${p.id}">⭐ Sumar ${fmtN(p.puntos)} Puntos GDO</button>` : ''}
-              <button class="btn btn-ghost full" data-undo="${p.id}">↩ Corregir · volver a marcar</button>
+              ${(st === 'entregado' && p.puntos > 0 && !p.puntosAcreditados && clubDB()) ? `<button class="btn btn-verde full" data-pts="${esc(p.id)}">⭐ Sumar ${fmtN(p.puntos)} Puntos GDO</button>` : ''}
+              <button class="btn btn-ghost full" data-undo="${esc(p.id)}">↩ Corregir · volver a marcar</button>
             </div>` : ''}
         </div>`;
       }).join('') + `
