@@ -381,7 +381,8 @@ window.GDO = window.GDO || {};
   async function geocode(direccion, entrecalles, localidadPedido) {
     // "Vigo 3641 entre Cuzco y Amberes": las entrecalles pegadas a la dirección rompen la búsqueda.
     // "Calle Vigo 3641": con el "Calle" adelante Georef no encuentra la calle.
-    const base = String(direccion || '').replace(/\s+entre\s+.*$/i, '').replace(/^calle\s+/i, '').trim();
+    // "García Silva 434 - Timbre 6": la tienda pega el timbre / dto a la dirección; para ubicarla se saca.
+    const base = String(direccion || '').replace(/\s+-\s+(timbre|tbre|dto|dpto|depto|departamento|piso|casa|ph|fondo|local|lote|uf)(?![a-z]).*$/i, '').replace(/\s+entre\s+.*$/i, '').replace(/^calle\s+/i, '').trim();
     if (!base) return null;
     const ec = String(entrecalles || '').trim();
     const locP = String(localidadPedido || '').trim();

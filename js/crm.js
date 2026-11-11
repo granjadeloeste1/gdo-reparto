@@ -50,7 +50,8 @@ window.GDO = window.GDO || {};
   const CALLE_PREF = ['av', 'avda', 'avenida', 'calle', 'ruta', 'pasaje', 'pje', 'psje',
     'bv', 'blvd', 'boulevard', 'diagonal', 'diag', 'colectora'];
   function dirKey(d) {
-    const s = norm(String(d == null ? '' : d).split(',')[0]);
+    // Sin el timbre / dto que la tienda pega a la dirección ("García Silva 434 - Timbre 6").
+    const s = norm(String(d == null ? '' : d).split(',')[0].replace(/\s+-\s+(timbre|tbre|dto|dpto|depto|departamento|piso|casa|ph|fondo|local|lote|uf)(?![a-z]).*$/i, ''));
     if (!s || !/\d/.test(s)) return '';
     let partes = s.split(' ').filter(Boolean);
     while (partes.length > 1 && CALLE_PREF.indexOf(partes[0]) >= 0) partes.shift();
