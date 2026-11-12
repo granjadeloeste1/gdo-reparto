@@ -4,6 +4,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const { Store, Route } = GDO;
   const { esc, h, toast, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, proximoDiaFecha, diaSemanaDe, vendedorDe } = GDO.UI;
   const go = (hash) => { location.hash = hash; };
+  // Dirección + localidad del pedido (si la dirección no la trae ya escrita).
+  const sinAc = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const dirLoc = (p) => { const d = String(p.direccion || ''), l = String(p.localidad || '').trim(); return esc(d) + (l && !sinAc(d).includes(sinAc(l)) ? ' <b>· ' + esc(l) + '</b>' : ''); };
 
   const ESTADO_RUTA = {
     borrador: '<span class="chip chip-pend">Borrador</span>',
@@ -220,7 +223,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       pedsBox.innerHTML = vendChips + chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
         ${vis.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${esc(p.id)}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
-          <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${esc(p.direccion)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
+          <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${dirLoc(p)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
           <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}${otroDia(p) ? ' <span class="chip chip-no" style="font-size:10px">⚠️ otro día</span>' : ''}</td>
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
         </tr>`; }).join('')}</tbody></table>`;
@@ -332,7 +335,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const noEnt = st === 'no_entregado' ? (p.historia || []).slice().reverse().find((e) => e.est === 'no_entregado' && e.detalle) : null;
           return `
           <div class="stop"><div class="seq">${i+1}</div>
-            <div class="body"><div class="cli">${esc(p.cliente)}${stChip}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar</span>' : ''}</div><div class="dir">${esc(p.direccion)}</div>
+            <div class="body"><div class="cli">${esc(p.cliente)}${stChip}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar</span>' : ''}</div><div class="dir">${dirLoc(p)}</div>
               ${noEnt ? `<div class="small" style="color:#c62828;margin-top:4px">Motivo: ${esc(noEnt.detalle)}</div>` : ''}
               <div style="margin-top:6px;display:flex;align-items:center;gap:6px">
                 <span class="small muted">Demora:</span>
