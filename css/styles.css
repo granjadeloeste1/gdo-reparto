@@ -623,7 +623,7 @@ textarea{resize:vertical;min-height:74px}
    abajo, sin botones. El encabezado de la tabla se repite en cada hoja y una
    fila nunca se parte al medio. */
 @media print{
-  @page{size:A4 portrait;margin:20mm 14mm}
+  @page{size:A4 portrait;margin:10mm 8mm}
   body{background:#fff}
   /* Que nada quede más ancho que la hoja: al imprimir desde el celular valen las reglas de pantalla
      chica (tablas con scroll al costado) y la tabla salía cortada a la derecha. */
@@ -633,9 +633,10 @@ textarea{resize:vertical;min-height:74px}
   th,td{white-space:normal}
   .pr-hoja-h b{font-size:16px}
   .pr-ped-h{gap:4px 10px}
-  /* Margen propio ADEMÁS del de la hoja: algunas impresoras (y el celular) agrandan la página o no
+  /* Margen propio ADEMÁS del de la hoja (y repetido en cada hoja): si en la ventana de imprimir está
+     elegido "Márgenes: ninguno", el de la hoja no se aplica. Algunas impresoras agrandan la página o no
      respetan el margen, y el contenido salía cortado en los cuatro bordes. */
-  .content{padding:0 6mm !important}
+  .content{padding:8mm 6mm !important;-webkit-box-decoration-break:clone;box-decoration-break:clone}
   .sidebar,.topbar,.mobile-tabbar,.gdo-foot,.no-print,.toolbar,#gdo-install,.notif-pop,.section-title{display:none !important}
   .app{display:block}
   .main{padding:0}
