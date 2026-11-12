@@ -81,7 +81,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
      preparan distinto (cajas y cajones contra bolsas de 1, 2 y 5 kg), así que cada
      una tiene su comanda, sus pedidos para armar y su impresión. 'todas' las junta. */
   /* QUÉ PEDIDOS ENTRAN (pedido del usuario, nov-2026): se tildan uno, dos o los
-     tres tipos — RETIRO EN SUCURSAL, REPARTO MINORISTA, REPARTO MAYORISTA — y la
+     tres tipos — RETIRO EN SUCURSAL, DOMICILIOS, REPARTO MAYORISTA — y la
      comanda, los pedidos para armar, el PDF y el Excel salen SOLO con lo tildado.
      Con los tres tildados sale todo junto en la misma comanda. Reemplaza a las
      planillas "Mayorista / Minorista / Ambas". Ver GDO.UI.tipoDe. */
@@ -89,9 +89,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const tiposSel = { retiro: true, rep_min: true, rep_may: true };
   const tiposOn = () => TIPOS.filter((t) => tiposSel[t]);
   const todosLosTipos = () => tiposOn().length === TIPOS.length;
-  // Título de la hoja: "REPARTO MAYORISTA", "RETIRO EN SUCURSAL + REPARTO MINORISTA"…
+  // Título de la hoja: "REPARTO MAYORISTA", "RETIRO EN SUCURSAL + DOMICILIOS"…
   const tituloTipos = () => tiposOn().map((t) => TIPO_T[t].toUpperCase()).join(' + ');
-  const slugTipos = () => (todosLosTipos() ? 'todo' : tiposOn().map((t) => ({ retiro: 'retiro', rep_min: 'reparto-minorista', rep_may: 'reparto-mayorista' })[t]).join('+'));
+  const slugTipos = () => (todosLosTipos() ? 'todo' : tiposOn().map((t) => ({ retiro: 'retiro', rep_min: 'domicilios', rep_may: 'reparto-mayorista' })[t]).join('+'));
   let _listasPedidas = false;    // las listas de precios se piden una vez por sesión
 
   /* ═══════ CATEGORÍAS ═══════
@@ -140,7 +140,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       return true;
     }).sort((a, b) => {
       // Primero los retiros (el cliente los viene a buscar y hay hora), después
-      // el reparto minorista y el mayorista; dentro de cada grupo, por horario y por cliente.
+      // los domicilios y el reparto mayorista; dentro de cada grupo, por horario y por cliente.
       const ra = TIPOS.indexOf(tipoDe(a)), rb = TIPOS.indexOf(tipoDe(b));
       if (ra !== rb) return ra - rb;
       const va = a.ventana || 'zz', vb = b.ventana || 'zz';
@@ -411,7 +411,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <label class="pr-check"><input type="checkbox" id="pr-una" ${unoPorHoja ? 'checked' : ''}/> Un pedido por hoja</label>
       </div>
 
-      ${!tiposOn().length ? `<div class="empty">Tildá arriba qué pedidos querés ver: retiro en sucursal, reparto minorista o reparto mayorista.</div>` : !list.length ? `<div class="empty">No hay pedidos de ${esc(tiposOn().map((t) => TIPO_T[t].toLowerCase()).join(' ni de '))} para el ${esc(largo(dia))}.</div>` : `
+      ${!tiposOn().length ? `<div class="empty">Tildá arriba qué pedidos querés ver: retiro en sucursal, domicilios o reparto mayorista.</div>` : !list.length ? `<div class="empty">No hay pedidos de ${esc(tiposOn().map((t) => TIPO_T[t].toLowerCase()).join(' ni de '))} para el ${esc(largo(dia))}.</div>` : `
       <div class="cards no-print" style="margin-bottom:18px">
         <div class="card kpi naranja"><span class="ic">📦</span><span class="num">${list.length}</span><span class="lbl">Pedidos del día${nRet ? ' · ' + nRet + ' de retiro' : ''}</span></div>
         <div class="card kpi negro"><span class="ic">🧾</span><span class="num">${com.length}</span><span class="lbl">Productos distintos</span></div>

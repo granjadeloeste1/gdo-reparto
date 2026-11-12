@@ -103,18 +103,18 @@ window.GDO = window.GDO || {};
   const MODALIDAD_T = { retiro: 'Retiro en sucursal', envio: 'Envío a domicilio' };
   /* TIPO DE PEDIDO (tres, así se eligen en la Comanda):
        retiro   → RETIRO EN SUCURSAL   (el cliente lo pasa a buscar)
-       rep_min  → REPARTO MINORISTA    (envío a un domicilio, lista minorista)
+       rep_min  → DOMICILIOS           (envío a un domicilio, lista minorista)
        rep_may  → REPARTO MAYORISTA    (envío de un pedido mayorista: uno de retiro
                                         que se pasó a reparto, o cargado a mano)
      No es un campo nuevo: sale de la modalidad y de la lista del pedido, así vale
      también para todo lo que ya estaba cargado. */
   const tipoDe = (p) => (esRetiro(p) ? 'retiro' : (p && p.lista === 'minorista' ? 'rep_min' : 'rep_may'));
   const TIPOS = ['retiro', 'rep_min', 'rep_may'];
-  const TIPO_T = { retiro: 'Retiro en sucursal', rep_min: 'Reparto minorista', rep_may: 'Reparto mayorista' };
+  const TIPO_T = { retiro: 'Retiro en sucursal', rep_min: 'Domicilios', rep_may: 'Reparto mayorista' };
   const TIPO_IC = { retiro: '🏪', rep_min: '🏠', rep_may: '🚚' };
   const TIPO_CHIP = {
     retiro: MODALIDAD_CHIP.retiro,
-    rep_min: '<span class="chip chip-envio">🏠 Reparto minorista</span>',
+    rep_min: '<span class="chip chip-envio">🏠 Domicilios</span>',
     rep_may: '<span class="chip chip-repmay">🚚 Reparto mayorista</span>',
   };
   const modalidadChip = (p) => TIPO_CHIP[tipoDe(p)];

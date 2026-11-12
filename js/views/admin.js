@@ -231,7 +231,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <select id="p-mod" title="Envío a domicilio o retiro en sucursal">
           <option value="">Reparto y retiros</option>
           <option value="envio">🚚 Todo el reparto</option>
-          <option value="rep_min">🏠 Solo reparto minorista</option>
+          <option value="rep_min">🏠 Solo domicilios</option>
           <option value="rep_may">🚚 Solo reparto mayorista</option>
           <option value="retiro">🏪 Solo retiros en sucursal</option>
         </select>
@@ -917,7 +917,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       title: aEnvio ? 'Pasar a reparto' : 'Pasar a retiro en sucursal', width: 560,
       bodyHTML: aEnvio ? `
         <div class="note">El pedido de <b>${esc(p.cliente)}</b> está como <b>🏪 retiro en sucursal</b>.
-          Al pasarlo a reparto queda como <b>${p.lista === 'minorista' ? '🏠 REPARTO MINORISTA' : '🚚 REPARTO MAYORISTA'}</b> y entra en la lista de pedidos para armar la ruta.</div>
+          Al pasarlo a reparto queda como <b>${p.lista === 'minorista' ? '🏠 DOMICILIOS' : '🚚 REPARTO MAYORISTA'}</b> y entra en la lista de pedidos para armar la ruta.</div>
         <div class="form-grid">
           <div class="field col-2"><label>Dirección de entrega *</label>
             <input id="md-dir" autocomplete="off" value="${esc(p.direccion || '')}" placeholder="Calle 1234, Localidad"/></div>
@@ -983,7 +983,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             fechaEntrega: fec, diaEntrega: '',
             lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
           });
-          toast('Pedido pasado a ' + (p.lista === 'minorista' ? 'reparto minorista' : 'reparto mayorista') + ' ✓ ya podés incluirlo en una ruta', 'ok');
+          toast('Pedido pasado a ' + (p.lista === 'minorista' ? 'domicilios' : 'reparto mayorista') + ' ✓ ya podés incluirlo en una ruta', 'ok');
           close(); (after || (() => GDO.App.render()))();
         };
       },
@@ -1285,7 +1285,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             : ((p && p.diaEntrega) ? 'El cliente eligió <b>' + esc(p.diaEntrega) + '</b> · agendada al próximo. Podés cambiarla a mano.' : 'Podés cambiarla a mano.');
           node.querySelector('#f-mod-help').innerHTML = ret
             ? '🏪 No entra al armado de rutas: el cliente lo pasa a buscar por el local.'
-            : '🚚 Entra en la lista de pedidos para armar la ruta del día. Con lista <b>mayorista</b> queda como REPARTO MAYORISTA; con lista <b>minorista</b>, como REPARTO MINORISTA.';
+            : '🚚 Entra en la lista de pedidos para armar la ruta del día. Con lista <b>mayorista</b> queda como REPARTO MAYORISTA; con lista <b>minorista</b>, como DOMICILIOS.';
         };
         node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; pintarModo(); });
         pintarModo();

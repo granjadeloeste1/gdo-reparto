@@ -645,7 +645,7 @@ window.GDO = window.GDO || {};
       if (antes !== nueva) {
         p.historia = p.historia || [];
         p.historia.push({ ts: Date.now(), est: 'modalidad',
-          detalle: nueva === 'retiro' ? 'Pasó a retiro en sucursal' : (p.lista === 'minorista' ? 'Pasó a reparto minorista' : 'Pasó a reparto mayorista'),
+          detalle: nueva === 'retiro' ? 'Pasó a retiro en sucursal' : (p.lista === 'minorista' ? 'Pasó a domicilios' : 'Pasó a reparto mayorista'),
           por: db.session ? db.session.userId : null });
       }
       persist(db); fsSet('pedidos', p);
