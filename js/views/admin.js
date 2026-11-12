@@ -236,6 +236,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <option value="retiro">🏪 Solo retiros en sucursal</option>
         </select>
         ${soyVend ? '' : `<select id="p-vend" title="Pedidos de cada vendedor">${opcionesVendedor()}</select>`}
+        <button class="btn btn-ghost btn-sm" id="p-hoy" title="Pedidos para entregar o retirar hoy">Hoy</button>
+        <button class="btn btn-ghost btn-sm" id="p-man" title="Pedidos para entregar o retirar mañana">Mañana</button>
         <div class="p-fechas" title="Buscar por día de entrega o de retiro">
           <span class="ic">📅</span>
           <input type="date" id="p-d" title="Desde"/>
@@ -306,6 +308,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         });
       }
       c.querySelector('#p-fclear').style.display = (fD || fH) ? '' : 'none';
+      // Hoy / Mañana quedan marcados cuando el filtro es justo ese día.
+      [['#p-hoy', 0], ['#p-man', 1]].forEach((x) => { const on = fD && fD === fH && fD === isoMas(x[1]); const b = c.querySelector(x[0]); b.classList.toggle('btn-ghost', !on); b.classList.toggle('btn-dark', !!on); });
       // Mantenemos tildado solo lo que se sigue viendo (al cambiar filtro/busqueda).
       const visibles = new Set(list.map((p) => p.id));
       [...sel].forEach((id) => { if (!visibles.has(id)) sel.delete(id); });
@@ -320,6 +324,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Calendario: al tocar el campo se abre el almanaque, y el filtro se aplica
     // solo. Si el "hasta" queda antes del "desde", se acomodan solos.
     const pD = c.querySelector('#p-d'), pH = c.querySelector('#p-h');
+    function isoMas(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    // Hoy / Mañana, igual que en Producción: un toque y queda solo ese día. Otro toque lo saca.
+    [['#p-hoy', 0], ['#p-man', 1]].forEach((x) => { c.querySelector(x[0]).onclick = () => {
+      const f = isoMas(x[1]);
+      if (pD.value === f && pH.value === f) { pD.value = ''; pH.value = ''; } else { pD.value = f; pH.value = f; }
+      sel.clear(); draw();
+    }; });
     [pD, pH].forEach((el) => { el.onfocus = el.onclick = () => { try { el.showPicker && el.showPicker(); } catch (e) {} }; });
     pD.onchange = () => { if (pH.value && pH.value < pD.value) pH.value = pD.value; sel.clear(); draw(); };
     pH.onchange = () => { if (pD.value && pH.value < pD.value) pD.value = pH.value; sel.clear(); draw(); };

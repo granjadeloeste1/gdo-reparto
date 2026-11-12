@@ -192,8 +192,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Filtro por VENDEDOR: '' = todos; '_sin' = los que no son de ningún vendedor
     // (tienda / mostrador); si no, el id del vendedor. Se combina con el día.
     let filtroVend = '';
+    /* Filtro por ZONA (la localidad del pedido): '' = todas. Sirve para armar la
+       ruta de Hurlingham por un lado y la de Ramos por otro. Con una zona elegida,
+       tocar un día tilda solo los pedidos de esa zona. */
+    let filtroZona = '';
+    const zonaDe = (p) => String((p && p.localidad) || '').trim().replace(/\s+/g, ' ');
+    const zonaKey = (p) => sinAc(zonaDe(p)) || '_sin';
+    const pasaZona = (p) => !filtroZona || zonaKey(p) === filtroZona;
     const vendKey = (p) => { const v = vendedorDe(p); return v ? v.id : '_sin'; };
-    const pasaVend = (p) => !filtroVend || vendKey(p) === filtroVend;
+    const pasaVend = (p) => (!filtroVend || vendKey(p) === filtroVend) && pasaZona(p);
     const drawPeds = () => {
       if (!elegibles.length) { pedsBox.innerHTML = `<div class="empty">No hay pedidos pendientes.</div>`; return; }
       // Vendedores presentes en los pedidos disponibles. La fila de filtros solo
@@ -206,6 +213,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         + vendBtn('', 'Todos')
         + vends.map((v) => vendBtn(v.id, esc(v.nombre))).join('')
         + vendBtn('_sin', 'Sin vendedor')
+        + `</div>` : '';
+      // Zonas (localidades) presentes, con cuántos pedidos tiene cada una.
+      const zonas = {};
+      elegibles.filter((p) => !filtroVend || vendKey(p) === filtroVend).forEach((p) => { const k = zonaKey(p); (zonas[k] = zonas[k] || { k: k, nombre: zonaDe(p) || 'Sin localidad', n: 0 }).n++; });
+      const zl = Object.keys(zonas).map((k) => zonas[k]).sort((a, b) => (a.k === '_sin') - (b.k === '_sin') || a.nombre.localeCompare(b.nombre));
+      const zonaBtn = (val, txt) => `<button type="button" class="btn btn-sm ${filtroZona === val ? '' : 'btn-ghost'}" data-zona="${esc(val)}">${txt}</button>`;
+      const zonaChips = zl.length > 1 ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center"><span class="small muted" style="margin-right:2px">📍 Zona:</span>`
+        + zonaBtn('', 'Todas')
+        + zl.map((z) => zonaBtn(z.k, esc(z.nombre) + ' (' + z.n + ')')).join('')
         + `</div>` : '';
       // Días presentes en los pedidos disponibles (por fecha de entrega), del más cercano al más lejano.
       const dias = []; const vistos = {};
@@ -220,7 +236,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       // antes quedaban ocultos dentro de la ruta y al guardar se les pisaba la fecha.
       const vis = elegibles.filter(pasaVend).filter((p) => !filtroDia || (efFecha(p) || 'sin') === filtroDia || ruta.pedidoIds.includes(p.id));
       const otroDia = (p) => { const f = efFecha(p); return filtroDia && filtroDia !== 'sin' && f && f !== filtroDia; };
-      pedsBox.innerHTML = vendChips + chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
+      pedsBox.innerHTML = vendChips + zonaChips + chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
         ${vis.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${esc(p.id)}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
           <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${dirLoc(p)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
@@ -251,6 +267,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       // tiene pedidos de ese vendedor, se vuelve a "todos los días".
       pedsBox.querySelectorAll('[data-vend]').forEach((b) => b.onclick = () => {
         filtroVend = b.dataset.vend;
+        if (filtroDia && !elegibles.some((p) => pasaVend(p) && (efFecha(p) || 'sin') === filtroDia)) filtroDia = '';
+        drawPeds();
+      });
+      pedsBox.querySelectorAll('[data-zona]').forEach((b) => b.onclick = () => {
+        filtroZona = b.dataset.zona;
         if (filtroDia && !elegibles.some((p) => pasaVend(p) && (efFecha(p) || 'sin') === filtroDia)) filtroDia = '';
         drawPeds();
       });
