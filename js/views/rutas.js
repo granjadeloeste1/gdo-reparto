@@ -236,7 +236,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       // antes quedaban ocultos dentro de la ruta y al guardar se les pisaba la fecha.
       const vis = elegibles.filter(pasaVend).filter((p) => !filtroDia || (efFecha(p) || 'sin') === filtroDia || ruta.pedidoIds.includes(p.id));
       const otroDia = (p) => { const f = efFecha(p); return filtroDia && filtroDia !== 'sin' && f && f !== filtroDia; };
-      pedsBox.innerHTML = vendChips + zonaChips + chips + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
+      // Seleccionar / sacar TODOS los que se están viendo (con los filtros de zona, día y vendedor puestos).
+      const nVisTild = vis.filter((p) => ruta.pedidoIds.includes(p.id)).length;
+      const masivos = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+        <button type="button" class="btn btn-sm btn-dark" id="r-todos"${nVisTild === vis.length ? ' disabled' : ''}>☑ Seleccionar todos (${vis.length})</button>
+        <button type="button" class="btn btn-sm btn-ghost" id="r-ninguno"${nVisTild ? '' : ' disabled'}>☐ Sacar todos</button>
+        <span class="small muted">Toma los ${vis.length} pedidos que se ven en la lista.</span></div>`;
+      pedsBox.innerHTML = vendChips + zonaChips + chips + masivos + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
         ${vis.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${esc(p.id)}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
           <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${dirLoc(p)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
@@ -270,6 +276,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         if (filtroDia && !elegibles.some((p) => pasaVend(p) && (efFecha(p) || 'sin') === filtroDia)) filtroDia = '';
         drawPeds();
       });
+      $('#r-todos').onclick = () => {
+        vis.forEach((p) => { if (!ruta.pedidoIds.includes(p.id)) ruta.pedidoIds.push(p.id); });
+        recompute(); drawPeds();
+      };
+      $('#r-ninguno').onclick = () => {
+        const ver = new Set(vis.map((p) => p.id));
+        ruta.pedidoIds = ruta.pedidoIds.filter((id) => { if (!ver.has(id)) return true; delete ruta.demoraPorId[id]; return false; });
+        recompute(); drawPeds();
+      };
       pedsBox.querySelectorAll('[data-zona]').forEach((b) => b.onclick = () => {
         filtroZona = b.dataset.zona;
         if (filtroDia && !elegibles.some((p) => pasaVend(p) && (efFecha(p) || 'sin') === filtroDia)) filtroDia = '';
