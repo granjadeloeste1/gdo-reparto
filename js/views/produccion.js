@@ -53,7 +53,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* El mismo producto a veces llega con la cantidad pegada al nombre: la página de la suprema guarda
      "SUPREMA CONGELADA BELLO - IQF X 10 KG (1 caja)". Eso NO es otro producto: se saca el "(1 caja)"
      para que la comanda lo sume en una sola línea. (No toca "(6X1KG)", que sí describe el envase.) */
-  const RE_CANT_NOMBRE = /s*(s*d+s*(cajas?|caj[oó]n(es)?|unidad(es)?|bultos?|paquetes?)s*)s*$/i;
+  const RE_CANT_NOMBRE = /\s*\(\s*\d+\s*(cajas?|caj[oó]n(es)?|unidad(es)?|bultos?|paquetes?)\s*\)\s*$/i;
   const nomProd = (it) => filaDe(it).replace(RE_CANT_NOMBRE, '').replace(/\s+X\s+CAJ(AS?|[OÓ]N(ES)?)\s+(DE\s+)?\d+(?:[.,]\d+)?\s*KGS?\.?\s*$/i, '').trim();
   const filaDe = (it) => {
     const orig = String((it && (it.producto || it.nombre)) || '').trim();
