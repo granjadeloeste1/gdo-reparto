@@ -101,7 +101,23 @@ window.GDO = window.GDO || {};
     envio: '<span class="chip chip-envio">🚚 Envío a domicilio</span>',
   };
   const MODALIDAD_T = { retiro: 'Retiro en sucursal', envio: 'Envío a domicilio' };
-  const modalidadChip = (p) => MODALIDAD_CHIP[modalidadDe(p)];
+  /* TIPO DE PEDIDO (tres, así se eligen en la Comanda):
+       retiro   → RETIRO EN SUCURSAL   (el cliente lo pasa a buscar)
+       rep_min  → REPARTO MINORISTA    (envío a un domicilio, lista minorista)
+       rep_may  → REPARTO MAYORISTA    (envío de un pedido mayorista: uno de retiro
+                                        que se pasó a reparto, o cargado a mano)
+     No es un campo nuevo: sale de la modalidad y de la lista del pedido, así vale
+     también para todo lo que ya estaba cargado. */
+  const tipoDe = (p) => (esRetiro(p) ? 'retiro' : (p && p.lista === 'minorista' ? 'rep_min' : 'rep_may'));
+  const TIPOS = ['retiro', 'rep_min', 'rep_may'];
+  const TIPO_T = { retiro: 'Retiro en sucursal', rep_min: 'Reparto minorista', rep_may: 'Reparto mayorista' };
+  const TIPO_IC = { retiro: '🏪', rep_min: '🏠', rep_may: '🚚' };
+  const TIPO_CHIP = {
+    retiro: MODALIDAD_CHIP.retiro,
+    rep_min: '<span class="chip chip-envio">🏠 Reparto minorista</span>',
+    rep_may: '<span class="chip chip-repmay">🚚 Reparto mayorista</span>',
+  };
+  const modalidadChip = (p) => TIPO_CHIP[tipoDe(p)];
 
   /* Fecha EFECTIVA del pedido (ISO): la cargada, o la derivada del día que el
      cliente eligió en la tienda (próximo ese día). En un pedido de retiro es el
@@ -231,6 +247,6 @@ window.GDO = window.GDO || {};
     : '';
 
   GDO.UI = { esc, h, toast, specSegura, precioDudoso, precioChip, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
-    ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, fechaEfectiva,
+    ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, tipoDe, TIPOS, TIPO_T, TIPO_IC, TIPO_CHIP, fechaEfectiva,
     vendedorDe, vendedorIdDe, vendedorChip, linkVendedor, deVendedor, vendedorForzado, vendedoresLista, selectVendedor };
 })();

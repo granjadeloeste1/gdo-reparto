@@ -229,8 +229,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <option value="no_entregado">No entregado</option><option value="salteado">Salteado</option>
         </select>
         <select id="p-mod" title="Envío a domicilio o retiro en sucursal">
-          <option value="">Envíos y retiros</option>
-          <option value="envio">🚚 Solo envíos a domicilio</option>
+          <option value="">Reparto y retiros</option>
+          <option value="envio">🚚 Todo el reparto</option>
+          <option value="rep_min">🏠 Solo reparto minorista</option>
+          <option value="rep_may">🚚 Solo reparto mayorista</option>
           <option value="retiro">🏪 Solo retiros en sucursal</option>
         </select>
         ${soyVend ? '' : `<select id="p-vend" title="Pedidos de cada vendedor">${opcionesVendedor()}</select>`}
@@ -290,6 +292,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const mod = c.querySelector('#p-mod').value;
       if (mod === 'retiro') list = list.filter((p) => esRetiro(p));
       else if (mod === 'envio') list = list.filter((p) => !esRetiro(p));
+      else if (mod) list = list.filter((p) => GDO.UI.tipoDe(p) === mod);
       /* Búsqueda por fecha: el día de entrega (o de retiro) del pedido. Sirve
          para contestar "¿qué entregamos el jueves pasado?" — se combina con el
          estado, así que con "Entregado" + un día quedan las entregas de ese día.
@@ -900,10 +903,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const aEnvio = esRetiro(p);
     const f = efFechaEntrega(p);
     modal({
-      title: aEnvio ? 'Pasar a envío a domicilio' : 'Pasar a retiro en sucursal', width: 560,
+      title: aEnvio ? 'Pasar a reparto' : 'Pasar a retiro en sucursal', width: 560,
       bodyHTML: aEnvio ? `
         <div class="note">El pedido de <b>${esc(p.cliente)}</b> está como <b>🏪 retiro en sucursal</b>.
-          Al pasarlo a <b>🚚 envío a domicilio</b> entra en la lista de pedidos para armar la ruta.</div>
+          Al pasarlo a reparto queda como <b>${p.lista === 'minorista' ? '🏠 REPARTO MINORISTA' : '🚚 REPARTO MAYORISTA'}</b> y entra en la lista de pedidos para armar la ruta.</div>
         <div class="form-grid">
           <div class="field col-2"><label>Dirección de entrega *</label>
             <input id="md-dir" autocomplete="off" value="${esc(p.direccion || '')}" placeholder="Calle 1234, Localidad"/></div>
@@ -926,7 +929,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <datalist id="md-franjas">${FRANJAS.map((x) => `<option value="${x}"></option>`).join('')}</datalist>
             <span class="help">Vacío = a coordinar.</span></div>
         </div>`,
-      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-ok>${aEnvio ? '🚚 Pasar a envío' : '🏪 Pasar a retiro'}</button>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><button class="btn btn-primary" data-ok>${aEnvio ? '🚚 Pasar a reparto' : '🏪 Pasar a retiro'}</button>`,
       onMount(node, close) {
         node.querySelector('[data-cancel]').onclick = close;
         if (aEnvio && GDO.Geo && GDO.Geo.attachAutocomplete) {
@@ -969,7 +972,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             fechaEntrega: fec, diaEntrega: '',
             lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
           });
-          toast('Pedido pasado a envío ✓ ya podés incluirlo en una ruta', 'ok');
+          toast('Pedido pasado a ' + (p.lista === 'minorista' ? 'reparto minorista' : 'reparto mayorista') + ' ✓ ya podés incluirlo en una ruta', 'ok');
           close(); (after || (() => GDO.App.render()))();
         };
       },
@@ -1187,7 +1190,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <span class="help">Sirve para separar los pedidos y las rutas por vendedor.</span></div>
           <div class="field col-2"><label>¿Cómo lo recibe el cliente?</label>
             <div class="modsel" id="f-mod">
-              <button type="button" data-mod="envio"${modIni === 'envio' ? ' class="on"' : ''}>🚚 Envío a domicilio</button>
+              <button type="button" data-mod="envio"${modIni === 'envio' ? ' class="on"' : ''}>🚚 Reparto (se lo llevamos)</button>
               <button type="button" data-mod="retiro"${modIni === 'retiro' ? ' class="on"' : ''}>🏪 Retiro en sucursal</button>
             </div>
             <span class="help" id="f-mod-help"></span></div>
@@ -1271,7 +1274,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             : ((p && p.diaEntrega) ? 'El cliente eligió <b>' + esc(p.diaEntrega) + '</b> · agendada al próximo. Podés cambiarla a mano.' : 'Podés cambiarla a mano.');
           node.querySelector('#f-mod-help').innerHTML = ret
             ? '🏪 No entra al armado de rutas: el cliente lo pasa a buscar por el local.'
-            : '🚚 Entra en la lista de pedidos para armar la ruta del día.';
+            : '🚚 Entra en la lista de pedidos para armar la ruta del día. Con lista <b>mayorista</b> queda como REPARTO MAYORISTA; con lista <b>minorista</b>, como REPARTO MINORISTA.';
         };
         node.querySelectorAll('#f-mod [data-mod]').forEach((b) => b.onclick = () => { mod = b.dataset.mod; pintarModo(); });
         pintarModo();
