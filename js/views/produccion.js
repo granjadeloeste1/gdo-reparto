@@ -627,10 +627,72 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   /* PDF: la MISMA hoja que se imprime (logo, categorías, líneas para el peso),
      armada aparte con los estilos de impresión y pasada a PDF. */
+  /* Nombre del PDF como lo quiere Matias: "Comanda general - 13-11-2026",
+     "Pedidos por domicilio - 13-11-2026" (el de pedido por pedido). */
+  function nombrePDF(qué) {
+    const f = /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia.slice(8) + '-' + dia.slice(5, 7) + '-' + dia.slice(0, 4) : dia;
+    return (qué === 'com' ? 'Comanda general' : qué === 'ped' ? 'Pedidos por domicilio' : 'Comanda y pedidos') + ' - ' + f + '.pdf';
+  }
+  /* Carpeta "Comandas GDO": el navegador no deja elegir carpeta al descargar, pero Chrome y
+     Edge sí dejan que la página escriba en una carpeta que el usuario le autorizó. La primera
+     vez se elige DÓNDE va (ej. Documentos) y ahí se crea "Comandas GDO"; queda recordada en
+     este navegador. Si no se puede (celular, otro navegador, se canceló), baja a Descargas. */
+  const CARPETA = 'Comandas GDO';
+  function carpetaDB(modo, valor) {
+    return new Promise((ok) => {
+      try {
+        const rq = indexedDB.open('gdo-carpetas', 1);
+        rq.onupgradeneeded = () => rq.result.createObjectStore('k');
+        rq.onerror = () => ok(null);
+        rq.onsuccess = () => {
+          try {
+            const tx = rq.result.transaction('k', modo === 'leer' ? 'readonly' : 'readwrite');
+            const st = tx.objectStore('k');
+            if (modo === 'leer') { const g = st.get('comandas'); g.onsuccess = () => ok(g.result || null); g.onerror = () => ok(null); }
+            else { st.put(valor, 'comandas'); tx.oncomplete = () => ok(true); tx.onerror = () => ok(null); }
+          } catch (e) { ok(null); }
+        };
+      } catch (e) { ok(null); }
+    });
+  }
+  // Se llama apenas se toca el botón (el permiso solo se puede pedir con un clic reciente).
+  async function carpetaComandas() {
+    if (!window.showDirectoryPicker) return null;
+    try {
+      let dir = await carpetaDB('leer');
+      if (dir) {
+        const perm = { mode: 'readwrite' };
+        if ((await dir.queryPermission(perm)) === 'granted' || (await dir.requestPermission(perm)) === 'granted') return dir;
+        return null;
+      }
+      toast('Elegí dónde guardar la carpeta "' + CARPETA + '" (se pide una sola vez)', '');
+      const base = await window.showDirectoryPicker({ id: 'comandas-gdo', mode: 'readwrite', startIn: 'documents' });
+      dir = base.name === CARPETA ? base : await base.getDirectoryHandle(CARPETA, { create: true });
+      await carpetaDB('guardar', dir);
+      return dir;
+    } catch (e) { return null; }
+  }
+  async function guardarPDF(blob, nombre, dir) {
+    if (dir) {
+      try {
+        const fh = await dir.getFileHandle(nombre, { create: true });
+        const w = await fh.createWritable();
+        await w.write(blob); await w.close();
+        toast('Guardado en "' + CARPETA + '" ✓', 'ok');
+        return;
+      } catch (e) { /* cae a la descarga normal */ }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('PDF descargado ✓', 'ok');
+  }
   function bajarPDF(qué, c) {
     const bloques = qué === 'com' ? ['.pr-bloque-com'] : qué === 'ped' ? ['.pr-bloque-ped'] : ['.pr-bloque-com', '.pr-bloque-ped'];
     const nodos = bloques.map((s) => c.querySelector(s)).filter(Boolean);
     if (!nodos.length) { toast('No hay pedidos ese día', 'err'); return; }
+    const carpeta = carpetaComandas();
     toast('Armando el PDF…', '');
     cargarLib(LIB_PDF, 'html2pdf').then((h2p) => {
       const cont = document.createElement('div');
@@ -684,12 +746,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       });
       return h2p().set({
         margin: [10, 10, 12, 10],
-        filename: nombreArchivo(qué === 'com' ? 'comanda' : qué === 'ped' ? 'pedidos' : 'produccion', 'pdf'),
+        filename: nombrePDF(qué),
         image: { type: 'jpeg', quality: 0.96 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'], before: '.pr-pdf-salto' + (unoPorHoja ? ', .pr-una .pr-ped + .pr-ped' : ''), avoid: ['tr'] },
-      }).from(cont).save().then(() => { holder.remove(); toast('PDF descargado ✓', 'ok'); }, () => { holder.remove(); toast('No se pudo armar el PDF', 'err'); });
+      }).from(cont).outputPdf('blob').then((blob) => { holder.remove(); return carpeta.then((dir) => guardarPDF(blob, nombrePDF(qué), dir)); })
+        .catch(() => { holder.remove(); toast('No se pudo armar el PDF', 'err'); });
     }).catch(() => toast('No se pudo armar el PDF (¿sin internet?)', 'err'));
   }
 })();
