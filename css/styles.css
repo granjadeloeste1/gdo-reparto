@@ -669,7 +669,7 @@ textarea{resize:vertical;min-height:74px}
   .pr-arm,.pr-ped-h{break-inside:avoid;page-break-inside:avoid}
   .pr-una .pr-ped{break-after:page;page-break-after:always;border:0}
   .pr-una .pr-ped:last-child{break-after:auto;page-break-after:auto}
-  .pr-arm .pr-bal{width:34%}
+  .pr-arm .pr-bal{width:26%}
 }
 
 /* ---------- Producción: categorías y hoja de armado por pedido ---------- */
@@ -688,7 +688,8 @@ textarea{resize:vertical;min-height:74px}
 .pr-prep{font-size:12.5px;color:#374151;margin-top:2px}
 .pr-nota{font-size:12.5px;color:#8a5a00;margin-top:2px}
 .pr-frac{white-space:nowrap;color:#374151}
-.pr-bal-h{text-align:left;width:26%}
+.pr-precio{white-space:nowrap;font-weight:700;color:#111}
+.pr-bal-h{text-align:left;width:22%}
 .pr-bal{white-space:nowrap;vertical-align:bottom !important;color:#555;font-weight:700}
 .pr-linea{display:inline-block;width:78%;max-width:170px;border-bottom:1.5px solid #333;height:18px;vertical-align:bottom}
 .pr-linea.corta{width:60px}

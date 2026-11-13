@@ -317,6 +317,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* Hoja de ARMADO de un pedido: lo que lleva, por categoría, con un espacio a la
      derecha de cada producto para anotar a mano el peso REAL de la balanza (lo
      que se pidió en kilos casi nunca pesa exacto: 5 kg de suprema son 5,12). */
+  /* Precio unitario que eligió el cliente, tal como le salió al hacer el pedido:
+     "$9.400 kg", "$80.000 caja". Vacío si el ítem no tiene precio (lo que va dentro de un combo). */
+  function precioTxt(it) {
+    const n = Number(it.precio) || 0;
+    if (!(n > 0)) return '';
+    const u = String(it.unidad || 'kg').trim().toLowerCase();
+    const uu = /^(kg|kilos?)$/.test(u) ? 'kg' : /^(u|un|unid|unidad|unidades)$/.test(u) ? 'c/u' : u;
+    return '$' + Math.round(n).toLocaleString('es-AR') + ' ' + uu;
+  }
   function hojaPedido(p, orden) {
     const items = (p.items || []).map((it, i) => ({ it: it, i: i, cat: categoriaDe(it) }))
       .sort((a, b) => (posCat(orden, a.cat) - posCat(orden, b.cat)) || (a.i - b.i));
@@ -333,9 +342,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="pr-ped-donde">${donde}</div>
         </div>
         ${items.length ? `<table class="pr-arm"><thead><tr>
-            <th style="width:26px"></th><th>Producto</th><th>Total</th><th>Fracción</th><th>Cantidad</th><th class="pr-bal-h">Peso real (balanza)</th>
+            <th style="width:26px"></th><th>Producto</th><th>Total</th><th>Fracción</th><th>Cantidad</th><th>Precio</th><th class="pr-bal-h">Peso real (balanza)</th>
           </tr></thead><tbody>${grupos.map((g) => `
-            <tr class="pr-cat"><td colspan="6">${esc(g.cat)}</td></tr>
+            <tr class="pr-cat"><td colspan="7">${esc(g.cat)}</td></tr>
             ${g.filas.map((x) => {
               const it = x.it;
               const prep = String(it.preparacion || '').trim();
@@ -346,6 +355,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
                 <td class="pr-cant">${esc(totalTxt(pt))}</td>
                 <td class="pr-frac">${esc(fracTxt(pt))}</td>
                 <td class="pr-cant">${esc(cantNum(pt))}</td>
+                <td class="pr-precio">${i === 0 ? esc(precioTxt(it)) : ''}</td>
                 <td class="pr-bal"><span class="pr-linea"></span> kg</td>
               </tr>`).join('');
             }).join('')}`).join('')}</tbody></table>`
