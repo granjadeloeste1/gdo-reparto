@@ -326,6 +326,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const uu = /^(kg|kilos?)$/.test(u) ? 'kg' : /^(u|un|unid|unidad|unidades)$/.test(u) ? 'c/u' : u;
     return '$' + Math.round(n).toLocaleString('es-AR') + ' ' + uu;
   }
+  /* Teléfono del cliente como link a su chat de WhatsApp: se puede tocar en la pantalla y
+     también en el PDF (html2pdf deja los <a> como links). wa.me sirve en la PC y en el celular. */
+  function telHTML(p) {
+    if (!p.telefono) return '';
+    const W = GDO.Wpp;
+    const t = W && W.tieneTel(p.telefono) ? W.tel(p.telefono) : '';
+    if (!t) return '<span class="pr-ped-tel">📞 ' + esc(p.telefono) + '</span>';
+    return '<a class="pr-ped-tel pr-ped-wa" href="https://wa.me/' + t + '" target="_blank" rel="noopener" title="Abrir su chat de WhatsApp">💬 ' + esc(p.telefono) + '</a>';
+  }
   function hojaPedido(p, orden) {
     const items = (p.items || []).map((it, i) => ({ it: it, i: i, cat: categoriaDe(it) }))
       .sort((a, b) => (posCat(orden, a.cat) - posCat(orden, b.cat)) || (a.i - b.i));
@@ -338,7 +347,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div class="pr-ped">
         <div class="pr-ped-h">
           <div class="pr-ped-cli"><b>${esc(p.cliente)}</b>${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">' + (p.lista === 'minorista' ? 'Lista minorista' : 'Lista mayorista') + '</span>' : ''}${vendedorChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}
-            ${p.telefono ? '<span class="pr-ped-tel">📞 ' + esc(p.telefono) + '</span>' : ''}</div>
+            ${telHTML(p)}</div>
           <div class="pr-ped-donde">${donde}</div>
         </div>
         ${items.length ? `<table class="pr-arm"><thead><tr>

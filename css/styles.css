@@ -680,6 +680,7 @@ textarea{resize:vertical;min-height:74px}
 .pr-ped-h{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:6px}
 .pr-ped-cli b{font-size:16px;font-family:var(--slab)}
 .pr-ped-tel{margin-left:10px;font-size:13px;color:#444;white-space:nowrap}
+.pr-ped-wa{color:#0b7a3b;font-weight:700;text-decoration:underline}
 .pr-ped-donde{font-size:13px;color:#333}
 .pr-arm{width:100%}
 .pr-arm td{vertical-align:top}
