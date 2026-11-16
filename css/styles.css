@@ -742,7 +742,7 @@ textarea{resize:vertical;min-height:74px}
 /* ---------- Producción: PDF (se arma fuera de pantalla y se pasa a PDF) ----------
    Mismo armado que la hoja impresa, pero con los colores de pantalla. */
 .pr-pdf-holder{position:fixed;left:-10000px;top:0;width:718px}
-.pr-pdf{width:718px;background:#fff;color:#111;font-size:12px}  /* A4 menos 10 mm de margen por lado = 190 mm = 718 px */
+.pr-pdf{width:718px;background:#fff;color:#111;font-size:12px;-webkit-text-size-adjust:100%;text-size-adjust:100%}  /* A4 menos 10 mm de margen por lado = 190 mm = 718 px */
 .pr-pdf .no-print{display:none !important}
 .pr-pdf .solo-print{display:block !important}
 .pr-pdf .panel{box-shadow:none;border:0;border-radius:0;margin:0 0 14px;overflow:visible}

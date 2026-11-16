@@ -682,11 +682,40 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         return;
       } catch (e) { /* cae a la descarga normal */ }
     }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = nombre;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast('PDF descargado ✓ · está en la carpeta Descargas', 'ok');
+    /* EN EL CELULAR (v136): la app instalada no deja "bajar" un archivo armado en el momento
+       (en iPhone directamente no hace nada). Lo que sí funciona siempre es el menú del teléfono:
+       Guardar en Archivos / Imprimir / mandar por WhatsApp. Ese menú solo se abre con un toque,
+       así que cuando el PDF está listo se muestra un cartel con el botón. */
+    const archivo = (() => { try { return new File([blob], nombre, { type: 'application/pdf' }); } catch (e) { return null; } })();
+    const enCelu = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+    const url = URL.createObjectURL(blob);
+    const bajar = () => {
+      const a = document.createElement('a');
+      a.href = url; a.download = nombre;
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('PDF descargado ✓ · está en la carpeta Descargas', 'ok');
+    };
+    if (enCelu && GDO.UI.modal) {
+      const puedeCompartir = !!(archivo && navigator.canShare && navigator.canShare({ files: [archivo] }));
+      GDO.UI.modal({
+        title: 'PDF listo ✓', width: 420,
+        bodyHTML: '<p style="margin:0 0 6px;font-size:15px"><b>' + esc(nombre) + '</b></p>'
+          + '<p class="small muted" style="margin:0">' + (puedeCompartir
+            ? 'Tocá <b>Guardar o compartir</b> y elegí qué hacer: guardarlo en el teléfono, imprimirlo o mandarlo por WhatsApp.'
+            : 'Tocá <b>Descargar</b>: queda en la carpeta Descargas del teléfono.') + '</p>',
+        footHTML: (puedeCompartir ? '<button class="btn btn-primary" data-comp>📤 Guardar o compartir</button>' : '')
+          + '<button class="btn ' + (puedeCompartir ? 'btn-ghost' : 'btn-primary') + '" data-baj>⬇ Descargar</button>'
+          + '<a class="btn btn-ghost" data-ver target="_blank" rel="noopener" href="' + url + '">👁 Abrir</a>',
+        onMount(m) {
+          const comp = m.querySelector('[data-comp]');
+          if (comp) comp.onclick = () => navigator.share({ files: [archivo], title: nombre }).catch(() => {});
+          m.querySelector('[data-baj]').onclick = bajar;
+        },
+      });
+      return;
+    }
+    bajar();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
   function bajarPDF(qué, c) {
     const bloques = qué === 'com' ? ['.pr-bloque-com'] : qué === 'ped' ? ['.pr-bloque-ped'] : ['.pr-bloque-com', '.pr-bloque-ped'];
@@ -725,40 +754,95 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       holder.className = 'pr-pdf-holder';
       holder.appendChild(cont);
       document.body.appendChild(holder);
-      /* NINGÚN PEDIDO PARTIDO ENTRE DOS HOJAS. Estas hojas se recortan y cada
-         parte se pega en su pedido, así que un pedido cortado al medio no sirve.
-         No lo dejamos librado a la librería: medimos dónde cae cada corte de
-         página y, si un pedido lo cruza, metemos un espacio para empujarlo entero
-         a la hoja siguiente. (Uno más alto que una hoja entera se parte igual: no
-         hay forma de evitarlo.) */
-      const mm = 96 / 25.4;
-      const alturaHoja = (297 - 10 - 12) * mm;      // A4 menos los márgenes de abajo
-      const y0 = cont.getBoundingClientRect().top;
-      cont.querySelectorAll('.pr-ped').forEach((el) => {
-        const r = el.getBoundingClientRect();
-        const desde = r.top - y0, hasta = r.bottom - y0;
-        if (r.height > alturaHoja) return;
-        if (Math.floor(desde / alturaHoja) === Math.floor((hasta - 1) / alturaHoja)) return;
-        const falta = (Math.floor(desde / alturaHoja) + 1) * alturaHoja - desde;
-        const sp = document.createElement('div');
-        sp.style.height = Math.ceil(falta) + 'px';
-        el.parentNode.insertBefore(sp, el);
-      });
-      /* Con muchos pedidos la "foto" de la hoja se pasa del tamaño máximo que aguanta el navegador
-         (sobre todo en el celular) y el PDF sale en blanco o directamente no se arma. Se baja la
-         nitidez lo justo para que entre. */
-      const caja = cont.getBoundingClientRect();
-      const tope = /Android|iPhone|iPad/i.test(navigator.userAgent) ? 12e6 : 60e6;
-      const escala = Math.max(0.8, Math.min(2, 15000 / Math.max(1, caja.height), Math.sqrt(tope / Math.max(1, caja.width * caja.height))));
-      return h2p().set({
-        margin: [10, 10, 12, 10],
-        filename: nombrePDF(qué),
-        image: { type: 'jpeg', quality: 0.96 },
-        html2canvas: { scale: escala, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], before: '.pr-pdf-salto' + (unoPorHoja ? ', .pr-una .pr-ped + .pr-ped' : ''), avoid: ['tr'] },
-      }).from(cont).outputPdf('blob').then((blob) => { holder.remove(); return carpeta.then((dir) => guardarPDF(blob, nombrePDF(qué), dir)); })
+      return pdfPorHojas(h2p, cont, holder, unoPorHoja)
+        .then((blob) => { holder.remove(); return carpeta.then((dir) => guardarPDF(blob, nombrePDF(qué), dir)); })
         .catch((e) => { holder.remove(); console.error('[pdf]', e); toast('No se pudo armar el PDF' + (e && e.message ? ' (' + e.message + ')' : ''), 'err'); });
     }).catch(() => toast('No se pudo armar el PDF (¿sin internet?)', 'err'));
   }
+
+  /* NINGÚN PEDIDO PARTIDO ENTRE DOS HOJAS (v136). Estas hojas se recortan y cada parte se pega
+     en su pedido: un pedido cortado al medio no sirve.
+     Antes se sacaba UNA foto larga de todo y la librería la cortaba cada 275 mm; en el celular
+     las medidas no coincidían y los pedidos salían partidos. Ahora cada hoja A4 se arma POR
+     SEPARADO con piezas enteras (un pedido, una fila de la comanda) y se le saca su propia foto:
+     no hay nada que cortar. Si una hoja quedara más alta que el A4 (un pedido larguísimo), se
+     achica hasta entrar: sale más chico, nunca cortado. */
+  async function pdfPorHojas(h2p, cont, holder, unaPorHoja) {
+    const mm = 96 / 25.4, ANCHO = 190, ALTO = 275;           // área útil del A4, en mm
+    const altoPx = ALTO * mm - 4;
+    const alto = (el) => el.getBoundingClientRect().height;
+    // 1) Piezas que no se parten, en orden. { el, h, tabla?, nuevaHoja?, corte? }
+    const piezas = [];
+    Array.from(cont.children).forEach((bloque, bi) => {
+      let primera = bi > 0;                                    // cada bloque arranca en hoja nueva
+      const poner = (el, extra) => {
+        if (!alto(el)) return;
+        piezas.push(Object.assign({ el: el, h: alto(el), nuevaHoja: primera }, extra || {}));
+        primera = false;
+      };
+      (function bajar(nodo) {
+        Array.from(nodo.children).forEach((el) => {
+          if (el.classList.contains('pr-peds')) {
+            Array.from(el.children).forEach((x) => poner(x, x.classList.contains('pr-corte') ? { corte: true } : { pedido: true }));
+          } else if (el.tagName === 'TABLE' && el.tBodies.length) {
+            const cab = el.tHead ? alto(el.tHead) : 0;
+            Array.from(el.tBodies[0].rows).forEach((tr) => poner(tr, { tabla: el, cab: cab }));
+          } else if (el.querySelector && el.querySelector('.pr-peds, table.pr-com')) bajar(el);
+          else poner(el);
+        });
+      })(bloque);
+    });
+    // 2) Se reparten en hojas sin pasarse del alto.
+    const hojas = [];
+    let hoja = null, usado = 0;
+    const abrir = () => { hoja = []; hojas.push(hoja); usado = 0; };
+    piezas.forEach((p, i) => {
+      const ant = hoja && hoja[hoja.length - 1];
+      const necesita = p.h + (p.tabla && !(ant && ant.tabla === p.tabla) ? p.cab : 0) + (p.pedido ? 12 : 0);
+      const sola = unaPorHoja && p.pedido && hoja && hoja.some((x) => x.pedido);
+      if (p.corte) {                                           // la tijera va solo ENTRE dos pedidos de la misma hoja
+        const sig = piezas[i + 1];
+        if (!hoja || !sig || unaPorHoja || usado + p.h + sig.h + 12 > altoPx) return;
+      }
+      if (!hoja || p.nuevaHoja || sola || (usado + necesita > altoPx && hoja.length)) abrir();
+      hoja.push(p); usado += necesita;
+    });
+    // 3) Cada hoja se arma en su propio contenedor (mismo ancho y estilos) y se fotografía.
+    const worker0 = h2p().set({ margin: 10, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, html2canvas: { scale: 1, backgroundColor: '#ffffff' } });
+    const semilla = document.createElement('div');
+    semilla.style.cssText = 'width:10px;height:10px;background:#fff';
+    holder.appendChild(semilla);
+    const pdf = await worker0.from(semilla).toPdf().get('pdf');   // de acá sale el documento; su hoja inicial se borra al final
+    semilla.remove();
+    for (let n = 0; n < hojas.length; n++) {
+      const pag = document.createElement('div');
+      pag.className = cont.className;
+      let tablaAct = null, cuerpo = null, lista = null;
+      hojas[n].forEach((p) => {
+        if (p.tabla) {
+          if (tablaAct !== p.tabla) {
+            const t = p.tabla.cloneNode(false);
+            if (p.tabla.tHead) t.appendChild(p.tabla.tHead.cloneNode(true));
+            cuerpo = document.createElement('tbody'); t.appendChild(cuerpo);
+            pag.appendChild(t); tablaAct = p.tabla; lista = null;
+          }
+          cuerpo.appendChild(p.el.cloneNode(true));
+        } else if (p.pedido || p.corte) {
+          if (!lista) { lista = document.createElement('div'); lista.className = 'pr-peds'; pag.appendChild(lista); tablaAct = null; }
+          lista.appendChild(p.el.cloneNode(true));
+        } else { pag.appendChild(p.el.cloneNode(true)); tablaAct = null; lista = null; }
+      });
+      holder.appendChild(pag);
+      const canvas = await h2p().set({ margin: 10, pagebreak: { mode: [] }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' } }).from(pag).toCanvas().get('canvas');
+      pag.remove();
+      let w = ANCHO, hmm = canvas.height / canvas.width * ANCHO;
+      if (hmm > ALTO) { w = ANCHO * ALTO / hmm; hmm = ALTO; }   // más alta que el A4: se achica, no se corta
+      pdf.addPage('a4', 'portrait');
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 10 + (ANCHO - w) / 2, 10, w, hmm);
+    }
+    if (hojas.length) pdf.deletePage(1);
+    return pdf.output('blob');
+  }
+  GDO._pdfPorHojas = pdfPorHojas;   // para poder probarlo aparte
 })();
