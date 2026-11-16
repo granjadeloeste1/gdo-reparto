@@ -336,7 +336,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         else if (st === 'salteado') badge = '<span class="chip chip-salt">↷ Salteado (pendiente)</span>';
         return `<div class="dstop ${done ? 'done' : ''} ${isCur ? 'cur' : ''}">
           <div class="hd"><div style="display:flex;gap:10px"><div class="seq">${i + 1}</div>
-            <div><div class="cli">${esc(p.cliente)}</div><div class="dir">${esc(p.direccion)}${p.entrecalles ? ' · ' + esc(p.entrecalles) : ''}</div></div></div>
+            <div><div class="cli">${esc(p.cliente)}</div><div class="dir">${esc(p.direccion)}${p.localidad ? ', ' + esc(p.localidad) : ''}${p.entrecalles ? ' · ' + esc(p.entrecalles) : ''}</div>${GDO.timbreTxt(p) ? '<div class="dir"><b>🔔 ' + esc(GDO.timbreTxt(p)) + '</b></div>' : ''}</div></div>
             ${badge}</div>
           <div class="eta">${done ? '' : '⏱ Llegada estimada ' + fmtHora(etaMostrar(p)) + ' · '}${esc((p.items||[]).map((x)=>x.cantidad+'× '+x.producto).join(', '))}</div>
           ${p.especificaciones ? `<div class="spec">📌 ${esc(GDO.UI.specSegura(p))}</div>` : ''}

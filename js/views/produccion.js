@@ -342,7 +342,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const tp = tipoDe(p);
     const donde = esRetiro(p)
       ? '🏪 <b>RETIRO EN SUCURSAL</b>' + (p.ventana ? ' · ' + esc(p.ventana) : ' · horario a coordinar')
-      : TIPO_IC[tp] + ' <b>' + esc(TIPO_T[tp].toUpperCase()) + '</b> · ' + esc(p.direccion || '') + (p.localidad ? ', ' + esc(p.localidad) : '') + (p.entrecalles ? ' <span class="muted">(' + esc(p.entrecalles) + ')</span>' : '') + (p.ventana ? ' · ' + esc(p.ventana) : '');
+      : TIPO_IC[tp] + ' <b>' + esc(TIPO_T[tp].toUpperCase()) + '</b> · ' + esc(p.direccion || '') + (p.localidad ? ', ' + esc(p.localidad) : '') + (p.entrecalles ? ' <span class="muted">(' + esc(p.entrecalles) + ')</span>' : '') + (GDO.timbreTxt(p) ? ' · 🔔 ' + esc(GDO.timbreTxt(p)) : '') + (p.ventana ? ' · ' + esc(p.ventana) : '');
     return `
       <div class="pr-ped">
         <div class="pr-ped-h">
@@ -596,7 +596,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       list.forEach((p) => {
         const donde = esRetiro(p)
           ? 'RETIRO EN SUCURSAL' + (p.ventana ? ' · ' + p.ventana : ' · horario a coordinar')
-          : TIPO_T[tipoDe(p)].toUpperCase() + ' · ' + (p.direccion || '') + (p.localidad ? ', ' + p.localidad : '') + (p.ventana ? ' · ' + p.ventana : '');
+          : TIPO_T[tipoDe(p)].toUpperCase() + ' · ' + (p.direccion || '') + (p.localidad ? ', ' + p.localidad : '') + (GDO.timbreTxt(p) ? ' · ' + GDO.timbreTxt(p) : '') + (p.ventana ? ' · ' + p.ventana : '');
         const v = GDO.UI.vendedorDe ? GDO.UI.vendedorDe(p) : null;
         f2.push({ v: [p.cliente + (p.telefono ? '   ·   ' + p.telefono : '') + (v ? '   ·   Vendedor: ' + v.nombre : ''), '', '', '', '', ''], estilo: st.cli, unir: true });
         f2.push({ v: [donde + (p.especificaciones ? '   ·   ' + p.especificaciones : ''), '', '', '', '', ''], estilo: st.info, unir: true });

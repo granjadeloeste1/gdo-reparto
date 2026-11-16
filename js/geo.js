@@ -64,7 +64,7 @@ window.GDO = window.GDO || {};
   // "Tigre 1080" en Villa Tesei y en otros partidos. Sin este chequeo Google elegía
   // la homónima de otro lado y el chofer iba a cualquier parte.
   const PARTIDO_DE = {
-    'hurlingham': 'hurlingham', 'william morris': 'hurlingham', 'villa tesei': 'hurlingham', 'villa club': 'hurlingham',
+    'hurlingham': 'hurlingham', 'william morris': 'hurlingham', 'william c morris': 'hurlingham', 'villa tesei': 'hurlingham', 'villa club': 'hurlingham',
     'moron': 'moron', 'castelar': 'moron', 'el palomar': 'moron', 'palomar': 'moron', 'haedo': 'moron', 'villa sarmiento': 'moron',
     'ituzaingo': 'ituzaingo', 'villa udaondo': 'ituzaingo', 'udaondo': 'ituzaingo', 'parque leloir': 'ituzaingo', 'villa gobernador udaondo': 'ituzaingo',
     'caseros': 'tres de febrero', 'santos lugares': 'tres de febrero', 'saenz pena': 'tres de febrero', 'jose ingenieros': 'tres de febrero',
@@ -79,6 +79,10 @@ window.GDO = window.GDO || {};
     'merlo': 'merlo', 'san antonio de padua': 'merlo', 'padua': 'merlo', 'libertad': 'merlo', 'parque san martin': 'merlo',
     'moreno': 'moreno', 'paso del rey': 'moreno', 'francisco alvarez': 'moreno',
   };
+  // Localidades partidas entre dos partidos: vale cualquiera de los dos.
+  const PARTIDO_ALT = { 'palomar': ['tres de febrero'], 'el palomar': ['tres de febrero'], 'ciudad jardin': ['moron'],
+    'loma hermosa': ['general san martin'], 'villa sarmiento': ['la matanza', 'tres de febrero'] };
+  const PARTIDOS_REPARTO = {}; Object.keys(PARTIDO_DE).forEach((k) => { PARTIDOS_REPARTO[PARTIDO_DE[k]] = 1; });
   const _locNorm = (s) => _sinAcento(s).replace(/[.,]/g, ' ').replace(/^(partido de|ciudad de)\s+/, '').replace(/\s+/g, ' ').trim();
   // ¿Los nombres (localidad, partido, barrio) que trae el resultado son de la localidad pedida?
   // Sin localidad en el pedido no hay con qué comparar: se acepta.
@@ -144,6 +148,35 @@ window.GDO = window.GDO || {};
     const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
     const x = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(x));
+  }
+  /* ¿En qué provincia y partido cae un punto? Dato oficial (Georef /ubicacion). Sirve para
+     NO aceptar una ubicación fuera de donde se reparte: "Cosquín 1587" o "Maipú 987" existen
+     también en CABA, y una calle homónima manda al chofer a otra ciudad. null = no se pudo
+     consultar (sin red): en ese caso no se descarta nada. */
+  const _ubi = {};
+  async function ubicacionDe(lat, lng) {
+    const k = (+lat).toFixed(4) + ',' + (+lng).toFixed(4);
+    if (_ubi[k]) return _ubi[k];
+    try {
+      const r = await fetch(GEOREF + '/ubicacion?' + new URLSearchParams({ lat: String(lat), lon: String(lng) }), { headers: { Accept: 'application/json' } });
+      if (!r.ok) return null;
+      const u = ((await r.json()) || {}).ubicacion || {};
+      const out = { provincia: (u.provincia && u.provincia.nombre) || '', partido: (u.departamento && u.departamento.nombre) || '' };
+      if (!out.provincia) return null;
+      _ubi[k] = out; return out;
+    } catch (e) { return null; }
+  }
+  // Con localidad conocida: el punto tiene que caer en SU partido. Sin localidad: en alguno
+  // de los partidos donde se reparte. Nunca en CABA ni en otra provincia.
+  async function enZonaDeReparto(lat, lng, localidad) {
+    if (lat == null || lng == null) return false;
+    const u = await ubicacionDe(lat, lng);
+    if (!u) return true;
+    if (_locNorm(u.provincia) !== 'buenos aires') return false;
+    const l = _locNorm(localidad), part = PARTIDO_DE[l], pu = _locNorm(u.partido);
+    if (part) return pu === part || (PARTIDO_ALT[l] || []).indexOf(pu) >= 0;
+    if (l) return true; // localidad que no está en la tabla (la cargó el operador): alcanza con que no sea CABA
+    return !!PARTIDOS_REPARTO[pu];
   }
   function loadCache() { try { return JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (e) { return {}; } }
   function saveCache(c) { try { localStorage.setItem(CACHE, JSON.stringify(c)); } catch (e) {} }
@@ -392,7 +425,8 @@ window.GDO = window.GDO || {};
     // la zona estaba restringida (p. ej. Ramos Mejía, que antes daba null).
     // z7: suma la localidad del pedido (antes se ubicaba sin ella y caía en calles homónimas).
     // z8: Google solo vale a nivel de casa y las entrecalles mandan (ver abajo).
-    const key = 'z8|' + norm(base) + '|' + norm(ec) + '|' + norm(locP);
+    // z9: solo vale un punto que caiga en el partido de la localidad del pedido (nunca CABA).
+    const key = 'z9|' + norm(base) + '|' + norm(ec) + '|' + norm(locP);
     const cache = loadCache();
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
     let res = null;
@@ -431,7 +465,9 @@ window.GDO = window.GDO || {};
            si ninguno queda a menos de 4 cuadras, la esquina.
          Dos "esquinas" a más de 6 cuadras entre sí no son una cuadra: no se usan como tal. */
       const cruces = crucesDe(ec);
-      let esq = cruces.length ? await geocodeInterseccion(_soloCalle(qCalle), cruces, localidad) : null;
+      // Si la consulta de las esquinas falla (sin red, límite de consultas), se sigue sin ellas.
+      let esq = null;
+      try { esq = cruces.length ? await geocodeInterseccion(_soloCalle(qCalle), cruces, localidad) : null; } catch (e) { esq = null; }
       if (esq && esq.largo > 600) esq = null;
       if (esq && esq.largo > 0 && esq.largo <= 600) {
         const enCuadra = goo && goo.puerta && _metros(goo, esq) <= esq.largo / 2 + 60;
@@ -446,12 +482,20 @@ window.GDO = window.GDO || {};
       if (!res) { const l = await georefCalle(); if (l.length) res = l[0]; }
       if (!res && goo) res = goo;
     } catch (e) { if (!res && goo) res = goo; }
+    // Lo elegido tiene que estar en la zona de reparto; si no, se prueba con los otros candidatos.
+    const valido = async (r) => !!r && await enZonaDeReparto(r.lat, r.lng, locP);
+    if (res && !(await valido(res))) {
+      res = null;
+      let alt = goo ? [goo] : [];
+      try { alt = alt.concat(await georefCalle()); } catch (e) {}
+      for (const c of alt) { if (await valido(c)) { res = c; break; } }
+    }
     // 3) Fallback a OSM/Nominatim, SIEMPRE acotado a la zona; reintento sin altura.
     const baseOsm = locP && !_sinAcento(base).includes(_sinAcento(locP)) ? base + ', ' + locP : base;
-    if (!res) res = await _queryBounded(baseOsm, false);
+    if (!res) { const o = await _queryBounded(baseOsm, false); if (await valido(o)) res = o; }
     if (!res) {
       const b2 = sinAltura(baseOsm);
-      if (norm(b2) !== norm(baseOsm)) res = await _queryBounded(b2, true);
+      if (norm(b2) !== norm(baseOsm)) { const o = await _queryBounded(b2, true); if (await valido(o)) res = o; }
     }
     // Solo cacheamos resultados POSITIVOS: si no se encontró (null), NO lo
     // guardamos, así la próxima vez se reintenta (evita que un "no encontrada"
@@ -486,13 +530,14 @@ window.GDO = window.GDO || {};
          de Hurlingham) o una calle homónima de otro partido, y eso quedó guardado en el pedido.
          Se corrige solo si lo nuevo es confiable (o lo viejo estaba fuera de la zona oeste) y
          queda a más de 250 m; lo anterior queda anotado en la historia del pedido. */
-      const marca = (p) => 'v8|' + norm(p.direccion + '|' + (p.entrecalles || '') + '|' + (p.localidad || ''));
+      const marca = (p) => 'v9|' + norm(p.direccion + '|' + (p.entrecalles || '') + '|' + (p.localidad || ''));
       const revisar = GDO.Store.pedidos().filter((p) => p.lat != null && p.lng != null && p.direccion && activos.includes(p.estado)
         && p.modalidad !== 'retiro' && p.geoRevisado !== marca(p));
       for (const p of revisar) {
         const g = await geocode(p.direccion, p.entrecalles, p.localidad);
         const cambio = { geoRevisado: marca(p) };
-        if (g && (!g.aprox || !enZonaOeste(p.lat, p.lng)) && _metros({ lat: p.lat, lng: p.lng }, g) > 250) {
+        const fuera = !enZonaOeste(p.lat, p.lng) || !(await enZonaDeReparto(p.lat, p.lng, p.localidad));
+        if (g && (!g.aprox || fuera) && _metros({ lat: p.lat, lng: p.lng }, g) > 250) {
           cambio.lat = g.lat; cambio.lng = g.lng;
           cambio.historia = (p.historia || []).concat([{ ts: Date.now(), por: 'sistema', detalle: 'Ubicación corregida (antes ' + Number(p.lat).toFixed(5) + ',' + Number(p.lng).toFixed(5) + ')', est: 'editado' }]);
         }
@@ -611,5 +656,5 @@ window.GDO = window.GDO || {};
 
   const esLinkCorto = (s) => /(maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(String(s || ''));
 
-  GDO.Geo = { geocode, suggest, attachAutocomplete, locatePending, parseLatLng, esLinkCorto };
+  GDO.Geo = { enZonaDeReparto, geocode, suggest, attachAutocomplete, locatePending, parseLatLng, esLinkCorto };
 })();

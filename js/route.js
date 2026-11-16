@@ -204,7 +204,7 @@ window.GDO = window.GDO || {};
     ordenParadas.forEach((p, i) => {
       if (p.lat == null || p.lng == null) return; // sin ubicar: no se puede dibujar
       const m = L.marker([p.lat, p.lng], { icon: pinIcon(String(i + 1), NEG) }).addTo(_map)
-        .bindPopup(`<b>${i + 1}. ${GDO.UI.esc(p.cliente)}</b><br>${GDO.UI.esc(p.direccion)}`);
+        .bindPopup(`<b>${i + 1}. ${GDO.UI.esc(p.cliente)}</b><br>${GDO.UI.esc(p.direccion)}${GDO.timbreTxt && GDO.timbreTxt(p) ? '<br>🔔 ' + GDO.UI.esc(GDO.timbreTxt(p)) : ''}`);
       _layers.push(m); all.push([p.lat, p.lng]);
     });
     if (!opts.sameAsOrigin) {
@@ -231,8 +231,16 @@ window.GDO = window.GDO || {};
   function locParam(p) {
     if (!p) return '';
     if (p.lat != null) return `${Number(p.lat) || 0},${Number(p.lng) || 0}`;
-    const dir = String(p.direccion || '').trim();
-    if (dir) return encodeURIComponent(/argentina/i.test(dir) ? dir : dir + ', Buenos Aires, Argentina');
+    /* Sin coordenadas se navega por texto, y ahí la LOCALIDAD es obligatoria: "Cosquín 1587"
+       o "José María Moreno 376" a secas Google los lleva a CABA (pasó el 14-nov con pedidos
+       de Ituzaingó y Haedo). Va la calle sin timbre + localidad + provincia. */
+    const dir = (GDO.partirTimbre ? GDO.partirTimbre(p.direccion).direccion : String(p.direccion || '').trim());
+    const loc = String(p.localidad || '').trim();
+    if (dir) {
+      if (/argentina/i.test(dir)) return encodeURIComponent(dir);
+      const conLoc = loc && dir.toLowerCase().indexOf(loc.toLowerCase()) < 0 ? dir + ', ' + loc : dir;
+      return encodeURIComponent(conLoc + ', Provincia de Buenos Aires, Argentina');
+    }
     const nom = String(p.nombre || '').trim();
     return nom ? encodeURIComponent(nom) : '';
   }

@@ -110,6 +110,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (p.zona) L.push('• *Zona:* ' + p.zona);
       if (f) L.push('• *Día de entrega:* ' + diaSemanaDe(f) + ' ' + fmtFecha(f));
       L.push('• *Dirección:* ' + (p.direccion || ''));
+      if (GDO.timbreTxt(p)) L.push('• *Timbre / Dto:* ' + p.timbre);
       if (p.localidad) L.push('• *Localidad:* ' + p.localidad);
       if (p.entrecalles) L.push('• *Entre calles:* ' + p.entrecalles);
     }
@@ -692,7 +693,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <tr${checkable && sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
           ${checkable ? `<td><input type="checkbox" data-sel="${esc(p.id)}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
           <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${GDO.UI.precioChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}${vendedorChip(p)}${p.razonSocial || p.cuit ? `<div class="small muted">${esc(p.razonSocial || '')}${p.cuit ? ' · CUIT ' + esc(p.cuit) : ''}</div>` : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
-          <td class="small">${esRetiro(p) ? '<span class="muted">🏪 Retira en el local</span>' : esc(p.direccion) + (p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : '')}</td>
+          <td class="small">${esRetiro(p) ? '<span class="muted">🏪 Retira en el local</span>' : esc(p.direccion) + (p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : '') + (GDO.timbreTxt(p) ? '<div class="muted">🔔 ' + esc(GDO.timbreTxt(p)) + '</div>' : '')}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${celdaEntrega(p)}</td>
           <td>${estadoChip(p)}${asignacionInfo(p)}</td>
@@ -921,6 +922,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="form-grid">
           <div class="field col-2"><label>Dirección de entrega *</label>
             <input id="md-dir" autocomplete="off" value="${esc(p.direccion || '')}" placeholder="Calle 1234, Localidad"/></div>
+          <div class="field col-2"><label>Timbre / Dto / piso <span class="muted">(opcional)</span></label><input id="md-tim" maxlength="60" value="${esc(p.timbre || '')}" placeholder="Ej: timbre 2, dto B"/></div>
           <div class="field"><label>Localidad</label><input id="md-loc" value="${esc(p.localidad || '')}"/></div>
           <div class="field"><label>Entre calles</label><input id="md-ec" value="${esc(p.entrecalles || '')}" placeholder="Calle A y Calle B"/></div>
           <div class="field"><label>Fecha de entrega</label><input id="md-fec" type="date" value="${esc(f)}"/></div>
@@ -976,7 +978,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             else toast('No se pudo ubicar la dirección: el pedido pasa igual, ubicalo con 📍', 'err');
           }
           Store.setModalidad(p.id, 'envio', {
-            direccion: dir,
+            direccion: dir, timbre: node.querySelector('#md-tim').value.trim(),
             localidad: node.querySelector('#md-loc').value.trim(),
             entrecalles: node.querySelector('#md-ec').value.trim(),
             ventana: node.querySelector('#md-vent').value.trim(),
@@ -1206,6 +1208,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             </div>
             <span class="help" id="f-mod-help"></span></div>
           <div class="field col-2" id="f-w-dir"><label id="f-lbl-dir">Dirección de entrega *</label><input id="f-dir" value="${esc(p ? p.direccion : (pf.direccion || ''))}" placeholder="Calle 1234, Localidad"/></div>
+          <div class="field col-2" id="f-w-tim"><label>Timbre / Dto / piso <span class="muted">(opcional)</span></label><input id="f-tim" maxlength="60" value="${esc(p ? (p.timbre || '') : '')}" placeholder="Ej: timbre 2, dto B, fondo"/>
+            <span class="help">Va aparte de la dirección para que el mapa la encuentre. El chofer lo ve en un renglón propio.</span></div>
           <div class="field" id="f-w-loc"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : (pf.localidad || ''))}" placeholder="Se completa al elegir la dirección"/></div>
           <div class="field" id="f-w-ec"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : (pf.entrecalles || ''))}" placeholder="Calle A y Calle B"/></div>
           <div class="field"><label>Teléfono</label><input id="f-tel" value="${esc(p ? p.telefono : (pf.telefono || ''))}" placeholder="11 5555-5555"/></div>
@@ -1275,6 +1279,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           // En un retiro no hay recorrido que armar (fuera el mapa), pero SÍ
           // importa la hora: es cuándo tiene que estar listo el pedido.
           const coord = node.querySelector('#f-w-coord'); if (coord) coord.style.display = ret ? 'none' : '';
+          const wTim = node.querySelector('#f-w-tim'); if (wTim) wTim.style.display = ret ? 'none' : '';
           node.querySelector('#f-lbl-vent').textContent = ret ? 'Horario de retiro' : 'Ventana horaria';
           node.querySelector('#f-vent').placeholder = ret ? 'Ej: 9:30 a 10:30 hs' : 'Ej: 8 a 11 hs';
           node.querySelector('#f-lbl-dir').innerHTML = ret ? 'Dirección del cliente <span class="muted">(opcional)</span>' : 'Dirección de entrega *';
@@ -1651,7 +1656,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             if (base) totalFinal = base - descuento.monto;
           }
           const data = {
-            id: p ? p.id : undefined, cliente: cli, direccion: dir,
+            id: p ? p.id : undefined, cliente: cli, direccion: dir, timbre: node.querySelector('#f-tim').value.trim(),
             localidad: node.querySelector('#f-loc').value.trim(),
             entrecalles: node.querySelector('#f-ec').value.trim(),
             telefono: node.querySelector('#f-tel').value.trim(),

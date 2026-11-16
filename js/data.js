@@ -194,6 +194,28 @@ window.GDO = window.GDO || {};
     persist(d);
     return d;
   }
+  /* Timbre / Dto: la tienda lo manda pegado a la dirección ("García Silva 434 - Timbre 6").
+     Acá se separa: `direccion` queda limpia (es la que se busca en el mapa y la que navega
+     el chofer) y el timbre va en su propio campo, que se muestra en un renglón aparte. */
+  const RE_TIMBRE = /\s+-\s+((?:timbre|tbre|dto|dpto|depto|departamento|piso|casa|ph|fondo|local|lote|uf)(?![a-z]).*)$/i;
+  function partirTimbre(dir) {
+    const s = String(dir || ''), m = s.match(RE_TIMBRE);
+    if (!m) return { direccion: s.trim(), timbre: '' };
+    return { direccion: s.slice(0, m.index).trim(), timbre: m[1].replace(/^timbre\s*\/\s*dto\s+/i, '').trim() };
+  }
+  function separarTimbre(p) {
+    if (!p || p.timbre) return p;
+    const t = partirTimbre(p.direccion);
+    if (t.timbre) { p.direccion = t.direccion; p.timbre = t.timbre; }
+    return p;
+  }
+  // Texto para mostrar: "Timbre/Dto 2A", o tal cual si ya dice qué es ("Depto B", "Fondo").
+  function timbreTxt(p) {
+    const t = String((p && p.timbre) || '').trim();
+    if (!t) return '';
+    return /^(timbre|tbre|dto|dpto|depto|departamento|piso|casa|ph|fondo|local|lote|uf)(?![a-z])/i.test(t) ? t : 'Timbre/Dto ' + t;
+  }
+  GDO.partirTimbre = partirTimbre; GDO.timbreTxt = timbreTxt;
   function persist(d) {
     // Los DATOS van a localStorage SIN la sesión; la SESIÓN va aparte, a sessionStorage.
     try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, d, { session: null }))); } catch (e) {}
@@ -224,7 +246,7 @@ window.GDO = window.GDO || {};
     inbox.forEach((o) => {
       if (!o || !o.id || d.pedidos.some((p) => p.id === o.id)) return;
       const nuevo = {
-        id: o.id, cliente: o.cliente || 'Cliente', direccion: o.direccion || '',
+        id: o.id, cliente: o.cliente || 'Cliente', direccion: partirTimbre(o.direccion).direccion, timbre: partirTimbre(o.direccion).timbre,
         localidad: o.localidad || '', entrecalles: o.entrecalles || '', lat: o.lat == null ? null : o.lat,
         lng: o.lng == null ? null : o.lng, items: Array.isArray(o.items) ? o.items : [],
         fechaEntrega: o.fechaEntrega || '', diaEntrega: o.diaEntrega || '',
@@ -304,7 +326,7 @@ window.GDO = window.GDO || {};
         GDO.FB.db.collection(c).onSnapshot((snap) => {
           const arr = snap.docs.map((d) => Object.assign({}, d.data(), { id: d.id }));
           // Las coordenadas de un pedido web las escribe el cliente: acá entran como número o no entran.
-          if (c === 'pedidos') arr.forEach((p) => { p.lat = numONull(p.lat); p.lng = numONull(p.lng); });
+          if (c === 'pedidos') arr.forEach((p) => { p.lat = numONull(p.lat); p.lng = numONull(p.lng); separarTimbre(p); });
           /* El GPS del chofer escribe su posición en la ruta cada 15 s. Si ESO es
              lo único que cambió, no se redibuja la pantalla (la hacía saltar en
              los celulares): se actualiza la posición sobre los mismos objetos, que

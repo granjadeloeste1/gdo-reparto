@@ -6,7 +6,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   const go = (hash) => { location.hash = hash; };
   // Dirección + localidad del pedido (si la dirección no la trae ya escrita).
   const sinAc = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const dirLoc = (p) => { const d = String(p.direccion || ''), l = String(p.localidad || '').trim(); return esc(d) + (l && !sinAc(d).includes(sinAc(l)) ? ' <b>· ' + esc(l) + '</b>' : ''); };
+  const dirLoc = (p) => { const d = String(p.direccion || ''), l = String(p.localidad || '').trim(); return esc(d) + (l && !sinAc(d).includes(sinAc(l)) ? ' <b>· ' + esc(l) + '</b>' : '') + (GDO.timbreTxt(p) ? '<div class="small">🔔 ' + esc(GDO.timbreTxt(p)) + '</div>' : ''); };
 
   const ESTADO_RUTA = {
     borrador: '<span class="chip chip-pend">Borrador</span>',
