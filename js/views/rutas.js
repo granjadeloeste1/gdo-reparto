@@ -246,7 +246,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         ${vis.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${esc(p.id)}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
           <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${dirLoc(p)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
-          <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}${otroDia(p) ? ' <span class="chip chip-no" style="font-size:10px">⚠️ otro día</span>' : ''}</td>
+          <td class="small">${f ? '<b>'+esc(diaSemanaDe(f))+'</b> <span class="muted">'+fmtFecha(f)+'</span>' : '<span class="muted">—</span>'}${otroDia(p) ? ' <button type="button" class="chip chip-no" data-otro="' + esc(p.id) + '" style="font-size:10px;border:0;cursor:pointer;font-family:inherit" title="Tocá para ver qué pasa y corregirlo">⚠️ otro día ›</button>' : ''}</td>
           <td>${p.prioridad==='alta'?'<span class="chip chip-no">Alta</span>':p.prioridad==='baja'?'<span class="chip chip-pend">Baja</span>':'<span class="chip chip-asig">Normal</span>'}</td>
         </tr>`; }).join('')}</tbody></table>`;
       // Chips de día: filtran la lista. El botón tilda todos los del día elegido de una.
@@ -297,6 +297,28 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         recompute();
       });
       pedsBox.querySelectorAll('[data-ver]').forEach((b) => b.onclick = () => { if (GDO.pedidoModal) GDO.pedidoModal(b.dataset.ver); });
+      // Alerta "otro día": al tocarla explica qué pasa y deja corregirlo ahí mismo.
+      pedsBox.querySelectorAll('[data-otro]').forEach((b) => b.onclick = () => {
+        const p = Store.pedido(b.dataset.otro); if (!p) return;
+        const fp = efFecha(p), suyo = diaSemanaDe(fp) + ' ' + fmtFecha(fp), deRuta = diaSemanaDe(filtroDia) + ' ' + fmtFecha(filtroDia);
+        modal({
+          title: 'Pedido de otro día', width: 460,
+          bodyHTML: `<p style="margin:0 0 10px;font-size:15px">El pedido de <b>${esc(p.cliente)}</b> está cargado para el <b>${esc(suyo)}</b>, y la ruta que estás armando es del <b>${esc(deRuta)}</b>.</p>
+            <p style="margin:0;font-size:14px" class="muted">Está tildado, así que va en esta ruta. Si lo dejás así, al guardar la ruta el sistema te avisa y lo pasa al ${esc(deRuta)}.</p>`,
+          footHTML: `<button class="btn btn-ghost" data-sacar>Sacarlo de esta ruta</button><button class="btn btn-primary" data-pasar>Pasarlo al ${esc(deRuta)}</button>`,
+          onMount(m, close) {
+            m.querySelector('[data-sacar]').onclick = () => {
+              ruta.pedidoIds = ruta.pedidoIds.filter((id) => id !== p.id); delete ruta.demoraPorId[p.id];
+              close(); recompute(); drawPeds(); toast('Lo saqué de esta ruta. Sigue cargado para el ' + suyo + '.', 'ok');
+            };
+            m.querySelector('[data-pasar]').onclick = () => {
+              const historia = (p.historia || []).concat([{ ts: Date.now(), txt: 'Pasado del ' + suyo + ' al ' + deRuta + ' al armar la ruta.' }]);
+              Store.upsertPedido({ id: p.id, fechaEntrega: filtroDia, diaEntrega: diaSemanaDe(filtroDia), historia });
+              close(); drawPeds(); toast('Pedido pasado al ' + deRuta, 'ok');
+            };
+          },
+        });
+      });
       $('#r-count').textContent = `${ruta.pedidoIds.length} seleccionados`;
     };
 
