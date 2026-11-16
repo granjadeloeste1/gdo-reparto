@@ -656,5 +656,26 @@ window.GDO = window.GDO || {};
 
   const esLinkCorto = (s) => /(maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(String(s || ''));
 
-  GDO.Geo = { enZonaDeReparto, geocode, suggest, attachAutocomplete, locatePending, parseLatLng, esLinkCorto };
+  /* Castelar Sur e Ituzaingó Sur: por ahora NO se entrega (decisión de Matías, 16-nov-2026).
+     El código postal no los separa (Castelar entero es 1712, Ituzaingó entero 1714): el límite son
+     las vías del tren Sarmiento. Tendido tomado de OpenStreetMap, [lng, lat] de oeste a este. */
+  const VIAS = [[-58.7000, -34.66575], [-58.6900, -34.66445], [-58.6775, -34.66286], [-58.6725, -34.66168], [-58.6650, -34.65921], [-58.6575, -34.65686], [-58.6500, -34.65429], [-58.6425, -34.65233], [-58.6375, -34.65071], [-58.6300, -34.64912], [-58.6250, -34.64841]];
+  function latVias(lng) {
+    let i = 0;
+    while (i < VIAS.length - 2 && lng > VIAS[i + 1][0]) i++;
+    const a = VIAS[i], b = VIAS[i + 1];
+    return a[1] + (b[1] - a[1]) * (lng - a[0]) / (b[0] - a[0]);
+  }
+  const sinTilde = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  // ¿En esa localidad hay un lado al que no vamos?
+  const conVias = (localidad) => { const l = sinTilde(localidad); return /castelar/.test(l) ? 'Castelar' : /ituzaingo/.test(l) ? 'Ituzaingó' : ''; };
+  // 'Castelar Sur' / 'Ituzaingó Sur' si el punto cae al sur de las vías; '' si se entrega.
+  function sinEntrega(lat, lng, localidad) {
+    const m = conVias(localidad);
+    if (!m || lat == null || lng == null || isNaN(+lat) || isNaN(+lng)) return '';
+    if (+lng < -58.72 || +lng > -58.61) return '';   // lejos de ese tramo: lo resuelve el control de partido
+    return +lat < latVias(+lng) ? m + ' Sur' : '';
+  }
+
+  GDO.Geo = { sinEntrega, enZonaDeReparto, geocode, suggest, attachAutocomplete, locatePending, parseLatLng, esLinkCorto };
 })();
