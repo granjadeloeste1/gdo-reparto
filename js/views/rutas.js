@@ -104,6 +104,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const enMarcha = !esNueva && ['asignada', 'aceptada', 'en_curso'].includes(ruta.estado);
     const idsOriginales = new Set((ruta.pedidoIds || []).slice());
     const repOriginal = ruta.repartidorId;
+    const fechaOriginal = ruta.fecha;
+    // Pedidos de ESTA ruta que ya se entregaron, no se pudieron entregar o están en camino: no se
+    // muestran en la lista para armar (pedido de Matias, 16-nov-2026) y no se les toca la fecha.
+    const fijo = (p) => !!p && idsOriginales.has(p.id) && ['entregado', 'no_entregado', 'en_ruta'].includes(p.estado);
 
     const repartidores = Store.users().filter((u) => u.roles.includes('repartidor') && u.activo);
     // pedidos elegibles: pendientes + los que ya están en esta ruta
@@ -234,7 +238,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         + `</div>`;
       // Con un día elegido, los TILDADOS de otro día se siguen mostrando (marcados):
       // antes quedaban ocultos dentro de la ruta y al guardar se les pisaba la fecha.
-      const vis = elegibles.filter(pasaVend).filter((p) => !filtroDia || (efFecha(p) || 'sin') === filtroDia || ruta.pedidoIds.includes(p.id));
+      const nFijos = elegibles.filter(fijo).length;
+      const vis = elegibles.filter((p) => !fijo(p)).filter(pasaVend).filter((p) => !filtroDia || (efFecha(p) || 'sin') === filtroDia || ruta.pedidoIds.includes(p.id));
       const otroDia = (p) => { const f = efFecha(p); return filtroDia && filtroDia !== 'sin' && f && f !== filtroDia; };
       // Seleccionar / sacar TODOS los que se están viendo (con los filtros de zona, día y vendedor puestos).
       const nVisTild = vis.filter((p) => ruta.pedidoIds.includes(p.id)).length;
@@ -242,7 +247,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button type="button" class="btn btn-sm btn-dark" id="r-todos"${nVisTild === vis.length ? ' disabled' : ''}>☑ Seleccionar todos (${vis.length})</button>
         <button type="button" class="btn btn-sm btn-ghost" id="r-ninguno"${nVisTild ? '' : ' disabled'}>☐ Sacar todos</button>
         <span class="small muted">Toma los ${vis.length} pedidos que se ven en la lista.</span></div>`;
-      pedsBox.innerHTML = vendChips + zonaChips + chips + masivos + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
+      const avisoFijos = nFijos ? `<div class="help" style="margin-bottom:10px">🚚 Esta ruta ya tiene <b>${nFijos}</b> pedido${nFijos === 1 ? '' : 's'} entregado${nFijos === 1 ? '' : 's'} o en camino. No se muestran acá y no se modifican.</div>` : '';
+      pedsBox.innerHTML = vendChips + zonaChips + chips + masivos + avisoFijos + `<table><thead><tr><th style="width:40px"></th><th>Cliente</th><th>Dirección</th><th>Entrega</th><th>Prioridad</th></tr></thead><tbody>
         ${vis.map((p) => { const f = efFecha(p); return `<tr>
           <td><input type="checkbox" data-pid="${esc(p.id)}" ${ruta.pedidoIds.includes(p.id)?'checked':''} style="width:auto"/></td>
           <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${(() => { const v = vendedorDe(p); return v ? `<div class="small muted">🏷️ ${esc(v.nombre)}</div>` : ""; })()}</td><td class="small">${dirLoc(p)}${p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 sin ubicar · va al final</span>' : ''}</td>
@@ -253,7 +259,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       pedsBox.querySelectorAll('[data-dia]').forEach((b) => b.onclick = () => {
         filtroDia = b.dataset.dia;
         // Elegir un día concreto: le pone esa FECHA a la ruta y AGRUPA (tilda) todos sus pedidos.
-        if (filtroDia && filtroDia !== 'sin') {
+        // Ruta que ya salió: elegir otro día solo filtra la lista. No se le cambia la fecha a la ruta.
+        if (enMarcha && filtroDia && filtroDia !== 'sin' && fechaOriginal && filtroDia !== fechaOriginal) {
+          toast('Esta es la ruta del ' + diaSemanaDe(fechaOriginal) + ' ' + fmtFecha(fechaOriginal) + ' y ya salió. Para armar la del ' + diaSemanaDe(filtroDia) + ' ' + fmtFecha(filtroDia) + ', creá una ruta nueva.', 'err');
+        } else if (filtroDia && filtroDia !== 'sin') {
           const fec = $('#r-fec'); if (fec) fec.value = filtroDia;
           ruta.fecha = filtroDia;
           // Se destildan los de OTRO día que se habían tildado en esta edición (los
@@ -437,7 +446,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         : ruta.estado === 'asignada' ? 'asignado' : 'en_ruta'; // aceptada / en_curso
       ruta.pedidoIds.forEach((id) => {
         const p = Store.pedido(id); if (!p) return;
-        p.rutaId = saved.id; p.fechaEntrega = ruta.fecha;
+        p.rutaId = saved.id; if (!fijo(p)) p.fechaEntrega = ruta.fecha;   // lo ya entregado o en camino conserva su fecha
         const resuelto = ['entregado', 'no_entregado'].includes(ruta.progreso[id]);
         if (estadoPed && !resuelto) p.estado = estadoPed;
         Store.upsertPedido(p); // escribe a Firestore → el cliente ve "asignado" EN VIVO (antes era solo Store.save local)
@@ -451,7 +460,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const chequearFechas = (seguir) => {
       readForm();
       const otros = ruta.pedidoIds.map((id) => Store.pedido(id))
-        .filter((p) => p && efFecha(p) && ruta.fecha && efFecha(p) !== ruta.fecha);
+        .filter((p) => p && !fijo(p) && efFecha(p) && ruta.fecha && efFecha(p) !== ruta.fecha);
       if (!otros.length) { seguir(); return; }
       const nombres = otros.slice(0, 6).map((p) => p.cliente + ' (' + diaSemanaDe(efFecha(p)) + ' ' + fmtFecha(efFecha(p)) + ')').join(', ') + (otros.length > 6 ? ' y ' + (otros.length - 6) + ' más' : '');
       confirmDlg(otros.length + ' pedido(s) son de otro día: ' + nombres + '. Si seguís, pasan al ' + diaSemanaDe(ruta.fecha) + ' ' + fmtFecha(ruta.fecha) + '.', seguir, 'Sí, pasarlos a esta fecha', 'btn-primary');
