@@ -656,21 +656,21 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
   // Se llama apenas se toca el botón (el permiso solo se puede pedir con un clic reciente).
-  async function carpetaComandas() {
-    if (!window.showDirectoryPicker) return null;
-    try {
-      let dir = await carpetaDB('leer');
-      if (dir) {
+  /* v135: ya NO se abre sola la ventana para elegir carpeta. Si esa ventana quedaba abierta o
+     tapada, el PDF nunca bajaba (ni avisaba). Ahora: si la carpeta ya está elegida y con permiso
+     se usa; si no, el PDF baja a Descargas como cualquier archivo. Nunca espera más de 6 s. */
+  function carpetaComandas() {
+    if (!window.showDirectoryPicker) return Promise.resolve(null);
+    const buscar = (async () => {
+      try {
+        const dir = await carpetaDB('leer');
+        if (!dir) return null;
         const perm = { mode: 'readwrite' };
         if ((await dir.queryPermission(perm)) === 'granted' || (await dir.requestPermission(perm)) === 'granted') return dir;
         return null;
-      }
-      toast('Elegí dónde guardar la carpeta "' + CARPETA + '" (se pide una sola vez)', '');
-      const base = await window.showDirectoryPicker({ id: 'comandas-gdo', mode: 'readwrite', startIn: 'documents' });
-      dir = base.name === CARPETA ? base : await base.getDirectoryHandle(CARPETA, { create: true });
-      await carpetaDB('guardar', dir);
-      return dir;
-    } catch (e) { return null; }
+      } catch (e) { return null; }
+    })();
+    return Promise.race([buscar, new Promise((ok) => setTimeout(() => ok(null), 6000))]);
   }
   async function guardarPDF(blob, nombre, dir) {
     if (dir) {
@@ -686,7 +686,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     a.href = URL.createObjectURL(blob); a.download = nombre;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast('PDF descargado ✓', 'ok');
+    toast('PDF descargado ✓ · está en la carpeta Descargas', 'ok');
   }
   function bajarPDF(qué, c) {
     const bloques = qué === 'com' ? ['.pr-bloque-com'] : qué === 'ped' ? ['.pr-bloque-ped'] : ['.pr-bloque-com', '.pr-bloque-ped'];
@@ -744,15 +744,21 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         sp.style.height = Math.ceil(falta) + 'px';
         el.parentNode.insertBefore(sp, el);
       });
+      /* Con muchos pedidos la "foto" de la hoja se pasa del tamaño máximo que aguanta el navegador
+         (sobre todo en el celular) y el PDF sale en blanco o directamente no se arma. Se baja la
+         nitidez lo justo para que entre. */
+      const caja = cont.getBoundingClientRect();
+      const tope = /Android|iPhone|iPad/i.test(navigator.userAgent) ? 12e6 : 60e6;
+      const escala = Math.max(0.8, Math.min(2, 15000 / Math.max(1, caja.height), Math.sqrt(tope / Math.max(1, caja.width * caja.height))));
       return h2p().set({
         margin: [10, 10, 12, 10],
         filename: nombrePDF(qué),
         image: { type: 'jpeg', quality: 0.96 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        html2canvas: { scale: escala, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'], before: '.pr-pdf-salto' + (unoPorHoja ? ', .pr-una .pr-ped + .pr-ped' : ''), avoid: ['tr'] },
       }).from(cont).outputPdf('blob').then((blob) => { holder.remove(); return carpeta.then((dir) => guardarPDF(blob, nombrePDF(qué), dir)); })
-        .catch(() => { holder.remove(); toast('No se pudo armar el PDF', 'err'); });
+        .catch((e) => { holder.remove(); console.error('[pdf]', e); toast('No se pudo armar el PDF' + (e && e.message ? ' (' + e.message + ')' : ''), 'err'); });
     }).catch(() => toast('No se pudo armar el PDF (¿sin internet?)', 'err'));
   }
 })();
