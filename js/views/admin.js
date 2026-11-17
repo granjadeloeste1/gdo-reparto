@@ -1892,3 +1892,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     });
   }
 })();
+
+/* Cartel de pedidos repetidos arriba de la pantalla de Pedidos (ver GDO.UI.avisoRepetidos). */
+(function () {
+  const base = GDO.Views && GDO.Views.pedidos;
+  if (!base) return;
+  GDO.Views.pedidos = function (c) {
+    const r = base.apply(this, arguments);
+    try { GDO.UI.avisoRepetidos(c, '', () => GDO.Views.pedidos(c)); } catch (e) { console.error('[repetidos]', e); }
+    return r;
+  };
+})();

@@ -246,7 +246,39 @@ window.GDO = window.GDO || {};
     ? ' <span class="chip chip-no" style="font-size:10px" title="Los precios o el total de este pedido web no coinciden con la lista. Revisalo antes de prepararlo.">⚠️ revisar precios</span>'
     : '';
 
-  GDO.UI = { esc, h, toast, specSegura, precioDudoso, precioChip, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
+  /* Cartel rojo de PEDIDOS REPETIDOS arriba de la pantalla (Pedidos y Producción). Aparece solo, venga el
+     pedido de la página, del bot o cargado a mano. Con un toque queda solo el último, o se marca que
+     son dos pedidos distintos. host = contenedor de la vista; dia = '' para todos los días que vienen. */
+  function avisoRepetidos(host, dia, repintar) {
+    const Store = GDO.Store;
+    if (!host || !Store || !Store.repetidos) return;
+    const viejo = host.querySelector('.aviso-repetidos'); if (viejo) viejo.remove();
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+    const grupos = Store.repetidos(dia || '').filter((g) => dia || g[0].fechaEntrega >= hoy);
+    if (!grupos.length) return;
+    const plata = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-AR');
+    const box = h('<div class="aviso-repetidos no-print" style="background:#fde4e4;border:2px solid #b32020;color:#7a1414;border-radius:10px;padding:10px 12px;margin:8px 0 12px">'
+      + '<div style="font-weight:800;margin-bottom:6px">⚠️ Hay pedidos repetidos' + (dia ? ' para este día' : '') + ': se están contando todos</div>'
+      + grupos.map((g, i) => '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #f0bcbc">'
+        + '<span style="flex:1;min-width:220px"><b>' + esc(g[g.length - 1].cliente || 'Sin nombre') + '</b> tiene ' + g.length + ' pedidos para el ' + esc(fmtFecha(g[0].fechaEntrega)) + ': '
+        + g.map((p, k) => plata(p.totalEstimado) + (k === g.length - 1 ? ' (el último)' : '')).join(' · ') + '</span>'
+        + '<button class="btn btn-rojo btn-sm" data-rep-ult="' + i + '">Dejar solo el último</button>'
+        + '<button class="btn btn-ghost btn-sm" data-rep-dist="' + i + '">Son pedidos distintos</button></div>').join('')
+      + '</div>');
+    const ancla = host.querySelector('.section-title');
+    if (ancla) ancla.insertAdjacentElement('afterend', box); else host.prepend(box);
+    box.querySelectorAll('[data-rep-ult]').forEach((b) => { b.onclick = () => {
+      const g = grupos[+b.dataset.repUlt], ult = g[g.length - 1], viejos = g.slice(0, -1);
+      confirmDlg('Se ' + (viejos.length > 1 ? 'eliminan los ' + viejos.length + ' pedidos anteriores' : 'elimina el pedido anterior') + ' de ' + (ult.cliente || 'este cliente') + ' (' + viejos.map((p) => plata(p.totalEstimado)).join(', ') + ') y queda solo el último (' + plata(ult.totalEstimado) + '). No se puede deshacer.',
+        () => { Store.deletePedidos(viejos.map((p) => p.id)); toast('Quedó solo el último pedido', 'ok'); if (repintar) repintar(); }, 'Dejar solo el último');
+    }; });
+    box.querySelectorAll('[data-rep-dist]').forEach((b) => { b.onclick = () => {
+      grupos[+b.dataset.repDist].forEach((p) => Store.upsertPedido({ id: p.id, sonDistintos: true }));
+      toast('Anotado: son pedidos distintos', 'ok'); if (repintar) repintar();
+    }; });
+  }
+
+  GDO.UI = { esc, h, toast, avisoRepetidos, specSegura, precioDudoso, precioChip, modal, confirmDlg, fmtFecha, fmtHora, fmtDur, hace, proximoDiaFecha, diaSemanaDe,
     ESTADO_CHIP, ROL_CHIP, estadoChip, esRetiro, modalidadDe, modalidadChip, MODALIDAD_CHIP, MODALIDAD_T, tipoDe, TIPOS, TIPO_T, TIPO_IC, TIPO_CHIP, fechaEfectiva,
     vendedorDe, vendedorIdDe, vendedorChip, linkVendedor, deVendedor, vendedorForzado, vendedoresLista, selectVendedor };
 })();

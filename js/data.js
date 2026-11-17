@@ -567,6 +567,21 @@ window.GDO = window.GDO || {};
     // de cualquier ruta que lo tuviera (antes el borrado individual dejaba el id
     // colgado en pedidoIds/coords de la ruta → contaba paradas fantasma).
     deletePedido(id) { return Store.deletePedidos([id]); },
+    // Pedidos REPETIDOS: el mismo teléfono (o, sin teléfono, la misma dirección de envío) con más de un
+    // pedido sin cerrar para el mismo día. Vale el último, salvo que se marque que son pedidos distintos
+    // (sonDistintos). Devuelve los grupos, cada uno ordenado del más viejo al más nuevo. Con 'dia', solo ese día.
+    repetidos(dia) {
+      const u8 = (p) => String(p.telefono || '').replace(/\D/g, '').slice(-8);
+      const nd = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const g = {};
+      db.pedidos.forEach((p) => {
+        if (!['pendiente', 'en_ruta'].includes(p.estado || 'pendiente') || p.sonDistintos || !p.fechaEntrega || (dia && p.fechaEntrega !== dia)) return;
+        const t = u8(p), k = t.length === 8 ? 't' + t : (p.modalidad !== 'retiro' && nd(p.direccion).length > 5 ? 'd' + nd(p.direccion) : '');
+        if (k) (g[k + '|' + p.fechaEntrega] = g[k + '|' + p.fechaEntrega] || []).push(p);
+      });
+      const cuando = (p) => Number(p.creado || p.ts) || 0;
+      return Object.values(g).filter((a) => a.length > 1).map((a) => a.sort((x, y) => cuando(x) - cuando(y)));
+    },
     // Borrado masivo: saca de la base (y de Firestore) todos los pedidos cuyos
     // ids vengan en la lista, en una sola pasada. Además los desengancha de
     // cualquier ruta que los tuviera (para no dejar paradas fantasma). Devuelve

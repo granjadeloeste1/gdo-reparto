@@ -497,6 +497,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     inD.onfocus = inD.onclick = () => { try { inD.showPicker && inD.showPicker(); } catch (e) {} };
     inD.onchange = () => { if (!inD.value) { inD.value = dia; return; } dia = inD.value; repintar(); };
     c.querySelector('#pr-hoy').onclick = () => { dia = hoyISO(); repintar(); };
+    // Pedidos repetidos de este día: la comanda los estaría sumando a todos.
+    try { GDO.UI.avisoRepetidos(c, dia, repintar); } catch (e) { console.error('[repetidos]', e); }
     c.querySelector('#pr-man').onclick = () => { dia = masDias(1); repintar(); };
     c.querySelector('#pr-cerr').onchange = (e) => { incluirCerrados = e.target.checked; repintar(); };
     c.querySelector('#pr-una').onchange = (e) => { unoPorHoja = e.target.checked; repintar(); };
