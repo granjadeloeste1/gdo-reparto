@@ -656,10 +656,10 @@ window.GDO = window.GDO || {};
 
   const esLinkCorto = (s) => /(maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(String(s || ''));
 
-  /* Castelar Sur e Ituzaingó Sur: por ahora NO se entrega (decisión de Matías, 16-nov-2026).
+  /* Castelar Sur, Ituzaingó Sur y Morón Sur: por ahora NO se entrega (decisión de Matías, 16-nov-2026).
      El código postal no los separa (Castelar entero es 1712, Ituzaingó entero 1714): el límite son
      las vías del tren Sarmiento. Tendido tomado de OpenStreetMap, [lng, lat] de oeste a este. */
-  const VIAS = [[-58.7000, -34.66575], [-58.6900, -34.66445], [-58.6775, -34.66286], [-58.6725, -34.66168], [-58.6650, -34.65921], [-58.6575, -34.65686], [-58.6500, -34.65429], [-58.6425, -34.65233], [-58.6375, -34.65071], [-58.6300, -34.64912], [-58.6250, -34.64841]];
+  const VIAS = [[-58.7000, -34.66575], [-58.6900, -34.66445], [-58.6775, -34.66286], [-58.6725, -34.66168], [-58.6650, -34.65921], [-58.6575, -34.65686], [-58.6500, -34.65429], [-58.6425, -34.65233], [-58.6375, -34.65071], [-58.6300, -34.64912], [-58.6250, -34.64841], [-58.6225, -34.64824], [-58.6175, -34.64818], [-58.6125, -34.64731], [-58.5950, -34.64490], [-58.5655, -34.64060]];
   function latVias(lng) {
     let i = 0;
     while (i < VIAS.length - 2 && lng > VIAS[i + 1][0]) i++;
@@ -668,12 +668,12 @@ window.GDO = window.GDO || {};
   }
   const sinTilde = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   // ¿En esa localidad hay un lado al que no vamos?
-  const conVias = (localidad) => { const l = sinTilde(localidad); return /castelar/.test(l) ? 'Castelar' : /ituzaingo/.test(l) ? 'Ituzaingó' : ''; };
-  // 'Castelar Sur' / 'Ituzaingó Sur' si el punto cae al sur de las vías; '' si se entrega.
+  const conVias = (localidad) => { const l = sinTilde(localidad); return /castelar/.test(l) ? 'Castelar' : /ituzaingo/.test(l) ? 'Ituzaingó' : /\bmoron\b/.test(l) ? 'Morón' : ''; };
+  // 'Castelar Sur' / 'Ituzaingó Sur' / 'Morón Sur' si el punto cae al sur de las vías; '' si se entrega.
   function sinEntrega(lat, lng, localidad) {
     const m = conVias(localidad);
     if (!m || lat == null || lng == null || isNaN(+lat) || isNaN(+lng)) return '';
-    if (+lng < -58.72 || +lng > -58.61) return '';   // lejos de ese tramo: lo resuelve el control de partido
+    if (+lng < -58.72 || +lng > -58.5655) return '';   // lejos de ese tramo: lo resuelve el control de partido
     return +lat < latVias(+lng) ? m + ' Sur' : '';
   }
 
