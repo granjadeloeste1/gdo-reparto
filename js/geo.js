@@ -530,14 +530,23 @@ window.GDO = window.GDO || {};
          de Hurlingham) o una calle homónima de otro partido, y eso quedó guardado en el pedido.
          Se corrige solo si lo nuevo es confiable (o lo viejo estaba fuera de la zona oeste) y
          queda a más de 250 m; lo anterior queda anotado en la historia del pedido. */
-      const marca = (p) => 'v9|' + norm(p.direccion + '|' + (p.entrecalles || '') + '|' + (p.localidad || ''));
+      /* v10 (18-nov-2026): la tienda ubica con su copia vieja y guarda el punto interpolado de
+         Google, que cae en la ESQUINA (Juan de Garay 3493 quedó en Olascoaga). Como la mitad de
+         la cuadra está a menos de 250 m de esa esquina, el re-chequeo no lo corregía nunca.
+         Ahora, si la ubicación nueva sale de las dos entrecalles (g.largo > 0) o es de Google
+         a nivel de puerta, se corrige a partir de 30 m. Lo que una persona fijó a mano
+         (geoManual: GPS o coordenadas pegadas) no se toca. */
+      const marca = (p) => 'v10|' + norm(p.direccion + '|' + (p.entrecalles || '') + '|' + (p.localidad || ''));
       const revisar = GDO.Store.pedidos().filter((p) => p.lat != null && p.lng != null && p.direccion && activos.includes(p.estado)
         && p.modalidad !== 'retiro' && p.geoRevisado !== marca(p));
       for (const p of revisar) {
         const g = await geocode(p.direccion, p.entrecalles, p.localidad);
         const cambio = { geoRevisado: marca(p) };
         const fuera = !enZonaOeste(p.lat, p.lng) || !(await enZonaDeReparto(p.lat, p.lng, p.localidad));
-        if (g && (!g.aprox || fuera) && _metros({ lat: p.lat, lng: p.lng }, g) > 250) {
+        const dist = g ? _metros({ lat: p.lat, lng: p.lng }, g) : 0;
+        const fino = g && (g.largo > 0 || g.puerta) && dist > 30;
+        const grueso = g && (!g.aprox || fuera) && dist > 250;
+        if (!p.geoManual && (fino || grueso)) {
           cambio.lat = g.lat; cambio.lng = g.lng;
           cambio.historia = (p.historia || []).concat([{ ts: Date.now(), por: 'sistema', detalle: 'Ubicación corregida (antes ' + Number(p.lat).toFixed(5) + ',' + Number(p.lng).toFixed(5) + ')', est: 'editado' }]);
         }

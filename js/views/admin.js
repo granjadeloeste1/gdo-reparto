@@ -1562,6 +1562,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (cm.length === 2 && !isNaN(cm[0]) && !isNaN(cm[1])) return { lat: cm[0], lng: cm[1] };
           return null;
         };
+        // ¿Las coordenadas las puso una PERSONA (GPS o pegadas)? Entonces mandan y el
+        // re-chequeo automático de ubicaciones (geo.js) no las toca. Las que completa el
+        // buscador de direcciones no cuentan como "a mano".
+        let coordManual = !!(p && p.geoManual);
+        node.querySelector('#f-coord').addEventListener('input', () => { coordManual = true; });
 
         // Tomar la ubicación GPS del dispositivo (ideal cuando el vendedor está
         // parado en la puerta del cliente: fija el punto exacto de entrega).
@@ -1574,6 +1579,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             (pos) => {
               btn.disabled = false; btn.textContent = prev;
               node.querySelector('#f-coord').value = pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6);
+              coordManual = true;
               toast('Ubicación actual fijada ✓', 'ok');
             },
             (err) => {
@@ -1588,7 +1594,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
         if (GDO.Geo && GDO.Geo.attachAutocomplete) {
           GDO.Geo.attachAutocomplete(node.querySelector('#f-dir'), (it) => {
-            if (it.lat != null) node.querySelector('#f-coord').value = it.lat.toFixed(6) + ', ' + it.lng.toFixed(6);
+            if (it.lat != null) { node.querySelector('#f-coord').value = it.lat.toFixed(6) + ', ' + it.lng.toFixed(6); coordManual = false; }
             if (it.localidad) node.querySelector('#f-loc').value = it.localidad;
           }, { provincia: 'Buenos Aires', departamento: 'Hurlingham' });
         }
@@ -1614,7 +1620,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           if (p && coord && p.lat != null && p.lng != null
               && dir.toLowerCase() !== String(p.direccion || '').toLowerCase()
               && Math.abs(coord.lat - p.lat) < 1e-6 && Math.abs(coord.lng - p.lng) < 1e-6) {
-            coord = null;
+            coord = null; coordManual = false;
             node.querySelector('#f-coord').value = '';
           }
           // En un retiro no hace falta ubicar nada en el mapa: no hay recorrido.
@@ -1622,6 +1628,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             const btn = node.querySelector('[data-save]');
             const prev = btn.textContent;
             btn.disabled = true; btn.textContent = 'Ubicando…';
+            coordManual = false;
             const g = await GDO.Geo.geocode(dir, node.querySelector('#f-ec').value.trim(), node.querySelector('#f-loc').value.trim());
             btn.disabled = false; btn.textContent = prev;
             if (g) { coord = { lat: g.lat, lng: g.lng }; if (g.localidad && !node.querySelector('#f-loc').value.trim()) node.querySelector('#f-loc').value = g.localidad; }
@@ -1667,6 +1674,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             puntos: parseInt(node.querySelector('#f-pts').value, 10) || 0,
             especificaciones: node.querySelector('#f-esp').value.trim(),
             items: clean, lat: coord ? coord.lat : null, lng: coord ? coord.lng : null,
+            geoManual: !!(coord && coordManual),
             modalidad: mod,
             lista: lista,
             // Solo lo pisamos si hay precios cargados: si el pedido se anotó sin
