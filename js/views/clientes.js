@@ -91,7 +91,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </div>` : ''}
 
       <div class="toolbar" style="margin-bottom:12px">
-        <input type="search" id="crm-q" placeholder="🔎 Buscar un cliente por nombre, teléfono o dirección…" value="${esc(buscaQ)}" style="flex:1;min-width:240px;font-size:16px"/>
+        <input type="search" id="crm-q" placeholder="🔎 Buscar un cliente por nombre, teléfono o dirección…" value="${esc(buscaQ)}" style="flex:1 1 100%;width:100%;max-width:none;min-width:240px;font-size:16px"/>
       </div>
       <div id="crm-res"></div>
 
