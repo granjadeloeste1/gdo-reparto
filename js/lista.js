@@ -469,8 +469,46 @@ window.GDO = window.GDO || {};
     return e ? { n: e.n, u: e.u } : null;
   }
 
-  function nombreItem(it) {
-    let nom = String((it && (it.producto || it.nombre)) || '').trim();
+  /* El nombre tiene que decir QUÉ es el producto aunque se lea suelto en la comanda o en el WhatsApp.
+     En la lista, las milanesas de soja, las hamburguesas veganas y los canelones traen el rubro solo en
+     el título de la sección ("RELLENA QUESO AZUL Y MUZARELLA X 4 UNIDADES"): el 17-nov-2026 el local leyó
+     "rellena" y armó una milanesa de POLLO rellena para una clienta que había pedido de SOJA.
+     conRubro(): MISMA función que la tienda (vista-minorista, index, suprema, combo) y el bot (src/precios.js).
+     Los catálogos de acá siguen con el nombre crudo (EQUIV, métricas); el rubro se agrega al MOSTRAR
+     (nombreItem) y al guardar un pedido cargado a mano (renglon). */
+  function conRubro(n, rubro) {
+    n = String(n || ''); const R = String(rubro || '').toUpperCase(), N = n.toUpperCase();
+    if (/SOJA/.test(R) && !/SOJA/.test(N)) return 'MILANESA DE SOJA ' + n;
+    if (/VEGAN/.test(R) && !/HAMBURGUESA/.test(N)) return 'HAMBURGUESA VEGANA ' + n.replace(/^\s*VEGANA\s+/i, '');
+    if (/CANELON/.test(R) && !/CANELON/.test(N)) return 'CANELONES ' + n;
+    return n;
+  }
+  // Vuelve al nombre crudo de la lista (para buscarlo en los catálogos y en EQUIV).
+  function sinRubro(n) {
+    n = String(n || '');
+    return n.replace(/^\s*MILANESA DE SOJA\s+(?=RELLENA\b.*X\s*4\s*UNIDADES|ORIGINAL SIMPLE CON SAL)/i, '')
+      .replace(/^\s*HAMBURGUESA VEGANA\s+(?=LENTEJAS)/i, 'VEGANA ')
+      .replace(/^\s*HAMBURGUESA VEGANA\s+(?=ZAPALLO|QUINOA|REMOLACHA|GARBANZO|ESPINACA)/i, '')
+      .replace(/^\s*CANELONES\s+(?=.*\(BANDEJA)/i, '');
+  }
+  // Rubro de un nombre crudo: primero por cómo está escrito en la lista de hoy; si no, por el catálogo.
+  function rubroDe(n) {
+    const s = String(n || '').replace(/\s+/g, ' ').trim();
+    if (/^(RELLENA\b.*X\s*4\s*UNIDADES|ORIGINAL SIMPLE CON SAL)/i.test(s)) return 'MILANESA DE SOJA';
+    if (/^(ZAPALLO AL CURRY|VEGANA LENTEJAS|QUINOA Y YAMANI|REMOLACHA|GARBANZO Y ZANAHORIA|ESPINACA)\s*X\s*5\s*UNIDADES/i.test(s)) return 'HAMBURGUESAS VEGANAS';
+    if (/\(BANDEJA X 6 UNIDADES\)/i.test(s)) return 'CANELONES';
+    const k = norm(s);
+    for (const l of ['mayorista', 'minorista']) {
+      const op = (cat(l).ops || []).find((o) => { const on = norm(o.fila || o.nombre); return on && (k === on || k.indexOf(on + ' ') === 0); });
+      if (op && /SOJA|VEGAN|CANELON/i.test(op.seccion || '')) return op.seccion;
+    }
+    return '';
+  }
+  const claro = (n) => (n ? conRubro(n, rubroDe(n)) : n);
+
+  function nombreItem(it) { return claro(nombreItemCrudo(it)); }
+  function nombreItemCrudo(it) {
+    let nom = sinRubro(String((it && (it.producto || it.nombre)) || '').trim());
     // Producto minorista → el MISMO producto de la lista mayorista (ver EQUIV).
     const eq = equivDe(nom);
     if (eq) nom = eq.n;
@@ -502,7 +540,8 @@ window.GDO = window.GDO || {};
      VIEJOS, que se guardaron sin el precio de cada producto. Devuelve null si no
      está en ninguna lista o si la lista no se pudo cargar. */
   function opcionPara(nombre, lista) {
-    const k = (GDO.CRM ? GDO.CRM.prodKey(nombre) : norm(nombre));
+    nombre = sinRubro(nombre);
+    const k =(GDO.CRM ? GDO.CRM.prodKey(nombre) : norm(nombre));
     if (!k) return null;
     const orden = lista === 'minorista' ? ['minorista', 'mayorista'] : ['mayorista', 'minorista'];
     for (let i = 0; i < orden.length; i++) {
@@ -521,7 +560,7 @@ window.GDO = window.GDO || {};
     // donde la planilla cotiza por kilo.
     const pu = precioPorEscalon(op.tiers, op.kgPor ? c * op.kgPor : c);
     const base = {
-      producto: op.nombre + (op.marca ? ' (' + op.marca + ')' : ''),
+      producto: conRubro(op.nombre, op.seccion) + (op.marca ? ' (' + op.marca + ')' : ''),
       cantidad: c,
       unidad: op.unidad,
       // `precio` es por la unidad del renglón (cantidad × precio = total): en lo
