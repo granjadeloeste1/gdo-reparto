@@ -22,6 +22,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   let filtro = '';
   let filtroTipo = '';
   let filtroGrupo = '';   // el grupo elegido tocando una de las tarjetas de arriba
+  let buscaQ = '';        // buscador de arriba (vale en todas las pestañas)
+  let verTodoRec = false; // "Ya contactados": ver todos
   let filtroVend = '';    // ADMIN: ver solo los clientes de un vendedor ('' = todos)
   // Alcance de vendedor: el vendedor ve siempre solo lo suyo (lo fuerza el CRM);
   // el admin, lo que elija en el filtro.
@@ -88,6 +90,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         No cuentan para el historial ni para el ritmo de compra. <b>Tocá acá para verlos y completarlos.</b>
       </div>` : ''}
 
+      <div class="toolbar" style="margin-bottom:12px">
+        <input type="search" id="crm-q" placeholder="🔎 Buscar un cliente por nombre, teléfono o dirección…" value="${esc(buscaQ)}" style="flex:1;min-width:240px;font-size:16px"/>
+      </div>
+      <div id="crm-res"></div>
+
       <div class="crm-tabs">
         <button class="crm-tab ${tab === 'hoy' ? 'on' : ''}" data-tab="hoy">📞 Para hacer hoy${sugs.length ? ' <span class="crm-badge">' + sugs.length + '</span>' : ''}</button>
         <button class="crm-tab ${tab === 'nuevos' ? 'on' : ''}" data-tab="nuevos">🆕 Primeras compras${nuevosPend ? ' <span class="crm-badge">' + nuevosPend + '</span>' : (nuevos.length ? ' <span class="crm-badge sec">' + nuevos.length + '</span>' : '')}</button>
@@ -112,7 +119,28 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     if (db) db.onclick = () => duplicadosModal(dobles, () => GDO.Views.clientes(c));
 
     const body = c.querySelector('#crm-body');
-    if (tab === 'hoy') renderAgenda(body, part, c);
+    /* BUSCADOR (pedido de Matias, 20-nov-2026): escribir el nombre y tener al cliente a mano, esté
+       en la pestaña que esté: también el que ya contactaste y salió de "Para hacer hoy". */
+    const res = c.querySelector('#crm-res'), tabsEl = c.querySelector('.crm-tabs');
+    const drawRes = () => {
+      const q = CRM().norm(buscaQ), qDig = String(buscaQ || '').replace(/\D/g, '');
+      const buscando = q.length >= 2 || qDig.length >= 3;
+      body.style.display = buscando ? 'none' : '';
+      tabsEl.style.display = buscando ? 'none' : '';
+      if (!buscando) { res.innerHTML = ''; return; }
+      const list = fichas.filter((f) => (q.length >= 2 && CRM().norm(f.nombre + ' ' + (f.alias || []).join(' ') + ' ' + f.direccion + ' ' + f.localidad).indexOf(q) >= 0)
+        || (qDig.length >= 3 && (f.telefonos || []).concat([f.telefono]).some((t) => String(t || '').replace(/\D/g, '').indexOf(qDig) >= 0)));
+      const vis = list.slice(0, 15);
+      res.innerHTML = '<div class="crm-sec"><h3>🔎 ' + list.length + ' cliente' + (list.length === 1 ? '' : 's') + ' con “' + esc(buscaQ) + '”</h3></div>'
+        + (vis.length ? '<div class="crm-sugs" style="margin-bottom:20px">' + vis.map((f, i) => tarjetaCliente(f, i)).join('') + '</div>'
+          + (list.length > vis.length ? '<div class="help" style="margin-bottom:20px">Hay ' + (list.length - vis.length) + ' más: escribí algo más del nombre para achicar.</div>' : '')
+          : '<div class="panel"><div class="panel-b"><div class="empty">No hay ningún cliente con ese nombre, teléfono o dirección.</div></div></div>');
+      wireClientes(res, vis, c);
+    };
+    const inpQ = c.querySelector('#crm-q');
+    inpQ.oninput = () => { buscaQ = inpQ.value; drawRes(); };
+    drawRes();
+    if (tab === 'hoy') renderAgenda(body, part, c, fichas);
     else if (tab === 'nuevos') renderNuevos(body, nuevos, c);
     else if (tab === 'contactos') renderContactos(body, cts, c);
     else renderLista(body, fichas, c);
@@ -120,14 +148,88 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
 
   const recargar = (cont) => GDO.Views.clientes(cont);
 
+  /* Tarjeta de UN cliente con todo a mano: escribirle (o volver a escribirle), anotar qué contestó,
+     abrir la ficha y "No volver a contactar". La usan el buscador y "Ya contactados". */
+  function tarjetaCliente(f, i) {
+    const tel = f.telefono && GDO.Wpp.tieneTel(f.telefono);
+    const ct = (f.contactos || [])[0] || null;
+    const R = CRM().RESULTADOS;
+    const esp = ct && ct.resultado === 'enviado';
+    return `
+      <div class="crm-sug prio-${f.pausado ? 'baja' : (esp ? 'media' : 'baja')}" data-cli="${i}">
+        <div class="crm-sug-ic">${f.pausado ? '🚫' : (esp ? '💬' : '👤')}</div>
+        <div class="crm-sug-tx">
+          <div class="crm-sug-h">
+            <b>${esc(f.nombre)}</b>
+            <span class="chip ${f.tipoChip}">${esc(f.tipoLabel)}</span>
+            ${f.socio ? '<span class="chip chip-socio">⭐ Socio</span>' : ''}
+            ${f.pausado ? '<span class="chip crm-r-mal">🚫 No contactar</span>' : ''}
+          </div>
+          <div class="crm-sug-m">${tel ? '📱 ' + esc(f.telefono) : '<b style="color:#c0392b">📵 Sin teléfono válido' + (f.telefono ? ' (' + esc(f.telefono) + ')' : '') + '</b>'}${f.direccion ? ' · ' + esc(f.direccion) + (f.localidad ? ', ' + esc(f.localidad) : '') : ''}</div>
+          <div class="crm-sug-m">${f.nCompras ? f.nCompras + ' compra' + (f.nCompras === 1 ? '' : 's') + ' · última ' + fmtD(f.ultima) : (f.enCurso && f.enCurso.length ? 'Primer pedido en curso' : 'Sin compras entregadas')}</div>
+          ${ct ? `<div class="crm-sug-mas">Último contacto: ${fmtD(ct.ts)} · ${esc((R[ct.resultado] || {}).t || ct.resultado)}${ct.porNombre ? ' · por ' + esc(String(ct.porNombre).split(' ')[0]) : ''}${ct.nota ? ' — “' + esc(ct.nota.slice(0, 90)) + '”' : ''}</div>` : ''}
+        </div>
+        <div class="crm-sug-ac">
+          <button class="btn btn-verde btn-sm" data-wsp>${tel ? (ct ? '💬 Volver a escribirle' : '💬 WhatsApp') : '📵 Corregir teléfono'}</button>
+          <button class="btn ${esp ? 'btn-primary' : 'btn-ghost'} btn-sm" data-ct>✍️ ${esp ? 'Anotar qué contestó' : 'Anotar contacto'}</button>
+          <button class="btn btn-ghost btn-sm" data-ficha>Ver ficha</button>
+          ${f.pausado ? '<button class="btn btn-ghost btn-sm" data-sic>↩️ Volver a contactar</button>' : '<button class="btn btn-ghost btn-sm" data-noc>🚫 No volver a contactar</button>'}
+        </div>
+      </div>`;
+  }
+  function wireClientes(box, lista, cont) {
+    box.querySelectorAll('[data-cli]').forEach((el) => {
+      const f = lista[+el.dataset.cli];
+      const q = (sel) => el.querySelector(sel);
+      const seg = CRM().seguimiento(f);
+      // Cliente nuevo al que todavía no se le preguntó: sale el mensaje de la primera compra.
+      const sug = seg && !f.pausado && (seg.estado === 'toca' || seg.estado === 'escrito') ? CRM().sugPrimera(f, seg)
+        : { ficha: f, tipo: 'manual', titulo: 'Mensaje', motivo: 'Contacto directo', msg: 'Hola ' + (CRM().nombrePila(f) || f.nombre.split(' ')[0] || '') + '! ' };
+      q('[data-wsp]').onclick = () => mensajeModal(sug, () => recargar(cont));
+      q('[data-ct]').onclick = () => contactoModal(f, sug.tipo === 'primera' ? sug : null, () => recargar(cont));
+      q('[data-ficha]').onclick = () => fichaModal(f.id, () => recargar(cont));
+      const bn = q('[data-noc]'); if (bn) bn.onclick = () => noContactar(f, () => recargar(cont));
+      const bs = q('[data-sic]'); if (bs) bs.onclick = () => { CRM().guardar(f, { pausado: false }); toast('Listo: vuelve a aparecer en el seguimiento', 'ok'); recargar(cont); };
+    });
+  }
+  /* NO VOLVER A CONTACTAR (pedido de Matias, 20-nov-2026): el cliente sale de "Para hacer hoy" y de
+     "Primeras compras" y no vuelve a aparecer. Sigue en "Todos los clientes" y en el buscador, con la
+     marca 🚫, y desde ahí se puede deshacer. */
+  function noContactar(f, after) {
+    confirmDlg('¿No volver a contactar a ' + f.nombre + '? No te va a aparecer más en el seguimiento. Lo seguís encontrando con el buscador y lo podés deshacer cuando quieras.', () => {
+      CRM().guardar(f, { pausado: true, snooze: {}, recordatorio: null });
+      toast('Listo: no te lo vuelvo a sugerir', 'ok');
+      after && after();
+    });
+  }
+
   /* ─────────────────────── "Para hacer hoy" ─────────────────────── */
 
   let verTodoHoy = false, verTodoLuego = false;
   const TOPE = 10;   // una agenda de más de 10 llamados no se hace: no se mira
 
-  function renderAgenda(box, part, cont) {
+  function renderAgenda(box, part, cont, fichas) {
     const hoy = part.hoy, luego = part.luego;
     const todas = hoy.concat(luego);
+    /* YA CONTACTADOS (pedido de Matias, 20-nov-2026): al tocar WhatsApp el cliente salía de la lista y
+       no había forma de volver a él (para reenviar si el número estaba mal, o anotar qué contestó).
+       Acá quedan los de los últimos 7 días, primero los que todavía no tienen la respuesta anotada. */
+    const DESDE = Date.now() - 7 * 86400000;
+    const rec = (fichas || []).filter((f) => !f.pausado && f.contactos && f.contactos[0] && f.contactos[0].ts >= DESDE)
+      .sort((a, b) => ((a.contactos[0].resultado === 'enviado' ? 0 : 1) - (b.contactos[0].resultado === 'enviado' ? 0 : 1)) || (b.contactos[0].ts - a.contactos[0].ts));
+    const recVis = verTodoRec ? rec : rec.slice(0, TOPE);
+    const sinResp = rec.filter((f) => f.contactos[0].resultado === 'enviado').length;
+    const recHTML = rec.length ? `
+      <div class="crm-sec" style="margin-top:24px">
+        <h3>✅ Ya contactados · últimos 7 días · ${rec.length}</h3>
+        <p>Los que ya les escribiste siguen acá: podés <b>volver a escribirles</b> (y corregir el teléfono si estaba mal) o <b>anotar qué contestaron</b>.${sinResp ? ' Hay <b>' + sinResp + '</b> sin la respuesta anotada.' : ''}</p>
+      </div>
+      <div class="crm-sugs" id="crm-rec">${recVis.map((f, i) => tarjetaCliente(f, i)).join('')}</div>
+      ${rec.length > TOPE ? `<button class="btn btn-ghost btn-block" data-masrec style="margin-top:10px">${verTodoRec ? 'Mostrar solo los ' + TOPE + ' primeros' : 'Ver los ' + (rec.length - TOPE) + ' restantes'}</button>` : ''}` : '';
+    const wireRec = () => {
+      const rb = box.querySelector('#crm-rec'); if (rb) wireClientes(rb, recVis, cont);
+      const mb = box.querySelector('[data-masrec]'); if (mb) mb.onclick = () => { verTodoRec = !verTodoRec; recargar(cont); };
+    };
 
     if (!todas.length) {
       box.innerHTML = `<div class="panel"><div class="panel-b">
@@ -136,7 +238,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <b style="display:block;font-size:16px;color:var(--negro);margin-bottom:6px">No hay nada pendiente</b>
           Ningún cliente está atrasado con su pedido y no quedan recordatorios para hoy.<br>
           A medida que se carguen pedidos, acá van a aparecer solos los avisos.
-        </div></div></div>`;
+        </div></div></div>` + recHTML;
+      wireRec();
       return;
     }
 
@@ -164,7 +267,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </div>
       <div class="crm-sugs">${luegoVis.map((s, i) => tarjeta(s, i, 'l')).join('')}</div>
       ${luego.length > TOPE ? `<button class="btn btn-ghost btn-block" data-mas="luego">${verTodoLuego ? 'Mostrar solo los ' + TOPE + ' primeros' : 'Ver los ' + (luego.length - TOPE) + ' restantes'}</button>` : ''}
-      ` : ''}`;
+      ` : ''}` + recHTML;
+    wireRec();
 
     box.querySelectorAll('[data-mas]').forEach((b) => b.onclick = () => {
       if (b.dataset.mas === 'hoy') verTodoHoy = !verTodoHoy; else verTodoLuego = !verTodoLuego;
@@ -180,6 +284,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const bp = q('[data-snz]'); if (bp) bp.onclick = () => posponerModal(s, () => recargar(cont));
       const bf = q('[data-ficha]'); if (bf) bf.onclick = () => fichaModal(s.ficha.id, () => recargar(cont));
       const bd = q('[data-desc]'); if (bd) bd.onclick = () => GDO.Views.ofrecerDescuento(s.ficha, () => recargar(cont), s);
+      const bn = q('[data-noc]'); if (bn) bn.onclick = () => noContactar(s.ficha, () => recargar(cont));
     });
   }
 
@@ -212,12 +317,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           ${ofertaDe(s) ? `<div class="crm-sug-o"><b>Ofrecele:</b> ${esc(ofertaDe(s))}</div>` : ''}
         </div>
         <div class="crm-sug-ac">
-          ${tel ? '<button class="btn btn-verde btn-sm" data-wsp>💬 WhatsApp</button>' : '<span class="help">Sin teléfono</span>'}
+          <button class="btn btn-verde btn-sm" data-wsp>${tel ? '💬 WhatsApp' : '📵 Corregir teléfono'}</button>
           ${(s.tipo === 'dormido' || (s.otras || []).some((o) => o.tipo === 'dormido')) && GDO.Views.ofrecerDescuento
             ? '<button class="btn btn-primary btn-sm" data-desc>🎁 Ofrecer descuento</button>' : ''}
           <button class="btn btn-ghost btn-sm" data-ok>✓ Ya lo contacté…</button>
           <button class="btn btn-ghost btn-sm" data-snz>🕓 Más adelante</button>
           <button class="btn btn-ghost btn-sm" data-ficha>Ver ficha</button>
+          <button class="btn btn-ghost btn-sm" data-noc>🚫 No volver a contactar</button>
         </div>
       </div>`;
   }
@@ -230,20 +336,35 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       title: 'Escribirle a ' + f.nombre, width: 540,
       bodyHTML: `
         <div class="note" style="margin-bottom:12px">${esc(s.titulo)} — ${esc(s.motivo)}</div>
+        <div class="field"><label>Teléfono al que sale (si está mal, corregilo acá: queda guardado en la ficha)</label>
+          <input id="m-tel" inputmode="tel" value="${esc(f.telefono || '')}" placeholder="11 5555-5555"/>
+          <span class="help" id="m-telh"></span></div>
         <div class="field"><label>Mensaje (podés editarlo)</label>
           <textarea id="m-msg" rows="7">${esc(s.msg)}</textarea></div>
-        <div class="help">Se abre WhatsApp con el mensaje listo. Vos tocás <b>Enviar</b> allá. Al salir queda anotado que lo contactaste y no te lo vuelve a sugerir por unos días.</div>`,
+        <div class="help">Se abre WhatsApp con el mensaje listo. Vos tocás <b>Enviar</b> allá. Al salir queda anotado que lo contactaste; el cliente pasa a <b>“Ya contactados”</b> (abajo de “Para hacer hoy”), donde podés volver a escribirle o anotar qué contestó.</div>`,
       footHTML: `<button class="btn btn-ghost" data-cancel>Cancelar</button><a class="btn btn-verde" data-send target="_blank">💬 Abrir WhatsApp</a>`,
       onMount(node, close) {
         const ta = node.querySelector('#m-msg');
         const send = node.querySelector('[data-send]');
-        const refresh = () => { send.href = GDO.Wpp.link(f.telefono, ta.value); };
-        ta.oninput = refresh; refresh();
+        const it = node.querySelector('#m-tel'), th = node.querySelector('#m-telh');
+        const telOk = () => GDO.Wpp.tieneTel(it.value.trim());
+        const refresh = () => {
+          const ok = telOk();
+          if (ok) send.href = GDO.Wpp.link(it.value.trim(), ta.value); else send.removeAttribute('href');
+          send.style.opacity = ok ? '' : '.45';
+          th.innerHTML = ok ? (it.value.trim() !== String(f.telefono || '').trim() ? '✅ Se guarda este número en la ficha al abrir WhatsApp.' : '')
+            : '<b style="color:#c0392b">Ese número no parece completo: tiene que tener el código de área y el número (ej. 11 5555-5555).</b>';
+        };
+        ta.oninput = refresh; it.oninput = refresh; refresh();
         node.querySelector('[data-cancel]').onclick = close;
         // Abrir WhatsApp ya deja registrado el contacto (canal WhatsApp, "mensaje
         // enviado"). Lo que contestó se agrega después desde la ficha, cuando se
         // sepa: obligar a completar un formulario acá frenaría el envío.
-        send.onclick = () => {
+        send.onclick = (ev) => {
+          if (!telOk()) { ev.preventDefault(); toast('Corregí el teléfono antes de abrir WhatsApp', 'err'); it.focus(); return; }
+          // Teléfono corregido: queda en la ficha (marcarContactado guarda la ficha entera con este número).
+          const nuevoTel = it.value.trim();
+          if (nuevoTel !== String(f.telefono || '').trim()) f.telefono = nuevoTel;
           CRM().marcarContactado(f, s.tipo, 'whatsapp');
           toast(s.tipo === 'primera'
             ? 'Queda registrado · cuando te conteste, anotá qué te dijo en "Primeras compras"'
@@ -384,6 +505,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const bw = q('[data-wsp]'); if (bw) bw.onclick = () => mensajeModal(CRM().sugPrimera(x.ficha, x.seg), () => recargar(cont));
       const bc = q('[data-ct]'); if (bc) bc.onclick = () => contactoModal(x.ficha, CRM().sugPrimera(x.ficha, x.seg), () => recargar(cont));
       const bf = q('[data-ficha]'); if (bf) bf.onclick = () => fichaModal(x.ficha.id, () => recargar(cont));
+      const bn = q('[data-noc]'); if (bn) bn.onclick = () => noContactar(x.ficha, () => recargar(cont));
     });
   }
 
@@ -423,9 +545,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             : (tema ? `<div class="crm-op mal">${tema}</div>` : '')}
         </div>
         <div class="crm-sug-ac">
-          ${s.estado === 'toca' ? (tel ? '<button class="btn btn-verde btn-sm" data-wsp>💬 Preguntarle por WhatsApp</button>' : '<span class="help">Sin teléfono</span>') : ''}
+          ${s.ts ? `<button class="btn ${s.estado === 'toca' ? 'btn-verde' : 'btn-ghost'} btn-sm" data-wsp>${!tel ? '📵 Corregir teléfono' : (s.estado === 'toca' ? '💬 Preguntarle por WhatsApp' : '💬 Volver a escribirle')}</button>` : ''}
           ${s.ts ? `<button class="btn ${s.estado === 'escrito' ? 'btn-primary' : 'btn-ghost'} btn-sm" data-ct>✍️ ${s.estado === 'escrito' ? 'Anotar qué contestó' : 'Anotar cómo le fue'}</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-ficha>Ver ficha</button>
+          <button class="btn btn-ghost btn-sm" data-noc>🚫 No volver a contactar</button>
         </div>
       </div>`;
   }
@@ -475,7 +598,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         ${list.map((f) => {
           const alerta = CRM().dormido(f);
           return `<tr data-f="${esc(f.id)}" style="cursor:pointer">
-            <td><b>${esc(f.nombre)}</b>${f.socio ? ' ⭐' : ''}<div class="small">${esc(f.direccion || 'Sin dirección')}</div></td>
+            <td><b>${esc(f.nombre)}</b>${f.socio ? ' ⭐' : ''}${f.pausado ? ' <span title="No volver a contactar">🚫</span>' : ''}<div class="small">${esc(f.direccion || 'Sin dirección')}</div></td>
             <td><span class="chip ${f.tipoChip}">${esc(f.tipoLabel)}</span></td>
             <td>${f.nCompras}</td>
             <td>${f.ritmo != null ? 'cada ' + f.ritmo + ' d' : '<span class="help">—</span>'}</td>
@@ -572,7 +695,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <div class="field col-2">
             <label style="display:flex;align-items:center;gap:8px;font-weight:600">
               <input type="checkbox" id="fi-pausa" ${f.pausado ? 'checked' : ''} style="width:auto;margin:0"/>
-              No sugerirme contactar a este cliente
+              🚫 No volver a contactar a este cliente
             </label>
             <span class="help">Para clientes que ya no compran o que atiende otra persona. Sigue apareciendo en la lista, pero no en “Para hacer hoy”.</span></div>
         </div>
