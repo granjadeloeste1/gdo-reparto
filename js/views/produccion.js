@@ -137,7 +137,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return String(p.localidad || '').replace(/\([^)]*\)?/g, ' ').replace(/\s+/g, ' ').trim();
   }
   function locOrden(p) {
-    const k = locNombre(p).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^el\s+/, '').replace(/\bc\.?\s*/, 'c ').trim();
+    const k = locNombre(p).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/^el\s+/, '').trim();
     let r = 0;
     if (/tesei/.test(k)) r = 1;
     else if (/morris/.test(k)) r = 3;
@@ -157,7 +157,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
          Villa Tesei, Hurlingham y William Morris al final, en ese orden. */
       const ra = esRetiro(a) ? 0 : 1, rb = esRetiro(b) ? 0 : 1;
       if (ra !== rb) return ra - rb;
-      if (!ra) {
+      if (ra) {
         const la = locOrden(a), lb = locOrden(b);
         if (la.r !== lb.r) return la.r - lb.r;
         if (la.k !== lb.k) return la.k.localeCompare(lb.k, 'es');
