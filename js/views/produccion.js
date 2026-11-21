@@ -131,6 +131,19 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   /* Pedidos de ese día. Se van los "no entregados" (el cliente no se los llevó)
      y, salvo que se pida, también los ya cerrados: si la comanda se imprime a
      media mañana, lo que ya salió no hay que volver a producirlo. */
+  // Localidad para agrupar la hoja de armado: sin tildes ni aclaraciones entre paréntesis,
+  // "El Palomar" = "Palomar". r = 0 el resto, 1 Villa Tesei, 2 Hurlingham, 3 William Morris.
+  function locNombre(p) {
+    return String(p.localidad || '').replace(/\([^)]*\)?/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function locOrden(p) {
+    const k = locNombre(p).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^el\s+/, '').replace(/\bc\.?\s*/, 'c ').trim();
+    let r = 0;
+    if (/tesei/.test(k)) r = 1;
+    else if (/morris/.test(k)) r = 3;
+    else if (/hurlingham/.test(k)) r = 2;
+    return { r: r, k: k || 'zzz' };
+  }
   function pedidosDelDia(todosTipos) {
     return (Store.pedidos() || []).filter((p) => {
       if (fechaEfectiva(p) !== dia) return false;
@@ -139,10 +152,16 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       if (!todosTipos && !tiposSel[tipoDe(p)]) return false;
       return true;
     }).sort((a, b) => {
-      // Primero los retiros (el cliente los viene a buscar y hay hora), después
-      // los domicilios y el reparto mayorista; dentro de cada grupo, por horario y por cliente.
-      const ra = TIPOS.indexOf(tipoDe(a)), rb = TIPOS.indexOf(tipoDe(b));
+      /* Primero los retiros (el cliente los viene a buscar y hay hora). Los envíos van
+         AGRUPADOS POR LOCALIDAD, uno atrás del otro (pedido de Matías, 20-nov-2026), y
+         Villa Tesei, Hurlingham y William Morris al final, en ese orden. */
+      const ra = esRetiro(a) ? 0 : 1, rb = esRetiro(b) ? 0 : 1;
       if (ra !== rb) return ra - rb;
+      if (!ra) {
+        const la = locOrden(a), lb = locOrden(b);
+        if (la.r !== lb.r) return la.r - lb.r;
+        if (la.k !== lb.k) return la.k.localeCompare(lb.k, 'es');
+      }
       const va = a.ventana || 'zz', vb = b.ventana || 'zz';
       if (va !== vb) return va < vb ? -1 : 1;
       return String(a.cliente || '').localeCompare(String(b.cliente || ''));
@@ -347,6 +366,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       <div class="pr-ped">
         <div class="pr-ped-h">
           <div class="pr-ped-cli"><b>${esc(p.cliente)}</b>${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">' + (p.lista === 'minorista' ? 'Lista minorista' : 'Lista mayorista') + '</span>' : ''}${vendedorChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}
+            ${!esRetiro(p) && locNombre(p) ? '<span class="pr-ped-loc">📍 ' + esc(locNombre(p).toUpperCase()) + '</span>' : ''}
             ${telHTML(p)}</div>
           <div class="pr-ped-donde">${donde}</div>
         </div>

@@ -762,3 +762,27 @@ textarea{resize:vertical;min-height:74px}
 .pr-pdf .pr-corte{margin:6px 0}
 /* Un pedido NUNCA se parte entre dos hojas: si no entra, pasa entero a la siguiente. */
 .pr-pdf .pr-ped,.pr-pdf .pr-arm,.pr-pdf .pr-ped-h{break-inside:avoid;page-break-inside:avoid}
+
+/* v149 (20-nov-2026): la hoja de armado NUNCA más ancha que el A4. Con "$19.000 paquete" o
+   "1 paquete" en celdas que no se podían partir, la tabla quedaba en 724 px sobre 672 y la
+   impresión cortaba la columna del peso. Columnas de ancho fijo y texto que baja de renglón. */
+.pr-arm{table-layout:fixed;width:100%}
+.pr-arm th:nth-child(1){width:4%}
+.pr-arm th:nth-child(2){width:31%}
+.pr-arm th:nth-child(3){width:11%}
+.pr-arm th:nth-child(4){width:11%}
+.pr-arm th:nth-child(5){width:9%}
+.pr-arm th:nth-child(6){width:15%}
+.pr-arm th:nth-child(7){width:19%}
+.pr-arm td,.pr-arm th{white-space:normal !important;overflow-wrap:anywhere}
+.pr-arm .pr-linea{width:70%;max-width:90px}
+.pr-ped-h,.pr-ped-donde,.pr-esp{overflow-wrap:anywhere;max-width:100%}
+.pr-ped-tel{white-space:normal}
+.pr-ped-loc{display:inline-block;margin-left:8px;padding:1px 8px;border:1.5px solid #000;border-radius:6px;font-size:12px;font-weight:800;letter-spacing:.3px;vertical-align:middle}
+@media print{
+  /* En una lista flex el navegador no respeta "no partir" al imprimir: va en bloque. */
+  .pr-peds{display:block !important}
+  .pr-peds > .pr-ped{display:block;margin:0 0 8px}
+  .pr-ped,.pr-ped *{max-width:100%}
+  .pr-ped{width:auto;box-sizing:border-box}
+}
