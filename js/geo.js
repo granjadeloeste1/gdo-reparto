@@ -83,7 +83,8 @@ window.GDO = window.GDO || {};
   const PARTIDO_ALT = { 'palomar': ['tres de febrero'], 'el palomar': ['tres de febrero'], 'ciudad jardin': ['moron'],
     'loma hermosa': ['general san martin'], 'villa sarmiento': ['la matanza', 'tres de febrero'] };
   const PARTIDOS_REPARTO = {}; Object.keys(PARTIDO_DE).forEach((k) => { PARTIDOS_REPARTO[PARTIDO_DE[k]] = 1; });
-  const _locNorm = (s) => _sinAcento(s).replace(/[.,]/g, ' ').replace(/^(partido de|ciudad de)\s+/, '').replace(/\s+/g, ' ').trim();
+  // "Morón (barrio Gaona)": lo que va entre paréntesis es una aclaración, no la localidad.
+  const _locNorm = (s) => _sinAcento(s).replace(/\([^)]*\)?/g, ' ').replace(/[.,]/g, ' ').replace(/^(partido de|ciudad de)\s+/, '').replace(/\s+/g, ' ').trim();
   // ¿Los nombres (localidad, partido, barrio) que trae el resultado son de la localidad pedida?
   // Sin localidad en el pedido no hay con qué comparar: se acepta.
   function coincideLocalidad(localidad, nombres) {
@@ -110,7 +111,10 @@ window.GDO = window.GDO || {};
   // De un campo "entre calles" saca hasta 2 nombres de calle de cruce. Acepta
   // "Calle A y Calle B", "entre A y B", "A esquina B", "A / B", "A esq. B".
   function crucesDe(entrecalles) {
-    let s = _sinAcento(entrecalles).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+    // "Agustín Álvarez y Curuzucuatiá (frente a la plaza)": las aclaraciones no son calles.
+    let s = _sinAcento(entrecalles).replace(/\([^)]*\)?/g, ' ')
+      .replace(/\b(frente|casi|cerca|al lado|a metros|pasando|altura)\b.*$/, ' ')
+      .replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!s) return [];
     s = s.replace(/^entre\s+/, '').replace(/\besquina\b|\besq\b/g, ' y ');
     return s.split(/\s+y\s+|\s*\/\s*/).map((x) => x.trim()).filter(Boolean).slice(0, 2);
@@ -219,10 +223,11 @@ window.GDO = window.GDO || {};
   // el motor más confiable en Argentina y trae la ALTURA exacta. Devuelve items
   // SIN coordenadas (solo texto + placePrediction): las coords se resuelven al
   // ELEGIR (1 sola consulta de detalle). Si Google no está / falla, null → Georef.
-  let _gToken = null, _gDisabled = false;
+  // Si Google falla, se pausa 2 minutos (antes quedaba apagado hasta recargar la página).
+  let _gToken = null, _gDisabled = 0;
   async function suggestGoogle(text) {
     try {
-      if (_gDisabled) return null;
+      if (_gDisabled && Date.now() - _gDisabled < 120000) return null;
       if (!(GDO.Google && GDO.Google.disponible)) return null;
       if (!(window.google && google.maps && google.maps.places)) return null;
       const P = google.maps.places;
@@ -247,7 +252,7 @@ window.GDO = window.GDO || {};
         out.push({ label: String(label), _pp: pp, _placeId: pp.placeId || null, lat: null, lng: null, localidad: '' });
       }
       return out;
-    } catch (e) { _gDisabled = true; return null; }
+    } catch (e) { _gDisabled = Date.now(); return null; }
   }
 
   // Resuelve coords + localidad de una sugerencia de Google al elegirla.
@@ -281,10 +286,30 @@ window.GDO = window.GDO || {};
     const q = String(text || '').trim();
     if (q.length < 4) return [];
     opts = opts || {};
-    const max = opts.max || 6;
-    // 1) Google primero (lo más confiable; trae la altura exacta). Si no está
-    //    disponible o falla, caemos a Georef (gratis) sin romper la experiencia.
-    try { const g = await suggestGoogle(q); if (g && g.length) return g.slice(0, max); } catch (e) {}
+    const max = opts.max || 8;
+    /* Google + Georef juntos (20-nov-2026, caso "Berón de Astrada 238"): Google da solo 5
+       sugerencias y ninguna era la de Morón (salían El Palomar, CABA, Remedios de Escalada...),
+       así que la dirección correcta no aparecía. Ahora: primero las de Google que caen en la
+       zona de reparto, después las de Georef de la zona (Georef sí tiene la de Morón), y recién
+       si no hay nada en la zona, las de Google de otros lados. */
+    let goo = [];
+    try { goo = (await suggestGoogle(q)) || []; } catch (e) { goo = []; }
+    const locsZona = Object.keys(PARTIDO_DE);
+    const gooEnZona = goo.filter((it) => { const t = ' ' + _locNorm(it.label) + ' '; return locsZona.some((l) => t.indexOf(' ' + l + ' ') >= 0); });
+    let geo = [];
+    try { geo = await _suggestGeoref(q, max); } catch (e) { geo = []; }
+    const titulo = (s) => String(s || '').toLowerCase().replace(/(^|[\s(])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+    const geoEnZona = geo.filter((it) => PARTIDOS_REPARTO[_locNorm(it.partido)])
+      .map((it) => Object.assign({}, it, { label: titulo(it.label) }));
+    const out = [], visto = {};
+    const clave = (it) => _locNorm(String(it.label).split(',').slice(0, 2).join(' ')).replace(/\b(provincia de buenos aires|buenos aires|argentina)\b/g, '').replace(/\s+/g, ' ').trim();
+    for (const it of gooEnZona.slice(0, 3).concat(geoEnZona, gooEnZona.slice(3))) { const k = clave(it); if (visto[k]) continue; visto[k] = 1; out.push(it); }
+    if (out.length) return out.slice(0, max);
+    if (goo.length) return goo.slice(0, max);
+    return geo.slice(0, max);
+  }
+
+  async function _suggestGeoref(q, max) {
     try {
       const out = [], seen = {};
       const push = (list) => {
@@ -418,7 +443,7 @@ window.GDO = window.GDO || {};
     const base = String(direccion || '').replace(/\s+-\s+(timbre|tbre|dto|dpto|depto|departamento|piso|casa|ph|fondo|local|lote|uf)(?![a-z]).*$/i, '').replace(/\s+entre\s+.*$/i, '').replace(/^calle\s+/i, '').trim();
     if (!base) return null;
     const ec = String(entrecalles || '').trim();
-    const locP = String(localidadPedido || '').trim();
+    const locP = String(localidadPedido || '').replace(/\([^)]*\)?/g, ' ').replace(/\s+/g, ' ').trim();
     // Clave de caché versionada ('z6'): incluye las entrecalles (cambian el
     // resultado) e invalida lo guardado por versiones anteriores. z6 fuerza
     // re-geocodificar con Google y limpia los "no encontrada" cacheados cuando
