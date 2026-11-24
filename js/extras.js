@@ -79,6 +79,14 @@ window.GDO = window.GDO || {};
     if (tipo === 'reprogramar') {
       return saludo + '🔁 No pudimos completar la entrega de tu pedido hoy. Nos comunicamos para reprogramarla. 📅' + firma;
     }
+    // RETIRO EN SUCURSAL que no pasaron a buscar: se le pregunta qué día puede
+    // venir. Sin enumerar lo que compró (suena a robot) y sin prometer que el
+    // pedido "está guardado": el stock no se confirma por mensaje.
+    if (tipo === 'noRetiro') {
+      return saludo + 'Te esperábamos' + (extra.cuando ? ' el ' + extra.cuando : '') +
+        ' para retirar tu pedido y no llegaste a pasar. ¿Qué día te queda cómodo venir? 📅' +
+        '\n\nEstamos en Acuña 1334, Villa Tesei, de lunes a sábado de 6 a 13:30 hs.' + firma;
+    }
     // genérico
     return saludo + '📦 Te escribimos por tu pedido.' + firma;
   }

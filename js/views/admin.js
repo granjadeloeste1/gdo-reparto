@@ -49,6 +49,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         return fa ? -1 : (fb ? 1 : 0);
       });
     const retirosHoy = retiros.filter((p) => efFechaEntrega(p) === isoHoy()).length;
+    // Los que ya tenían que haber pasado y no pasaron van en su propio cuadro,
+    // arriba y en rojo: hay que escribirles, no prepararles nada.
+    const noRet = retiros.filter(noRetirado);
+    const esperando = retiros.filter((p) => !noRetirado(p));
     c.innerHTML = `
       ${sugs.length ? `<div class="crm-aviso" id="d-crm">
         <span class="ic">📞</span>
@@ -60,11 +64,15 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <div class="card kpi naranja"><span class="ic">📦</span><span class="num">${peds.length}</span><span class="lbl">Pedidos totales</span></div>
         <div class="card kpi negro"><span class="ic">🕓</span><span class="num">${cont('pendiente')}</span><span class="lbl">Pendientes de asignar</span></div>
         <div class="card kpi amarillo"><span class="ic">🚚</span><span class="num">${rutasAct.length}</span><span class="lbl">Rutas activas</span></div>
-        <div class="card kpi negro" id="d-kpi-ret" style="cursor:pointer" title="Ver los retiros en sucursal"><span class="ic">🏪</span><span class="num">${retiros.length}</span><span class="lbl">Retiros en sucursal${retirosHoy ? ' · ' + retirosHoy + ' hoy' : ''}</span></div>
+        <div class="card kpi negro" id="d-kpi-ret" style="cursor:pointer" title="Ver los retiros en sucursal"><span class="ic">🏪</span><span class="num">${retiros.length}</span><span class="lbl">Retiros en sucursal${retirosHoy ? ' · ' + retirosHoy + ' hoy' : ''}${noRet.length ? ' · <b style="color:#E53935">' + noRet.length + ' sin retirar</b>' : ''}</span></div>
         <div class="card kpi rojo"><span class="ic">⚠️</span><span class="num">${cont('no_entregado')}</span><span class="lbl">No entregados</span></div>
       </div>
-      ${retiros.length ? `<div class="panel" id="d-retiros">
-        <div class="panel-h"><h3>🏪 Retiro en sucursal</h3><span class="chip chip-retiro">${retiros.length} pedido${retiros.length === 1 ? '' : 's'} esperando</span></div>
+      ${noRet.length ? `<div class="panel" id="d-noret" style="border-color:#E53935">
+        <div class="panel-h"><h3>⚠️ No pasaron a retirar</h3><span class="chip chip-no">${noRet.length} pedido${noRet.length === 1 ? '' : 's'}</span></div>
+        <div class="panel-b flush"><div id="d-tabla-noret"></div></div>
+      </div>` : ''}
+      ${esperando.length ? `<div class="panel" id="d-retiros">
+        <div class="panel-h"><h3>🏪 Retiro en sucursal</h3><span class="chip chip-retiro">${esperando.length} pedido${esperando.length === 1 ? '' : 's'} esperando</span></div>
         <div class="panel-b flush"><div id="d-tabla-ret"></div></div>
       </div>` : ''}
       <div class="panel">
@@ -76,10 +84,12 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // Los retiros van APARTE, con la fecha en la que el cliente dijo que pasa: es
     // lo que hay que tener preparado en el mostrador, no algo para rutear.
     const boxRet = c.querySelector('#d-tabla-ret');
-    if (boxRet) renderRetirosTabla(boxRet, retiros.slice(0, 10));
+    if (boxRet) renderRetirosTabla(boxRet, esperando.slice(0, 10));
+    const boxNoRet = c.querySelector('#d-tabla-noret');
+    if (boxNoRet) renderRetirosTabla(boxNoRet, noRet);
     const kpiRet = c.querySelector('#d-kpi-ret');
     if (kpiRet) kpiRet.onclick = () => {
-      const t = c.querySelector('#d-retiros');
+      const t = c.querySelector('#d-noret') || c.querySelector('#d-retiros');
       if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
       else { go('#/pedidos'); GDO.App.render(); }
     };
@@ -235,6 +245,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           <option value="rep_min">🏠 Solo domicilios</option>
           <option value="rep_may">🚚 Solo reparto mayorista</option>
           <option value="retiro">🏪 Solo retiros en sucursal</option>
+          <option value="noret">⚠️ No pasaron a retirar</option>
         </select>
         ${soyVend ? '' : `<select id="p-vend" title="Pedidos de cada vendedor">${opcionesVendedor()}</select>`}
         <button class="btn btn-ghost btn-sm" id="p-hoy" title="Pedidos para entregar o retirar hoy">Hoy</button>
@@ -294,6 +305,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       else if (est) list = list.filter((p) => p.estado === est);
       const mod = c.querySelector('#p-mod').value;
       if (mod === 'retiro') list = list.filter((p) => esRetiro(p));
+      else if (mod === 'noret') list = list.filter(noRetirado);
       else if (mod === 'envio') list = list.filter((p) => !esRetiro(p));
       else if (mod) list = list.filter((p) => GDO.UI.tipoDe(p) === mod);
       /* Búsqueda por fecha: el día de entrega (o de retiro) del pedido. Sirve
@@ -654,6 +666,88 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   // Fecha de entrega EFECTIVA: la cargada, o la derivada del día elegido en la tienda
   // (próximo ese día). Permite ordenar y mostrar aunque falte la fecha exacta.
   function efFechaEntrega(p) { return GDO.UI.fechaEfectiva(p); }
+
+  /* RETIRO QUE NO PASARON A BUSCAR: retiro en sucursal todavía abierto cuyo día
+     ya pasó, o que era para hoy y el local ya cerró (13:30; damos hasta las 14).
+     Los que no tienen día ("a coordinar") no cuentan: nunca se acordó cuándo. */
+  function noRetirado(p) {
+    if (!esRetiro(p) || p.estado === 'entregado' || p.estado === 'no_entregado') return false;
+    const f = efFechaEntrega(p);
+    if (!f) return false;
+    const hoy = isoHoy();
+    return f < hoy || (f === hoy && new Date().getHours() >= 14);
+  }
+  GDO.noRetirado = noRetirado;
+  // "le escribiste el 24/11" — para no mandarle dos veces el mismo mensaje.
+  function chipAvisoRetiro(p) {
+    const a = p && p.avisoNoRetiro;
+    if (!a || !a.ts) return '';
+    const d = new Date(a.ts);
+    return ' <span class="chip chip-asig" style="font-size:10px" title="Ya se le mandó el mensaje para reprogramar">💬 escrito ' +
+      d.getDate() + '/' + (d.getMonth() + 1) + '</span>';
+  }
+
+  /* ---- REPROGRAMAR UN RETIRO que no pasaron a buscar ----
+     Dos cosas en la misma ventana: (1) abrir WhatsApp con el mensaje armado
+     (queda anotado que se le escribió), y (2) cuando el cliente contesta, cargar
+     el día nuevo: el pedido vuelve a la lista de retiros con esa fecha. */
+  function reprogramarRetiroModal(p) {
+    if (!p) return;
+    const f = efFechaEntrega(p);
+    // "lunes 23/11": día y número, sin depender de cómo escribe el mes cada navegador.
+    const cuando = f ? diaSemanaDe(f).toLowerCase() + ' ' + (+f.slice(8, 10)) + '/' + (+f.slice(5, 7)) : '';
+    const tel = GDO.Wpp && GDO.Wpp.tieneTel(p.telefono);
+    const ya = p.avisoNoRetiro && p.avisoNoRetiro.ts ? new Date(p.avisoNoRetiro.ts) : null;
+    modal({
+      title: 'Reprogramar retiro — ' + esc(p.cliente), width: 540,
+      bodyHTML: `
+        <div class="note">${f ? 'Tenía que pasar el <b>' + esc(diaSemanaDe(f)) + ' ' + fmtFecha(f) + '</b>' + (p.ventana ? ' (' + esc(p.ventana) + ')' : '') + ' y todavía no lo retiró.' : 'Todavía no lo retiró.'}
+          ${ya ? '<br>💬 Ya se le escribió el <b>' + ya.toLocaleDateString('es-AR') + '</b>.' : ''}</div>
+        <div class="sec-t" style="font-weight:700;margin:6px 0">1. Mandarle el mensaje</div>
+        ${tel ? `<div class="field"><label>Mensaje (podés editarlo)</label>
+          <textarea id="rr-msg" rows="6">${esc(GDO.Wpp.msg('noRetiro', p, { cuando }))}</textarea>
+          <span class="help">Se abre WhatsApp con el mensaje listo; vos tocás <b>Enviar</b>.</span></div>
+          <a class="btn btn-verde" id="rr-send" target="_blank" rel="noopener">💬 Abrir WhatsApp</a>`
+        : '<div class="empty">Este pedido no tiene teléfono cargado. Cargalo con ✎ para poder escribirle.</div>'}
+        <div class="sec-t" style="font-weight:700;margin:18px 0 6px">2. Cuando conteste: el día nuevo</div>
+        <div class="form-grid">
+          <div class="field"><label>¿Qué día pasa?</label><input type="date" id="rr-fec" min="${esc(isoHoy())}"/></div>
+          <div class="field"><label>Horario</label>
+            <input id="rr-vent" list="rr-franjas" value="${esc(p.ventana || '')}" placeholder="Vacío = a coordinar"/>
+            <datalist id="rr-franjas">${FRANJAS.map((x) => `<option value="${x}"></option>`).join('')}</datalist></div>
+        </div>`,
+      footHTML: `<button class="btn btn-ghost" data-cancel>Cerrar</button><button class="btn btn-primary" data-ok>📅 Guardar día nuevo</button>`,
+      onMount(node, close) {
+        node.querySelector('[data-cancel]').onclick = close;
+        const send = node.querySelector('#rr-send');
+        if (send) {
+          const ta = node.querySelector('#rr-msg');
+          const refresh = () => { send.href = GDO.Wpp.link(p.telefono, ta.value); };
+          ta.oninput = refresh; refresh();
+          send.onclick = () => {
+            const historia = (p.historia || []).concat([{ ts: Date.now(), est: 'aviso',
+              detalle: 'Se le escribió para reprogramar el retiro', por: Store.current() ? Store.current().id : null }]);
+            Store.upsertPedido({ id: p.id, avisoNoRetiro: { ts: Date.now(), por: Store.current() ? Store.current().id : null }, historia });
+            toast('WhatsApp abierto · queda anotado que le escribiste', 'ok');
+            setTimeout(() => { close(); GDO.App.render(); }, 300);
+          };
+        }
+        node.querySelector('[data-ok]').onclick = () => {
+          const fec = node.querySelector('#rr-fec').value;
+          if (!fec) { toast('Elegí el día que pasa a retirar', 'err'); return; }
+          const ventana = node.querySelector('#rr-vent').value.trim();
+          const historia = (p.historia || []).concat([{ ts: Date.now(), est: 'reprogramado',
+            detalle: 'Retiro reprogramado' + (f ? ' del ' + fmtFecha(f) : '') + ' al ' + fmtFecha(fec) + (ventana ? ' (' + ventana + ')' : ''),
+            por: Store.current() ? Store.current().id : null }]);
+          // diaEntrega en blanco: si quedara el día viejo, la fecha efectiva podría seguir apuntando al anterior.
+          Store.upsertPedido({ id: p.id, fechaEntrega: fec, diaEntrega: '', ventana, avisoNoRetiro: null, historia });
+          toast('Retiro pasado al ' + diaSemanaDe(fec) + ' ' + fmtFecha(fec) + ' ✓', 'ok');
+          close(); GDO.App.render();
+        };
+      },
+    });
+  }
+  GDO.Views.reprogramarRetiroModal = reprogramarRetiroModal;
   // Celda "Entrega": día de la semana (resaltado) + fecha, para armar rutas ordenado.
   // En un pedido de retiro es el día que el cliente dijo que pasa a buscarlo.
   function celdaEntrega(p) {
@@ -692,12 +786,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </tr></thead><tbody>${list.map((p) => `
         <tr${checkable && sel.has(p.id) ? ' style="background:var(--gris-cl)"' : ''}>
           ${checkable ? `<td><input type="checkbox" data-sel="${esc(p.id)}" ${sel.has(p.id) ? 'checked' : ''}/></td>` : ''}
-          <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${GDO.UI.precioChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}${vendedorChip(p)}${p.razonSocial || p.cuit ? `<div class="small muted">${esc(p.razonSocial || '')}${p.cuit ? ' · CUIT ' + esc(p.cuit) : ''}</div>` : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
+          <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${GDO.UI.precioChip(p)}${p.prioridad === 'alta' ? ' <span class="chip chip-no" style="font-size:10px">★ alta</span>' : ''}${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${esRetiro(p) ? ' <span class="chip chip-retiro" style="font-size:10px">🏪 Retiro en sucursal</span>' : ''}${noRetirado(p) ? ' <span class="chip chip-no" style="font-size:10px">⚠️ No pasó a retirar</span>' + chipAvisoRetiro(p) : ''}${vendedorChip(p)}${p.razonSocial || p.cuit ? `<div class="small muted">${esc(p.razonSocial || '')}${p.cuit ? ' · CUIT ' + esc(p.cuit) : ''}</div>` : ''}<div class="small muted">${esc(p.entrecalles || '')}</div></td>
           <td class="small">${esRetiro(p) ? '<span class="muted">🏪 Retira en el local</span>' : esc(p.direccion) + (p.lat == null ? ' <span class="chip chip-no" style="font-size:10px">📍 falta ubicar</span>' : '') + (GDO.Geo.sinEntrega(p.lat, p.lng, p.localidad) ? ' <span class="chip chip-no" style="font-size:10px">🚫 ' + GDO.Geo.sinEntrega(p.lat, p.lng, p.localidad) + ': no entregamos</span>' : '') + (GDO.timbreTxt(p) ? '<div class="muted">🔔 ' + esc(GDO.timbreTxt(p)) + '</div>' : '')}</td>
           <td class="small">${p.localidad ? esc(p.localidad) : '<span class="muted">—</span>'}</td>
           <td class="small">${celdaEntrega(p)}</td>
           <td>${estadoChip(p)}${asignacionInfo(p)}</td>
           <td class="t-actions">
+            ${noRetirado(p) ? `<button class="btn btn-ghost btn-sm" data-reprog="${esc(p.id)}" title="No pasó a retirar: escribirle y pasarlo a otro día">🔁</button>` : ''}
             ${esRetiro(p) && p.estado === 'pendiente' ? `<button class="btn btn-ghost btn-sm" data-retirado="${esc(p.id)}" title="Marcar como retirado por el cliente">✓</button>` : ''}
             ${esRetiro(p) ? `<button class="btn btn-ghost btn-sm" data-modo="${esc(p.id)}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>` : ''}
             ${(p.estado === 'no_entregado' || p.estado === 'salteado') && Store.rolActivo() !== 'vendedor' ? `<button class="btn btn-ghost btn-sm" data-reasig="${esc(p.id)}" title="Reabrir para reasignar a otra ruta">↻</button>` : ''}
@@ -733,6 +828,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       }, 'Reabrir');
     });
     box.querySelectorAll('[data-retirado]').forEach((b) => b.onclick = () => retiradoModal(Store.pedido(b.dataset.retirado)));
+    box.querySelectorAll('[data-reprog]').forEach((b) => b.onclick = () => reprogramarRetiroModal(Store.pedido(b.dataset.reprog)));
     box.querySelectorAll('[data-cerrar]').forEach((b) => b.onclick = () => cerrarManualModal(Store.pedido(b.dataset.cerrar)));
     box.querySelectorAll('[data-modo]').forEach((b) => b.onclick = () => modalidadModal(Store.pedido(b.dataset.modo)));
     box.querySelectorAll('[data-asig]').forEach((b) => b.onclick = () => asignacionModal(Store.pedido(b.dataset.asig)));
@@ -769,12 +865,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       </tr></thead><tbody>${list.map((p) => `
         <tr>
           <td><b data-ver="${esc(p.id)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Ver detalle del pedido">${esc(p.cliente)}</b>${GDO.UI.precioChip(p)}
-            ${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}
+            ${p.origen === 'tienda' ? ' <span class="chip chip-asig" style="font-size:10px">🛒 Tienda</span>' : ''}${chipDesc(p)}${chipAvisoRetiro(p)}
             <div class="small muted">${esc(p.telefono || '')}</div></td>
           <td class="small">${esc(resumenItems(p.items)) || '<span class="muted">Sin detalle</span>'}</td>
           <td class="small">${cuando(p)}</td>
           <td class="small">${p.totalEstimado ? fmtM(p.totalEstimado) : '<span class="muted">—</span>'}</td>
           <td class="t-actions">
+            ${noRetirado(p) ? `<button class="btn btn-primary btn-sm" data-reprog="${esc(p.id)}" title="Escribirle por WhatsApp y pasarlo a otro día">🔁 Reprogramar</button>` : ''}
             <button class="btn btn-verde btn-sm" data-retirado="${esc(p.id)}" title="El cliente ya lo retiró">✓ Retirado</button>
             <button class="btn btn-ghost btn-sm" data-modo="${esc(p.id)}" title="Este pedido necesita envío: pasarlo a reparto">🚚</button>
             ${GDO.Wpp && GDO.Wpp.tieneTel(p.telefono) ? `<button class="btn btn-ghost btn-sm" data-wpp="${esc(p.id)}" title="Avisar al cliente por WhatsApp">💬</button>` : ''}
@@ -782,6 +879,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           </td>
         </tr>`).join('')}</tbody></table>`;
     box.querySelectorAll('[data-retirado]').forEach((b) => b.onclick = () => retiradoModal(Store.pedido(b.dataset.retirado)));
+    box.querySelectorAll('[data-reprog]').forEach((b) => b.onclick = () => reprogramarRetiroModal(Store.pedido(b.dataset.reprog)));
     box.querySelectorAll('[data-cerrar]').forEach((b) => b.onclick = () => cerrarManualModal(Store.pedido(b.dataset.cerrar)));
     box.querySelectorAll('[data-modo]').forEach((b) => b.onclick = () => modalidadModal(Store.pedido(b.dataset.modo)));
     box.querySelectorAll('[data-wpp]').forEach((b) => b.onclick = () => wppModal(Store.pedido(b.dataset.wpp)));
