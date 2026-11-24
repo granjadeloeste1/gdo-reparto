@@ -24,19 +24,23 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     // y, si ya tiene puntosAcreditados, abortamos. El flag se setea en la MISMA
     // transacción que suma los puntos, así dos dispositivos que acrediten a la vez
     // no pueden duplicar (antes el flag se escribía en una operación aparte).
-    return fdb.runTransaction((tx) => {
+    // REFERIDOS: si a este socio lo invitó otro y es su primera carga, el que lo
+    // invitó suma lo mismo en esta misma transacción (ver js/referidos.js).
+    const R = GDO.Referidos;
+    return R.preparar(fdb, clienteUid).then((plan) => fdb.runTransaction((tx) => {
       return (pref ? tx.get(pref) : Promise.resolve(null)).then((pd) => {
         if (pd && pd.exists && pd.data().puntosAcreditados) throw new Error('ya-acreditado');
-        return tx.get(cref).then((cd) => {
+        return tx.get(cref).then((cd) => R.leer(tx, fdb, plan, clienteUid).then((st) => {
           if (!cd.exists) throw new Error('socio inexistente');
           const nuevo = (cd.data().puntos || 0) + delta;
           tx.update(cref, { puntos: nuevo });
           tx.set(lref, { clienteUid: clienteUid, delta: delta, motivo: motivo || '', saldo: nuevo, pedidoId: pedidoId || null, por: por, ts: FV.serverTimestamp() });
           if (pref) tx.set(pref, { puntosAcreditados: true, clienteUid: clienteUid }, { merge: true });
           if (visitaId) tx.update(fdb.collection('visitas').doc(visitaId), { estado: 'atendido', puntos: delta, por: por, cierreTs: FV.serverTimestamp() });
-        });
+          R.pagar(tx, st, cd, clienteUid, delta, { por: por, ts: FV.serverTimestamp() });
+        }));
       });
-    });
+    }));
   }
 
   /* ---------- GPS del chofer EN VIVO ----------

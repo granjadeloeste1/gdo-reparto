@@ -81,6 +81,50 @@ service cloud.firestore {
         && request.resource.data.puntos == resource.data.puntos + ticketDelCommit().puntos;
     }
 
+    /* ───────── Referidos: el cajero le suma al socio que INVITÓ ─────────
+       Cuando un socio referido hace su primera compra, el que lo invitó suma lo
+       mismo. Eso es tocarle el saldo a un socio que NO es el del ticket, así que
+       el cajero necesita un permiso aparte — igual de atado que el del ticket:
+       · solo cambian 'puntos' y 'ultimoReferido';
+       · 'ultimoReferido' apunta a un renglón de /puntos_log que se CREA en este
+         mismo commit (no existía antes), es de ESTE socio, es de tipo 'referido'
+         y lo carga ESTE empleado;
+       · los puntos sumados son EXACTAMENTE los de ese renglón.
+       Que el renglón sea legítimo (un referido real, su primera vez y por lo
+       mismo que sumó él) lo revisa la regla de /puntos_log: ver referidoValido(). */
+    function logReferido() {
+      return getAfter(/databases/$(database)/documents/puntos_log/$(request.resource.data.ultimoReferido)).data;
+    }
+    function creditoPorReferido(uid) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puntos', 'ultimoReferido'])
+        && request.resource.data.ultimoReferido is string
+        && !exists(/databases/$(database)/documents/puntos_log/$(request.resource.data.ultimoReferido))
+        && existsAfter(/databases/$(database)/documents/puntos_log/$(request.resource.data.ultimoReferido))
+        && logReferido().tipo == 'referido'
+        && logReferido().clienteUid == uid
+        && logReferido().por == request.auth.uid
+        && request.resource.data.puntos == resource.data.puntos + logReferido().delta;
+    }
+    /* El renglón "Puntos por referido" (id = ref_<uid del referido>). Como el id
+       es fijo y /puntos_log no se edita ni se borra, cada referido le paga UNA
+       sola vez al que lo invitó. Además:
+       · el referido tiene anotado en su perfil el N° del socio que cobra;
+       · el que cobra era socio de antes (N° menor) y no es él mismo;
+       · cobra EXACTAMENTE lo que el referido sumó en este mismo commit. */
+    function referidoValido(id) {
+      let d = request.resource.data;
+      let antes = get(/databases/$(database)/documents/clientes/$(d.referidoUid)).data;
+      let despues = getAfter(/databases/$(database)/documents/clientes/$(d.referidoUid)).data;
+      let cobra = get(/databases/$(database)/documents/clientes/$(d.clienteUid)).data;
+      return id == 'ref_' + d.referidoUid
+        && d.tipo == 'referido'
+        && d.clienteUid != d.referidoUid
+        && antes.referidoPor == cobra.nroSocio
+        && cobra.nroSocio < antes.nroSocio
+        && d.delta is int && d.delta > 0
+        && d.delta == despues.puntos - antes.puntos;
+    }
+
     // Validación de un pedido creado por la tienda (sesión anónima o socio
     // logueado). Limita lo que un no-staff puede escribir. Si trae clienteUid,
     // debe ser el del propio usuario (para acreditar puntos a quien corresponde).
@@ -236,7 +280,14 @@ service cloud.firestore {
       allow get:    if isOwner(uid) || isStaff();
       allow list:   if isStaff();
       // Alta: el propio socio, arrancando SIEMPRE en 0 puntos. O el personal.
-      allow create: if isStaff() || (isOwner(uid) && request.resource.data.puntos == 0);
+      // REFERIDOS: si el alta trae 'referidoPor' (el N° del socio que lo invitó),
+      // tiene que ser un número de socio ANTERIOR al propio. No hace falta que
+      // exista: si no existe, simplemente nadie cobra.
+      allow create: if isStaff() || (isOwner(uid) && request.resource.data.puntos == 0
+                        && (!('referidoPor' in request.resource.data)
+                            || (request.resource.data.referidoPor is int
+                                && request.resource.data.referidoPor > 0
+                                && request.resource.data.referidoPor < request.resource.data.nroSocio)));
       // Update por el socio: puede tocar sus datos y BAJAR puntos (para canjear),
       // NUNCA subirlos (sumar = solo personal) ni cambiar 'nroSocio'. La baja real
       // queda atada a un voucher válido por la regla de /canjes (getAfter).
@@ -244,9 +295,15 @@ service cloud.firestore {
       // puede SUMAR puntos, y SOLO contra un ticket escaneado: ver creditoConTicket().
       // Antes le alcanzaba con tocar 'puntos' y podía ponerle el número que quisiera
       // desde la consola del navegador, salteándose la pantalla de escaneo.
+      // REFERIDOS: el cajero también puede sumarle al socio que INVITÓ al del
+      // ticket (creditoPorReferido). Y el socio no puede cambiar quién lo invitó
+      // después del alta: si pudiera, un socio viejo se anotaría un "padrino" a
+      // último momento y su próxima compra contaría como "primera".
       allow update: if isAdmin()
                     || (isStaff() && creditoConTicket(uid))
+                    || (isStaff() && creditoPorReferido(uid))
                     || (isOwner(uid)
+                        && request.resource.data.get('referidoPor', 0) == resource.data.get('referidoPor', 0)
                         && request.resource.data.nroSocio == resource.data.nroSocio
                         && request.resource.data.puntos is int
                         && request.resource.data.puntos >= 0
@@ -392,10 +449,14 @@ service cloud.firestore {
       allow delete: if isStaff();
     }
 
-    // Auditoría de movimientos de puntos: INMUTABLE, solo personal.
+    // Auditoría de movimientos de puntos: INMUTABLE. La escribe solo el personal.
+    // El SOCIO puede LEER los renglones propios (su historial en club.html, donde
+    // ve "Puntos por referido, socio N° xxx"); la consulta tiene que venir
+    // filtrada por su uid, no puede listar los de otro.
+    // Los renglones de REFERIDO (id ref_<uid>) pasan además por referidoValido().
     match /puntos_log/{id} {
-      allow read:   if isStaff();
-      allow create: if isStaff();
+      allow read:   if isStaff() || (request.auth != null && resource.data.clienteUid == request.auth.uid);
+      allow create: if isStaff() && (!id.matches('^ref_.*') || referidoValido(id));
       allow update, delete: if false;
     }
 

@@ -49,6 +49,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         </div>
         <button class="btn btn-sm btn-ghost" id="canje-toggle" disabled>…</button>
       </div>
+      <div id="ref-onoff" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="ref-dot" style="width:11px;height:11px;border-radius:50%;background:#bbb;flex-shrink:0"></span>
+          <div><b>Referidos</b><div class="small muted" id="ref-estado">Consultando estado…</div></div>
+        </div>
+        <button class="btn btn-sm btn-ghost" id="ref-toggle" disabled>…</button>
+      </div>
       <div id="juego-onoff" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--gris-bd);border-radius:12px;padding:12px 16px;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:10px">
           <span id="juego-dot" style="width:11px;height:11px;border-radius:50%;background:#bbb;flex-shrink:0"></span>
@@ -67,7 +74,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         <button class="btn btn-sm ${tab === 'juego' ? '' : 'btn-ghost'}" data-tab="juego">🎮 Juego</button>
       </div>
       <div id="club-body"><div class="empty">Cargando…</div></div>`;
-    if (!cajero) { renderOnOff(c); renderCanjeToggle(c); renderJuegoToggle(c); }
+    if (!cajero) { renderOnOff(c); renderCanjeToggle(c); renderReferidosToggle(c); renderJuegoToggle(c); }
     c.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; GDO.Views.club(c); });
     const body = c.querySelector('#club-body');
     if (tab === 'mostrador') {
@@ -146,6 +153,46 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             .catch(() => { pintar(actual); toast('No se pudo cambiar el canje.', 'error'); });
         },
         nuevo ? 'Activar canje' : 'Pausar canje'
+      );
+    };
+  }
+
+  /* ---------------- ON / OFF de los REFERIDOS ----------------
+     club_config/flags { referidosActivo }. Sin el campo = APAGADO (default).
+     Apagado: la página del socio no muestra el link para invitar y nadie queda
+     anotado como referido. Encendido: cada socio ve su link; el amigo que se
+     asocia por ahí queda anotado, y su PRIMERA carga de puntos le suma lo mismo
+     al que lo invitó (js/referidos.js).
+     OJO: encender recién DESPUÉS de publicar las reglas de Firestore con el
+     bloque de referidos. Sin esas reglas, al cajero le rebota la carga de puntos
+     de un socio referido. */
+  function renderReferidosToggle(c) {
+    const dot = c.querySelector('#ref-dot'), est = c.querySelector('#ref-estado'), btn = c.querySelector('#ref-toggle');
+    let actual = false;
+    function pintar(activo) {
+      actual = !!activo;
+      if (dot) dot.style.background = activo ? '#2e9e5b' : '#bbb';
+      if (est) est.textContent = activo
+        ? 'Activado · cada socio tiene su link para invitar amigos'
+        : 'Apagado · los socios no ven el link para invitar';
+      if (btn) { btn.disabled = false; btn.textContent = activo ? '⏸ Apagar referidos' : '▶ Activar referidos'; btn.className = 'btn btn-sm ' + (activo ? 'btn-ghost' : ''); }
+      return activo;
+    }
+    db().collection('club_config').doc('flags').get()
+      .then((d) => pintar(d.exists && d.data().referidosActivo === true))
+      .catch(() => pintar(false));
+    if (btn) btn.onclick = () => {
+      const nuevo = !actual;
+      confirmDlg(
+        nuevo ? '¿Activar los REFERIDOS? Cada socio va a ver su link para invitar amigos. La primera compra del amigo le suma los mismos puntos al que lo invitó.'
+              : '¿Apagar los referidos? Los socios dejan de ver el link. Los amigos que ya se asociaron por un link siguen contando.',
+        () => {
+          btn.disabled = true; btn.textContent = 'Guardando…';
+          db().collection('club_config').doc('flags').set({ referidosActivo: nuevo, referidosPor: staffUid(), referidosTs: FV().serverTimestamp() }, { merge: true })
+            .then(() => { pintar(nuevo); toast(nuevo ? '✓ Referidos ACTIVADOS.' : '✓ Referidos APAGADOS.'); })
+            .catch(() => { pintar(actual); toast('No se pudo cambiar.', 'error'); });
+        },
+        nuevo ? 'Activar referidos' : 'Apagar referidos'
       );
     };
   }
@@ -736,7 +783,7 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
               if (visitaId) {
                 db().collection('visitas').doc(visitaId).update({ estado: 'atendido', puntos: pts, por: staffUid(), cierreTs: FV().serverTimestamp() }).catch(() => {});
               }
-              toast('✓ ' + fmt(pts) + ' puntos cargados.'); close();
+              toast('✓ ' + fmt(pts) + ' puntos cargados' + (GDO.Referidos.aviso(ultimoRefPagado, fmt) || '') + '.'); close();
               if (avisar) avisoPuntosWpp(socio, pts, saldo, monto);
             })
             .catch((e) => {
@@ -954,6 +1001,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     return Promise.all([pBar, pOcr]).then(() => { if (!out.nro) out.nro = ocrNro; return out; });
   }
 
+  // Si la última carga le sumó también al socio que lo invitó (referidos), queda
+  // acá { nro, nombre, pts } para avisarlo en pantalla. null si no hubo.
+  let ultimoRefPagado = null;
+
   // Acredita puntos a partir de un TICKET, en transacción, con anti-duplicado por N°.
   // Guarda el ticket en /tickets (id = N°): si ya existe, NO vuelve a cargar.
   // El log guarda TAMBIÉN el monto y la fecha del ticket: así el historial del
@@ -965,9 +1016,13 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const tref = db().collection('tickets').doc(String(nro));
     const fref = db().collection('ticket_fotos').doc(String(nro));
     const lref = db().collection('puntos_log').doc();
-    return db().runTransaction((tx) => tx.get(tref).then((td) => {
+    const R = GDO.Referidos;
+    ultimoRefPagado = null;
+    // REFERIDOS: si a este socio lo invitó otro y es su primera carga, el que lo
+    // invitó suma lo mismo en esta misma transacción (ver js/referidos.js).
+    return R.preparar(db(), clienteUid).then((plan) => db().runTransaction((tx) => tx.get(tref).then((td) => {
       if (td.exists) throw new Error('duplicado');
-      return tx.get(cref).then((cd) => {
+      return tx.get(cref).then((cd) => R.leer(tx, db(), plan, clienteUid).then((st) => {
         if (!cd.exists) throw new Error('socio');
         const nuevo = (cd.data().puntos || 0) + pts;
         // 'ultimoTicket' no es adorno: es lo que le deja ver a la regla de
@@ -978,9 +1033,10 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
         if (foto) tx.set(fref, { nro: String(nro), foto: foto, clienteUid: clienteUid, por: staffUid(), ts: FV().serverTimestamp() });
         tx.set(tref, { nro: String(nro), fecha: String(fecha || ''), monto: mn, puntos: pts, clienteUid: clienteUid, por: staffUid(), conFoto: !!foto, ts: FV().serverTimestamp() });
         tx.set(lref, { clienteUid: clienteUid, delta: pts, motivo: 'Ticket ' + nro, saldo: nuevo, ticketNro: String(nro), monto: mn, ticketFecha: String(fecha || ''), por: staffUid(), ts: FV().serverTimestamp() });
+        ultimoRefPagado = R.pagar(tx, st, cd, clienteUid, pts, { por: staffUid(), ts: FV().serverTimestamp(), ticketNro: nro });
         return nuevo;
-      });
-    }));
+      }));
+    })));
   }
 
   // Suma/resta puntos en transacción + log de auditoría. delta>0 acredita.
@@ -988,7 +1044,11 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
   function acreditar(clienteUid, delta, motivo, canjeId, extra) {
     const cref = db().collection('clientes').doc(clienteUid);
     const lref = db().collection('puntos_log').doc();
-    return db().runTransaction((tx) => tx.get(cref).then((cd) => {
+    const R = GDO.Referidos;
+    ultimoRefPagado = null;
+    // REFERIDOS: solo las cargas que SUMAN pueden pagarle al que invitó.
+    const pPlan = delta > 0 ? R.preparar(db(), clienteUid) : Promise.resolve(null);
+    return pPlan.then((plan) => db().runTransaction((tx) => tx.get(cref).then((cd) => R.leer(tx, db(), plan, clienteUid).then((st) => {
       if (!cd.exists) throw new Error('socio inexistente');
       const actual = cd.data().puntos || 0;
       const nuevo = actual + delta;
@@ -997,8 +1057,9 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
       const log = { clienteUid: clienteUid, delta: delta, motivo: motivo || '', saldo: nuevo, canjeId: canjeId || null, por: staffUid(), ts: FV().serverTimestamp() };
       if (extra && extra.monto) log.monto = parseInt(extra.monto, 10) || 0;
       tx.set(lref, log);
+      ultimoRefPagado = R.pagar(tx, st, cd, clienteUid, delta, { por: staffUid(), ts: FV().serverTimestamp() });
       return nuevo;
-    }));
+    }))));
   }
 
   /* ---------------- HISTORIAL DE PUNTOS DEL SOCIO ----------------
