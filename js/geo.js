@@ -125,26 +125,66 @@ window.GDO = window.GDO || {};
   // casa). Devuelve {lat,lng,...} o null. Es lo más PRECISO y además distingue
   // calles homónimas (p. ej. Valentín Alsina de Hurlingham vs. la de W. Morris):
   // un cruce dado existe en una sola de las dos.
-  async function geocodeInterseccion(calle, cruces, localidad) {
-    const pts = [];
-    for (const cr of cruces) {
-      const q = calle + ' y ' + cr;
+  /* Nombres más cortos de una calle para buscar la esquina. Georef guarda "TGRL ROCA" y
+     "MTRA PIOVANO": con "Teniente General Julio Argentino Roca y Piovano" no encuentra nada,
+     con "Roca y Piovano" sí (caso Gral. Roca 2376, Morris, 24-nov-2026: sin esquinas quedó
+     el punto de Google, que estaba sobre Delfor Díaz, a otra cuadra). Se prueba primero el
+     nombre completo y después sin títulos ni nombres de pila: el apellido solo. */
+  const _TITULOS = /^(av|avda|avenida|calle|pasaje|pje|teniente general|tte gral|tte|teniente|general|gral|coronel|cnel|doctor|dr|ingeniero|ing|presidente|pte|maestra|mtra|almirante|alte|comodoro|brigadier|capitan|sargento|santa|san|padre|monseñor|mons|intendente|int|profesor|prof)\s+/;
+  function _variantesCalle(s) {
+    const full = _sinAcento(s).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+    const out = [full];
+    let t = full, prev;
+    do { prev = t; t = t.replace(_TITULOS, ''); } while (t !== prev && t);
+    if (t && out.indexOf(t) < 0) out.push(t);
+    const w = t.split(' ');
+    // El apellido solo ("julio argentino roca" -> "roca"), si no es un número ni muy corto.
+    const ult = w[w.length - 1];
+    if (w.length > 1 && ult && ult.length >= 4 && !/^\d+$/.test(ult) && out.indexOf(ult) < 0) out.push(ult);
+    return out;
+  }
+  async function _esquina(calle, cr, localidad) {
+    const vc = _variantesCalle(calle), vx = _variantesCalle(cr);
+    // Pares a probar, del más completo al más corto (como mucho 4 consultas).
+    const pares = [];
+    vc.forEach((a, i) => vx.forEach((b, j) => pares.push({ a, b, k: i + j })));
+    pares.sort((x, y) => x.k - y.k);
+    for (const { a, b } of pares.filter((p) => localidad || p.k === 0).slice(0, 4)) {
+      const q = a + ' y ' + b;
       let inter = (await _georefQuery(q, ZONA.provincia, null, 3, localidad))
         .filter((it) => it.lat != null && inZona(it.partido))
-        .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
+        .sort((a2, b2) => zonaRank(a2.partido) - zonaRank(b2.partido));
+      // Sin localidad, un nombre acortado ("Roca y Borda") puede estar en otro partido: no se arriesga.
       if (!inter.length && localidad) {
         inter = (await _georefQuery(q, ZONA.provincia, null, 5))
           .filter((it) => it.lat != null && coincideLocalidad(localidad, [it.localidad, it.partido]))
-          .sort((a, b) => zonaRank(a.partido) - zonaRank(b.partido));
+          .sort((a2, b2) => zonaRank(a2.partido) - zonaRank(b2.partido));
       }
-      if (inter.length) pts.push(inter[0]);
+      if (inter.length) return inter[0];
+    }
+    return null;
+  }
+  async function geocodeInterseccion(calle, cruces, localidad) {
+    const pts = [];
+    for (const cr of cruces) {
+      const e = await _esquina(calle, cr, localidad);
+      if (e) pts.push(e);
     }
     if (!pts.length) return null;
     const lat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
     const lng = pts.reduce((s, p) => s + p.lng, 0) / pts.length;
     // `largo`: metros entre las dos esquinas (0 si se encontró una sola).
     const largo = pts.length === 2 ? _metros(pts[0], pts[1]) : 0;
-    return { lat, lng, display: pts[0].label, localidad: pts[0].localidad || '', partido: pts[0].partido || '', aprox: pts.length < 2, largo };
+    return { lat, lng, display: pts[0].label, localidad: pts[0].localidad || '', partido: pts[0].partido || '', aprox: pts.length < 2, largo,
+      esquinas: pts.map((p) => ({ lat: p.lat, lng: p.lng })) };
+  }
+  // Metros desde un punto al tramo de calle entre dos esquinas (a la recta, sin salirse del tramo).
+  function _metrosAlTramo(p, a, b) {
+    const k = Math.cos(a.lat * Math.PI / 180) * 111320, m = 110540; // grados -> metros
+    const ax = a.lng * k, ay = a.lat * m, bx = b.lng * k - ax, by = b.lat * m - ay, px = p.lng * k - ax, py = p.lat * m - ay;
+    const L = bx * bx + by * by;
+    const t = L ? Math.max(0, Math.min(1, (px * bx + py * by) / L)) : 0;
+    return Math.hypot(px - t * bx, py - t * by);
   }
   // Distancia en metros entre dos puntos {lat,lng}.
   function _metros(a, b) {
@@ -451,7 +491,8 @@ window.GDO = window.GDO || {};
     // z7: suma la localidad del pedido (antes se ubicaba sin ella y caía en calles homónimas).
     // z8: Google solo vale a nivel de casa y las entrecalles mandan (ver abajo).
     // z9: solo vale un punto que caiga en el partido de la localidad del pedido (nunca CABA).
-    const key = 'z9|' + norm(base) + '|' + norm(ec) + '|' + norm(locP);
+    // z10: esquinas con el nombre corto de la calle y Google solo si cae sobre el tramo (24-nov-2026).
+    const key = 'z10|' + norm(base) + '|' + norm(ec) + '|' + norm(locP);
     const cache = loadCache();
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
     let res = null;
@@ -495,7 +536,11 @@ window.GDO = window.GDO || {};
       try { esq = cruces.length ? await geocodeInterseccion(_soloCalle(qCalle), cruces, localidad) : null; } catch (e) { esq = null; }
       if (esq && esq.largo > 600) esq = null;
       if (esq && esq.largo > 0 && esq.largo <= 600) {
-        const enCuadra = goo && goo.puerta && _metros(goo, esq) <= esq.largo / 2 + 60;
+        // El punto de Google tiene que estar SOBRE el tramo de calle entre las dos esquinas (35 m:
+        // ancho de una avenida + la vereda). Antes alcanzaba con estar cerca de la mitad de la cuadra
+        // y un punto mal cargado en la calle paralela (a 65 m) pasaba como bueno.
+        const enCuadra = goo && goo.puerta && esq.esquinas && esq.esquinas.length === 2
+          && _metrosAlTramo(goo, esq.esquinas[0], esq.esquinas[1]) <= 35;
         res = enCuadra ? goo : esq;
       } else if (esq) {
         const cands = (goo && !goo.aprox ? [goo] : []).concat(await georefCalle())
@@ -561,7 +606,9 @@ window.GDO = window.GDO || {};
          Ahora, si la ubicación nueva sale de las dos entrecalles (g.largo > 0) o es de Google
          a nivel de puerta, se corrige a partir de 30 m. Lo que una persona fijó a mano
          (geoManual: GPS o coordenadas pegadas) no se toca. */
-      const marca = (p) => 'v10|' + norm(p.direccion + '|' + (p.entrecalles || '') + '|' + (p.localidad || ''));
+      // v11 (24-nov-2026): las esquinas ahora se encuentran con el nombre corto de la calle; se
+      // revisan de nuevo los pedidos activos una vez.
+      const marca = (p) => 'v11|' + norm(p.direccion + '|' + (p.entrecalles || '') + '|' + (p.localidad || ''));
       const revisar = GDO.Store.pedidos().filter((p) => p.lat != null && p.lng != null && p.direccion && activos.includes(p.estado)
         && p.modalidad !== 'retiro' && p.geoRevisado !== marca(p));
       for (const p of revisar) {
