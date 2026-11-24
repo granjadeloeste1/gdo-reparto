@@ -1310,7 +1310,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
             <span class="help">Va aparte de la dirección para que el mapa la encuentre. El chofer lo ve en un renglón propio.</span></div>
           <div class="field" id="f-w-loc"><label>Localidad</label><input id="f-loc" value="${esc(p ? (p.localidad || '') : (pf.localidad || ''))}" placeholder="Se completa al elegir la dirección"/></div>
           <div class="field" id="f-w-ec"><label>Entre calles</label><input id="f-ec" value="${esc(p ? p.entrecalles : (pf.entrecalles || ''))}" placeholder="Calle A y Calle B"/></div>
-          <div class="field"><label>Teléfono</label><input id="f-tel" value="${esc(p ? p.telefono : (pf.telefono || ''))}" placeholder="11 5555-5555"/></div>
+          <div class="field"><label>Teléfono *</label><input id="f-tel" inputmode="tel" value="${esc(p ? p.telefono : (pf.telefono || ''))}" placeholder="11 5555-5555"/>
+            <span class="help">Si no lo pasó, el número desde el que nos escribió.</span></div>
           <div class="field"><label id="f-lbl-fec">Fecha de entrega</label><input id="f-fec" type="date" value="${esc(p ? efFechaEntrega(p) : '')}"/>
             <span class="help" id="f-help-fec">${p && p.diaEntrega ? 'El cliente eligió <b>' + esc(p.diaEntrega) + '</b> · agendada al próximo. ' : ''}Podés cambiarla a mano.</span></div>
           <div class="field" id="f-w-vent"><label id="f-lbl-vent">Ventana horaria</label>
@@ -1704,6 +1705,14 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
           const esRet = mod === 'retiro';
           if (!cli) { toast('Completá el nombre del cliente', 'err'); return; }
           if (!esRet && !dir) { toast('Completá la dirección de entrega', 'err'); return; }
+          // TELÉFONO OBLIGATORIO (regla de Matias, 24-nov-2026): sin él no se le puede avisar, preguntar
+          // si retiró ni reprogramar. Si no lo dio, va el número desde el que escribió por WhatsApp.
+          // Un pedido viejo ya cerrado se puede corregir aunque no lo tenga.
+          const telOk = String(node.querySelector('#f-tel').value || '').replace(/\D/g, '').length >= 8;
+          if (!telOk && !(p && ['entregado', 'no_entregado'].includes(p.estado))) {
+            toast('Falta el teléfono. Si el cliente no lo pasó, poné el número desde el que nos escribió por WhatsApp.', 'err');
+            node.querySelector('#f-tel').focus(); return;
+          }
           // El código de descuento tiene que valer para ESTE pedido (teléfono y
           // modalidad incluidos). Si no vale, se dice por qué y no se guarda.
           const vDesc = validarDesc();
