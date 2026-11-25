@@ -592,7 +592,15 @@ window.GDO = window.GDO || {};
       const pend = GDO.Store.pedidos().filter((p) => p.lat == null && p.direccion && activos.includes(p.estado));
       for (const p of pend) {
         const g = await geocode(p.direccion, p.entrecalles, p.localidad);
-        if (g) { p.lat = g.lat; p.lng = g.lng; if (g.localidad && !p.localidad) p.localidad = g.localidad; GDO.Store.save(); if (onUpdate) try { onUpdate(p); } catch (e) {} }
+        // Se guarda en Rutas (upsertPedido), no solo en este aparato: antes quedaba en el navegador que lo
+        // ubicó, el resto (el celular, el armador de rutas de otra compu) lo seguía viendo "falta ubicar" y
+        // al refrescarse desde Rutas volvía a quedar sin punto (24-nov-2026).
+        if (g) {
+          const cambio = { id: p.id, lat: g.lat, lng: g.lng };
+          if (g.localidad && !p.localidad) cambio.localidad = g.localidad;
+          GDO.Store.upsertPedido(cambio); GDO.Store.save();
+          if (onUpdate) try { onUpdate(p); } catch (e) {}
+        }
         await new Promise((res) => setTimeout(res, 1100));
       }
       /* Re-chequeo de los pedidos activos que YA tienen coordenadas, una sola vez por dirección
