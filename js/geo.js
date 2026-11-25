@@ -585,7 +585,12 @@ window.GDO = window.GDO || {};
   // Geolocaliza en segundo plano los pedidos pendientes que no tienen coords.
   // Llama onUpdate() cada vez que ubica uno. Va de a uno con pausa (Nominatim).
   let _running = false;
+  // APAGADO (orden de Matias, 24-nov-2026): "no hagas más eso, volvé a lo que cargó el cliente, que lo
+  // ubico yo". El panel ya no ubica ni corrige ubicaciones por su cuenta: vale lo que cargó el cliente y
+  // lo que Matias fija a mano. Los que no tienen punto quedan con "falta ubicar".
+  const AUTO_UBICAR = false;
   async function locatePending(onUpdate) {
+    if (!AUTO_UBICAR) return;
     if (_running || !GDO.Store) return;
     _running = true;
     try {
