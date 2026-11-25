@@ -780,7 +780,8 @@ window.GDO = window.GDO || {}; GDO.Views = GDO.Views || {};
     const onSel = (opts && opts.onSel) || function () {};
     const checkable = !!sel;
     const todos = checkable && list.every((p) => sel.has(p.id));
-    box.innerHTML = `<table><thead><tr>
+    // tbl-cards: en el celular cada pedido es una tarjeta del ancho de la pantalla (ver styles.css).
+    box.innerHTML = `<table class="tbl-cards"><thead><tr>
         ${checkable ? `<th style="width:34px"><input type="checkbox" id="p-all" ${todos ? 'checked' : ''} title="Seleccionar todos"/></th>` : ''}
         <th>Cliente</th><th>Dirección</th><th>Localidad</th><th>Entrega</th><th>Estado</th><th></th>
       </tr></thead><tbody>${list.map((p) => `

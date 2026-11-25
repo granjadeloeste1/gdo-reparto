@@ -308,6 +308,23 @@ textarea{resize:vertical;min-height:74px}
   table{font-size:13px}
   th,td{padding:10px 12px;white-space:nowrap}
 }
+/* Pedidos en el celular: TARJETAS, no tabla ancha (pedido de Matias, 24-nov-2026). La tabla era más ancha
+   que la pantalla y los botones (✎ para corregir la ubicación) quedaban a la derecha: para llegar había
+   que correrla de costado y al bajar con el dedo se volvía a mover de lado. Ahora todo entra en el ancho. */
+@media (max-width:860px){
+  .panel-b.flush:has(> .tbl-cards){overflow-x:visible}
+  table.tbl-cards{display:block;width:100%}
+  table.tbl-cards thead{display:none}
+  table.tbl-cards tbody{display:block}
+  table.tbl-cards tr{display:flex;flex-wrap:wrap;align-items:flex-start;gap:4px 10px;padding:12px 14px;border-bottom:1px solid var(--gris-bd)}
+  table.tbl-cards td{display:block;padding:0;border:0;white-space:normal;overflow-wrap:anywhere;min-width:0}
+  table.tbl-cards td:has(> input[type=checkbox]){flex:0 0 auto;padding-top:2px}
+  table.tbl-cards td:nth-last-child(6){flex:1 1 calc(100% - 40px)}            /* cliente */
+  table.tbl-cards td:nth-last-child(5){flex:1 1 100%}                          /* dirección */
+  table.tbl-cards td:nth-last-child(4),table.tbl-cards td:nth-last-child(3),table.tbl-cards td:nth-last-child(2){flex:0 1 auto} /* localidad · entrega · estado */
+  table.tbl-cards td.t-actions{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px;padding-top:6px;white-space:normal}
+  table.tbl-cards td.t-actions .btn{min-width:40px;min-height:38px;font-size:16px}
+}
 .mobile-tabbar{display:none}
 @media (max-width:860px){
   .mobile-tabbar{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--gris-bd);z-index:40;padding-bottom:env(safe-area-inset-bottom)}
