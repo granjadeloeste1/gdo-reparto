@@ -482,6 +482,10 @@ window.GDO = window.GDO || {};
     // "García Silva 434 - Timbre 6": la tienda pega el timbre / dto a la dirección; para ubicarla se saca.
     const base = String(direccion || '').replace(/\s+-\s+(timbre|tbre|dto|dpto|depto|departamento|piso|casa|ph|fondo|local|lote|uf)(?![a-z]).*$/i, '').replace(/\s+entre\s+.*$/i, '').replace(/^calle\s+/i, '').trim();
     if (!base) return null;
+    // Sin número de casa no hay dirección: "B1684 Cdad. Jardin Lomas de Palomar, Provincia de Buenos Aires"
+    // (caso Gualtieri, 24-nov-2026) terminaba en cualquier esquina de una entrecalle. Mejor "falta ubicar"
+    // y que se pida la dirección que mandar al chofer a un lugar inventado. El código postal (B1684) no cuenta.
+    if (!/(^|[\s,])\d{1,5}(?![\d])/.test(base.split(',')[0].replace(/\b[a-z]\d{4}[a-z]{0,3}\b/gi, ' '))) return null;
     const ec = String(entrecalles || '').trim();
     const locP = String(localidadPedido || '').replace(/\([^)]*\)?/g, ' ').replace(/\s+/g, ' ').trim();
     // Clave de caché versionada ('z6'): incluye las entrecalles (cambian el
